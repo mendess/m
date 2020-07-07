@@ -1,11 +1,14 @@
 #!/bin/bash
 #shellcheck disable=SC2119
 
+#shellcheck disable=SC1090
+[ -e ~/.config/user-dirs.dirs ] && . ~/.config/user-dirs.dirs
+
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-~/.config/}/m"
 readonly PLAYLIST="$CONFIG_DIR/playlist"
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly TMPDIR="${TMPDIR:-/tmp}"
-readonly MUSIC_DIR="${HOME}/${XDG_MUSIC_DIR:-Media/Music}"
+readonly MUSIC_DIR="${HOME}/${XDG_MUSIC_DIR:-Music}"
 WITH_VIDEO=no
 
 mkdir -p "$CONFIG_DIR"
@@ -339,7 +342,6 @@ $cateories"
 
 $(up_next)"
             notify "Now Playing" "$filename" -a "$SCRIPT_NAME"
-            update_panel
             ;;
         -i | --link)
             mpv_get filename --raw-output '.data'
