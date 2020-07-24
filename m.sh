@@ -376,6 +376,10 @@ interpret_song() {
         --search=*)
             echo "ytdl://ytsearch:${1#*=}"
             ;;
+        -*)
+            echo "Invalid option: '$1'"
+            return 1
+            ;;
         http*)
             readonly local n_titles="$(youtube-dl \
                 --max-downloads 1 \
@@ -434,10 +438,6 @@ queue() {
                 shift
                 targets+=("ytdl://ytsearch:$1")
                 ;;
-            -*)
-                echo "Invalid option: '$1'"
-                return 1
-                ;;
             *)
                 local t
                 t="$(interpret_song "$1")" &&
@@ -448,7 +448,7 @@ queue() {
     done
     [ "${#targets[@]}" -lt 1 ] && echo "No files to queue" && return 1
 
-    readonly local background_notifiers=0
+    local background_notifiers=0
     for file in "${targets[@]}"; do
         echo -n "Queueing song: '$file'... "
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
