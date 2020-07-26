@@ -23,6 +23,10 @@ case "$1" in
         ;;
 esac
 
+error() {
+    notify "$@" >&2
+}
+
 update_panel() {
     [ ! -e "$CONFIG_DIR/update_panel.sh" ] || sh "$CONFIG_DIR/update_panel.sh"
 }
@@ -51,13 +55,12 @@ notify() {
     local text=()
     while [ $# -gt 0 ]; do
         case "$1" in
-            -a)
-                shift
-                local app="$1"
-                ;;
             -i)
                 shift
                 local img="$1"
+                ;;
+            -e | --error)
+                local err="1"
                 ;;
             *)
                 text+=("$1")
@@ -65,13 +68,22 @@ notify() {
         esac
         shift
     done
-    if [ -z "$DISPLAY" ]; then
+    tty() {
         echo -e "\e[1m${text[0]}\e[0m"
-        echo -e "${text[1]}"
+        [ -n "${text[1]}" ] && echo -e "${text[1]}"
+    }
+    if [ "$PROMPT_PROG" = fzf ]; then
+        if [[ "$err" ]]; then
+            echo -ne "\e[31mError:\e[0m" >&2
+            tty >&2
+        else
+            tty
+        fi
     else
         local args=("${text[@]}")
-        [ -n "$app" ] && args+=(-a "$app")
+        args+=(-a "$app")
         [ -n "$img" ] && args+=(-i "$img")
+        [ -n "$err" ] && args+=(--urgency critical)
         notify-send "${args[@]}"
     fi
 }
@@ -119,7 +131,6 @@ clipboard"
     readonly local mode=$(echo "$MODES" |
         selector -i -p "Mode?" -l "$(echo "$MODES" | wc -l)")
 
-    echo "$PLAYLIST"
     readonly local vidlist=$(sed '/^$/ d' "$PLAYLIST")
 
     case "$mode" in
@@ -332,23 +343,19 @@ Song:   $chapter"
             print("Categories:"acc" |")
         }' "$PLAYLIST" |
         fold -s -w "$width")
-    case $1 in
-        -n | --notify)
-            if [ -n "$cateories" ]; then
-                filename="$filename
+    if [ -n "$cateories" ]; then
+        filename="$filename
 $cateories"
-            fi
-            filename="$filename
+    fi
+    filename="$filename
 
 $(up_next)"
-            notify "Now Playing" "$filename" -a "$SCRIPT_NAME"
-            ;;
+    case $1 in
         -i | --link)
             mpv_get filename --raw-output '.data'
             ;;
         *)
-            echo "Now Playing"
-            echo "$filename"
+            notify "Now Playing" "$filename"
             ;;
     esac
 }
@@ -377,7 +384,7 @@ interpret_song() {
             echo "ytdl://ytsearch:${1#*=}"
             ;;
         -*)
-            echo "Invalid option: '$1'"
+            error "Invalid option:" "$1"
             return 1
             ;;
         http*)
@@ -387,7 +394,7 @@ interpret_song() {
                 --quiet |
                 wc -l)"
             [ "$n_titles" -ne 1 ] &&
-                notify 'Invalid link:' "$1" -a "$SCRIPT_NAME" &&
+                error 'Invalid link:' "$1" &&
                 echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails" &&
                 return 1
 
@@ -395,10 +402,7 @@ interpret_song() {
             ;;
         *)
             if [ -z "$1" ]; then
-                notify \
-                    'Error queueing' \
-                    'Empty file name' \
-                    -a "$SCRIPT_NAME"
+                error 'Error queueing' 'Empty file name'
                 return 1
             elif [ -e "$1" ]; then
                 echo "$1"
@@ -407,10 +411,10 @@ interpret_song() {
                     grep -i "$1")"
                 readonly local link="$(echo "$matches" | cut -f2)"
                 { {
-                    [ -z "$link" ] && echo "No song found"
+                    [ -z "$link" ] && error "No song found"
                 } || {
                     [ "$(echo "$link" | wc -l)" -gt 1 ] &&
-                        echo -e "Too many matches:\n$(echo "$matches" | cut -f1)"
+                        error "Too many matches:" "$(echo "$matches" | cut -f1)"
                 }; } && return 1
 
                 check_cache "$link"
@@ -428,8 +432,9 @@ queue() {
                 notify=1
                 ;;
             -r | --reset)
-                echo "Reseting queue..."
+                notify "Reseting queue..."
                 rm -f "$(last_queue)"
+                local reseted=1
                 ;;
             -m | --no-move)
                 no_move=1
@@ -441,12 +446,16 @@ queue() {
             *)
                 local t
                 t="$(interpret_song "$1")" &&
-                    targets+=("$t")
+                    targets+=("$t") ||
+                    return 1
                 ;;
         esac
         shift
     done
-    [ "${#targets[@]}" -lt 1 ] && echo "No files to queue" && return 1
+    [ "${#targets[@]}" -lt 1 ] &&
+        [[ ! "$reseted" ]] &&
+        error "No files to queue" &&
+        return 1
 
     local background_notifiers=0
     for file in "${targets[@]}"; do
@@ -495,7 +504,6 @@ queue() {
             notify "Queued '$name'" \
                 "$([ "$CURRENT" ] &&
                     printf "Current: %s\nQueue pos: %s" "$CURRENT" "$TARGET")" \
-                -a "$SCRIPT_NAME" \
                 -i "$IMG"
             rm -f "$IMG"
         } &
@@ -530,30 +538,30 @@ now() {
 add_song() {
     url="$(echo "$1" | sed -E 's|https://.*=(.*)\&?|https://youtu.be/\1|')"
     entry="$(grep "$url" "$PLAYLIST")" &&
-        echo "$entry" already in "$PLAYLIST" 1>&2 &&
+        error "$entry already in $PLAYLIST" &&
         exit 1
     categories=$(echo "${@:2}" | tr '[:upper:]' '[:lower:]' | tr ' ' '\t')
-    echo getting title
+    notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
-    [ "${PIPESTATUS[0]}" -ne 0 ] && echo Failed to get title from output && exit 1
+    [ "${PIPESTATUS[0]}" -ne 0 ] && error 'Failed to get title from output' && exit 1
 
-    echo getting duration
+    notify 'getting duration'
     duration="$(youtube-dl --get-duration "$1" |
         sed -E 's/(.*):(.+):(.+)/\1*3600+\2*60+\3/;s/(.+):(.+)/\1*60+\2/' |
         bc -l)"
 
-    echo adding to playlist
+    notify 'adding to playlist'
     echo "$title	$url	$duration	$categories" >>"$PLAYLIST"
 }
 
 del_song() {
     num_results="$(grep -c -i "$*" "$PLAYLIST")"
     [ "$num_results" -gt 1 ] &&
-        echo too many results &&
-        awk -F'\t' '$0 ~ /'"$*"'/ {print $1}' "$PLAYLIST" &&
+        error 'too many results' \
+            "$(awk -F'\t' '$0 ~ /'"$*"'/ {print $1}' "$PLAYLIST")" &&
         exit 1
     [ "$num_results" -lt 1 ] &&
-        echo no results &&
+        error 'no results' &&
         exit 1
     sed -i '/'"$*"'/Id' "$PLAYLIST"
 }
@@ -583,7 +591,7 @@ main() {
                     readonly local song="$(interpret_song "--search=$3")"
                     ;;
                 '')
-                    echo 'Give me something to play'
+                    error 'Give me something to play'
                     exit 1
                     ;;
                 *)
@@ -598,7 +606,7 @@ main() {
             ## from their playlist
             ##      Usage: m playlist
             [ -e "$PLAYLIST" ] || touch "$PLAYLIST"
-            [ ! -s "$(readlink "$PLAYLIST")" ] && echo "Playlist file emtpy" && exit 1
+            [ ! -s "$(readlink "$PLAYLIST")" ] && error "Playlist file emtpy" && exit 1
             start_playlist_interactive
             ;;
         add?song | new)
@@ -628,7 +636,7 @@ main() {
             youtube-dl --get-id "$2" |
                 sed 's|^|https://youtu.be/|' |
                 while read -r l; do
-                    echo "adding $l"
+                    notify "adding $l"
                     main add_song "$l" "${@:3}"
                 done
             ;;
@@ -767,8 +775,7 @@ in_main     && $0 ~ /case/                                          {in_case=1}
             ' "$0"
             ;;
         *)
-            echo "¯\\_(ツ)_/¯"
-            echo "use r|help to see available commands"
+            error '¯\_(ツ)_/¯' "use r|help to see available commands"
             ;;
     esac
 }
