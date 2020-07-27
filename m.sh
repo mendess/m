@@ -8,7 +8,7 @@ readonly CONFIG_DIR="${XDG_CONFIG_HOME:-~/.config/}/m"
 readonly PLAYLIST="$CONFIG_DIR/playlist"
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly TMPDIR="${TMPDIR:-/tmp}"
-readonly MUSIC_DIR="${HOME}/${XDG_MUSIC_DIR:-Music}"
+readonly MUSIC_DIR="${XDG_MUSIC_DIR:-~/Music}"
 WITH_VIDEO=no
 
 mkdir -p "$CONFIG_DIR"
