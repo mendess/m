@@ -396,7 +396,7 @@ interpret_song() {
             [ "$n_titles" -ne 1 ] &&
                 error 'Invalid link:' "$1" &&
                 echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails" &&
-                return 1
+                return
 
             echo "$1"
             ;;
@@ -446,6 +446,7 @@ queue() {
             *)
                 local t
                 t="$(interpret_song "$1")" &&
+                    [ -n "$t" ] &&
                     targets+=("$t") ||
                     return 1
                 ;;
