@@ -70,7 +70,7 @@ notify() {
     done
     tty() {
         echo -e "\e[1m${text[0]}\e[0m"
-        [ -n "${text[1]}" ] && echo -e "${text[1]}"
+        if [ -n "${text[1]}" ]; then echo -e "${text[1]}"; fi # don't change to short form
     }
     if [ "$PROMPT_PROG" = fzf ]; then
         if [[ "$err" ]]; then
@@ -209,7 +209,8 @@ clipboard"
                 xargs \
                     --no-run-if-empty \
                     -L 1 \
-                    youtube-dl --add-metadata &>"$TMPDIR/youtube-dl"
+                    youtube-dl -o '%(title)s-%(id)s=m.%(ext)s' \
+                    --add-metadata &>"$TMPDIR/youtube-dl"
         ) &
 
     if [ "$(mpvsocket)" != "/dev/null" ]; then
@@ -458,7 +459,6 @@ queue() {
         error "No files to queue" &&
         return 1
 
-    local background_notifiers=0
     for file in "${targets[@]}"; do
         echo -n "Queueing song: '$file'... "
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
@@ -508,10 +508,8 @@ queue() {
                 -i "$IMG"
             rm -f "$IMG"
         } &
-        ((background_notifiers++))
-        if [ $background_notifiers -ge $(($(nproc) * 2)) ]; then
+        if [ "$(jobs -p | wc -l)" -ge $(($(nproc) * 2)) ]; then
             wait -n
-            ((background_notifiers--))
         fi
     done
     wait
@@ -538,6 +536,7 @@ now() {
 
 add_song() {
     url="$(echo "$1" | sed -E 's|https://.*=(.*)\&?|https://youtu.be/\1|')"
+    [ -z "$url" ] && error "'$url' is not a valid link" && exit 1
     entry="$(grep "$url" "$PLAYLIST")" &&
         error "$entry already in $PLAYLIST" &&
         exit 1
@@ -566,6 +565,17 @@ del_song() {
         exit 1
     notify 'Deleting song' "$*"
     sed -i '/'"$*"'/Id' "$PLAYLIST"
+}
+
+clean_dl_songs() {
+    find "$MUSIC_DIR"/ -maxdepth 1 -mindepth 1 -type f |
+        grep -E -e '-[A-Za-z0-9\-_-]{11}=m\.[^.]{3,4}$' |
+        sed -E 's/^.*-([A-Za-z0-9\-_-]{11})=m.*$/\1/g' |
+        while read -r id; do
+            grep "$id" "$PLAYLIST" &>/dev/null && continue
+            PATTERN=("$MUSIC_DIR"/*"$id"*)
+            [ -e "${PATTERN[0]}" ] && rm -v "${PATTERN[0]}"
+        done
 }
 
 main() {
@@ -668,10 +678,14 @@ main() {
             ##     --notify        Send a notification
             queue "${@:2}"
             ;;
-        delete?song)
+        delete?song | del)
             ## Delete a passed song
             [ $# -gt 1 ] || exit 1
             del_song "${@:2}"
+            ;;
+        clean?downloads)
+            ## Clears downloads that are no longer in the playlist
+            clean_dl_songs
             ;;
         k | vu)
             ## Increase volume by ${2:-2}%
