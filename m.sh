@@ -5,7 +5,7 @@
 [ -e ~/.config/user-dirs.dirs ] && . ~/.config/user-dirs.dirs
 
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-~/.config/}/m"
-readonly PLAYLIST="$CONFIG_DIR/playlist"
+readonly PLAYLIST="$(realpath "$CONFIG_DIR/playlist")"
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly TMPDIR="${TMPDIR:-/tmp}"
 readonly MUSIC_DIR="${XDG_MUSIC_DIR:-~/Music}"
@@ -563,6 +563,7 @@ del_song() {
     [ "$num_results" -lt 1 ] &&
         error 'no results' &&
         exit 1
+    notify 'Deleting song' "$*"
     sed -i '/'"$*"'/Id' "$PLAYLIST"
 }
 
