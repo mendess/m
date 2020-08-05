@@ -604,7 +604,7 @@ clean_dl_songs() {
         grep -E -e '-[A-Za-z0-9\-_-]{11}=m\.[^.]{3,4}$' |
         sed -E 's/^.*-([A-Za-z0-9\-_-]{11})=m.*$/\1/g' |
         while read -r id; do
-            grep "$id" "$PLAYLIST" &>/dev/null && continue
+            grep -F -e "$id" "$PLAYLIST" &>/dev/null && continue
             PATTERN=("$MUSIC_DIR"/*"$id"*)
             [ -e "${PATTERN[0]}" ] && {
                 [ -z "$b" ] && echo "cleaning downloads" && b='done'
