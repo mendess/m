@@ -606,7 +606,10 @@ clean_dl_songs() {
         while read -r id; do
             grep "$id" "$PLAYLIST" &>/dev/null && continue
             PATTERN=("$MUSIC_DIR"/*"$id"*)
-            [ -e "${PATTERN[0]}" ] && rm -v "${PATTERN[0]}"
+            [ -e "${PATTERN[0]}" ] && {
+                [ -z "$b" ] && echo "cleaning downloads" && b='done'
+                rm -v "${PATTERN[0]}"
+            }
         done
 }
 
@@ -650,7 +653,7 @@ main() {
             ## from their playlist
             ##      Usage: m playlist
             [ -e "$PLAYLIST" ] || touch "$PLAYLIST"
-            [ ! -s "$(readlink "$PLAYLIST")" ] && error "Playlist file emtpy" && exit 1
+            [ ! -s "$PLAYLIST" ] && error "Playlist file emtpy" && exit 1
             start_playlist_interactive
             ;;
         add?song | new)
