@@ -13,7 +13,7 @@ WITH_VIDEO=no
 
 mkdir -p "$CONFIG_DIR"
 
-case "$1" in
+case "${1,,}" in
     gui)
         readonly PROMPT_PROG=dmenu
         shift
@@ -100,11 +100,12 @@ yes" | selector -i -p "With video?")
 play() {
     case $WITH_VIDEO in
         yes)
-            mpv --input-ipc-server="$(mpvsocket new)" "$@"
+            mpv --loop-playlist --input-ipc-server="$(mpvsocket new)" "$@"
             ;;
         no)
             if [ -z "$DISPLAY" ]; then
                 mpv \
+                    --loop-playlist \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video "${@:2}"
             else
@@ -112,6 +113,7 @@ play() {
                 $TERMINAL \
                     --class m-media-player \
                     -e mpv \
+                    --loop-playlist \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video \
                     "${@:2}" &
@@ -519,10 +521,40 @@ now() {
     local CURRENT START END
     CURRENT="$(mpv_get playlist-pos | jq .data)"
     START="$((CURRENT - 1))"
-    END="$((CURRENT + 8))"
-    mpv_get playlist '.data | .[] | .filename' |
+    case "$START" in
+        -1 | 0) START="1";;
+    esac
+    END="$((START + 10))"
+    #shellcheck disable=SC2016
+    mpv_get playlist -r '.data | .[] | .filename' |
         sed -n "${START},${END}p;$((END + 1))q;" |
         perl -ne 's|^.*/([^/]*?)(-[A-Za-z0-9\-_-]{11})?\.[^./]*$|\1\n|; print' |
+        python -c 'from threading import Thread
+import fileinput
+from subprocess import check_output as popen
+
+def get_title(i, x):
+    fetch = lambda: popen(["youtube-dl", "--get-title", x]).decode("utf-8").strip()
+    try:
+        titles[i] = fetch() if x.startswith("http") else x
+    except:
+        titles[i] = f"Error fetching song title: `{x}`"
+
+i = 0
+titles = []
+ts = []
+for line in fileinput.input():
+    titles.append(None)
+    t = Thread(target=get_title, args=(i, line))
+    t.start()
+    ts.append(t)
+    i += 1
+
+for i in range(11):
+    if ts[i]:
+        ts[i].join()
+        if titles[i]:
+            print(titles[i])' |
         awk -v current="$CURRENT" -v pos="$((--START))" \
             '{
             if (pos != current) {
