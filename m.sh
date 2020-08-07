@@ -15,11 +15,11 @@ mkdir -p "$CONFIG_DIR"
 
 case "${1,,}" in
     gui)
-        readonly PROMPT_PROG=dmenu
+        PROMPT_PROG=dmenu
         shift
         ;;
     *)
-        readonly PROMPT_PROG=fzf
+        PROMPT_PROG=fzf
         ;;
 esac
 
@@ -89,7 +89,7 @@ notify() {
 }
 
 with_video() {
-    if [ "$(mpvsocket)" != "/dev/null" ] || [ -z "$DISPLAY" ]; then
+    if [ "$1" != force ] && { [ "$(mpvsocket)" != "/dev/null" ] || [ -z "$DISPLAY" ]; }; then
         WITH_VIDEO=no
     else
         WITH_VIDEO=$(echo "no
@@ -107,7 +107,7 @@ play() {
                 mpv \
                     --loop-playlist \
                     --input-ipc-server="$(mpvsocket new)" \
-                    --no-video "${@:2}"
+                    --no-video "$@"
             else
                 command -v bspc &>/dev/null && bspc rule -a \* -o desktop=^10
                 $TERMINAL \
@@ -116,7 +116,7 @@ play() {
                     --loop-playlist \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video \
-                    "${@:2}" &
+                    "$@" &
             fi
             ;;
     esac
@@ -358,7 +358,7 @@ $(up_next)"
             mpv_get filename --raw-output '.data'
             ;;
         *)
-            notify "Now Playing" "$filename"
+            PROMPT_PROG=dmenu notify "Now Playing" "$filename"
             ;;
     esac
 }
@@ -522,7 +522,7 @@ now() {
     CURRENT="$(mpv_get playlist-pos | jq .data)"
     START="$((CURRENT - 1))"
     case "$START" in
-        -1 | 0) START="1";;
+        -1 | 0) START="1" ;;
     esac
     END="$((START + 10))"
     #shellcheck disable=SC2016
@@ -613,6 +613,28 @@ clean_dl_songs() {
         done
 }
 
+loop() {
+    looping="$(mpv_get loop-playlist | jq -r .data)"
+    case "$looping" in
+        inf)
+            arg=no
+            msg=not
+            ;;
+        false)
+            arg=inf
+            msg=now
+            ;;
+    esac
+    e="$(mpv_do "[\"set_property\", \"loop-playlist\", \"$arg\"]" |
+        jq -r .error)"
+    case "$e" in
+        success)
+            notify "$msg looping"
+            ;;
+        *) error "$e" ;;
+    esac
+}
+
 main() {
     case $1 in
         p | pause)
@@ -632,9 +654,10 @@ main() {
         play)
             ## Play something
             ##      Usage: m play [options] link
+            ## Options:
+            ##      -s | --search  Search the song on youtube
             case "$2" in
                 -s | --search)
-                    ## Search the song on youtube
                     readonly local song="$(interpret_song "--search=$3")"
                     ;;
                 '')
@@ -645,40 +668,33 @@ main() {
                     readonly local song="$(interpret_song "$2")"
                     ;;
             esac
-            with_video
-            mpv --no-video --input-ipc-server="$(mpvsocket new)" "$song"
+            with_video force
+            play "$song"
             ;;
-        play-interactive | playlist)
+        playlist | play-interactive)
             ## Interactively asks the user what songs they want to play
             ## from their playlist
-            ##      Usage: m playlist
             [ -e "$PLAYLIST" ] || touch "$PLAYLIST"
             [ ! -s "$PLAYLIST" ] && error "Playlist file emtpy" && exit 1
             start_playlist_interactive
             ;;
-        add?song | new)
+        new | add-song)
             ## Add a new song
             ##      Usage: m add-song [options] link [category,..]
             ## Options:
+            ##      -q | --queue  Queue the song too
             case $2 in
-                -q | --queue)
-                    ## Queue the song too
-                    shift
-                    m queue "$2"
-                    ;;
+                -q | --queue) m queue "$3" ;;
             esac
             add_song "${@:2}"
             ;;
-        add?playlist)
+        add-playlist)
             ## Append a playlist to the personal playlist
             ##      Usage: m add-playlist [options] [link] [category,..]
             ## Options:
+            ##      -q | --queue  Queue the playlist too
             case $2 in
-                -q | --queue)
-                    ## Queue the song too
-                    shift
-                    m queue "$2"
-                    ;;
+                -q | --queue) m queue "$3" ;;
             esac
             youtube-dl --get-id "$2" |
                 sed 's|^|https://youtu.be/|' |
@@ -697,9 +713,9 @@ main() {
             ;;
         c | current)
             ## Show the current song
-            ##      -n --notify With a notification
-            ##      -i --link   Print the filename / link
-            ##      default:    The song's name
+            ## Options:
+            ##      -n | --notify  With a notification
+            ##      -i | --link    Print the filename / link instead
             current_song "${@:2}"
             ;;
         add-cat-to-current | new-cat)
@@ -708,19 +724,24 @@ main() {
             ;;
         queue)
             ## Queue a song
+            ## Options:
             ##     --reset         Resets the queue fairness
             ##     --seach STRING  Searches youtube for the STRING
             ##     --notify        Send a notification
             queue "${@:2}"
             ;;
-        delete?song | del)
+         del | delete-song)
             ## Delete a passed song
             [ $# -gt 1 ] || exit 1
             del_song "${@:2}"
             ;;
-        clean?downloads)
+        clean-downloads)
             ## Clears downloads that are no longer in the playlist
             clean_dl_songs
+            ;;
+        loop)
+            ## Toggles playist looping
+            loop
             ;;
         k | vu)
             ## Increase volume by ${2:-2}%
@@ -800,30 +821,24 @@ main() {
         help)
             ## Get help
             if [ $# -gt 1 ]; then
-                search_for="$2"
-                search=1
+                awk \ '
+BEGIN                                          { in_main=0; in_case=0; print_docs=0; inner_case=-1 }
+$0 ~ /main\(\)/                                { in_main=1 }
+in_main && !inner_case && /'"$2"'[a-zA-Z| ]*)/ { sub(/^ */, "", $0); print($0); print_docs=1 }
+print_docs && /^\s+##.*/                       { sub(/^\s+##/, "", $0); print("\t"$0) }
+/case/                                         { inner_case++ }
+/esac/                                         { inner_case-- }
+print_docs && !inner_case && /;;/              { print_docs=0 }
+                ' "$0"
             else
-                search=0
+                awk \ '
+BEGIN                   {in_main=0; in_case=0;}
+$0 ~ /main\(\)/         {in_main=1}
+in_main && /case/       {in_case=1}
+in_case && /\w[^)]*\)$/ {sub(/)/, "", $0); sub(/^ */, "", $0); print($0)}
+in_case && /^\s+##.*/   {sub(/^\s+##/, "", $0); print("\t"$0)}' \
+        "$0"
             fi
-            awk -v search="$search" \
-                'BEGIN { in_main=0; in_case=0; inner_case=0; }
-$0 ~ /main\(\)/                                                     {in_main=1}
-inner_case  && $0 ~ /\w[^)]*\)$/                                    {sub(/)/, "", $0);
-                                                                     sub(/^ */, "", $0);
-                                                                     print("\t\t"$0)}
-inner_case  && (found || !search) && $0 ~ /^\s+##.*/                {sub(/^\s+##/, "", $0);
-                                                                     print("\t\t"$0)}
-inner_case  && $0 ~ /esac/                                          {inner_case=0}
-!inner_case && $0 ~ /;;/                                            {found=0}
-!inner_case && in_case && $0 ~ /case/                               {inner_case=1}
-!inner_case && in_case && !search && $0 ~ /\w[^)]*\)$/              {sub(/)/, "", $0);
-                                                                     sub(/^ */, "", $0);
-                                                                     print($0)}
-!inner_case && in_case && search  && $0 ~ /'"$search_for"'[^)]*\)$/ {print($1); found=1}
-!inner_case && in_case && (found || !search) && $0 ~ /^\s+##.*/     {sub(/^\s+##/, "", $0);
-                                                                     print("\t"$0)}
-in_main     && $0 ~ /case/                                          {in_case=1}
-            ' "$0"
             ;;
         *)
             error '¯\_(ツ)_/¯' "use r|help to see available commands"
