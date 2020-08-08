@@ -81,7 +81,7 @@ notify() {
         fi
     else
         local args=("${text[@]}")
-        args+=(-a "$app")
+        args+=(-a "m")
         [ -n "$img" ] && args+=(-i "$img")
         [ -n "$err" ] && args+=(--urgency critical)
         notify-send "${args[@]}"
@@ -350,15 +350,19 @@ Song:   $chapter"
         filename="$filename
 $cateories"
     fi
-    filename="$filename
+    up_next="$(up_next)"
+    [ -n "$up_next" ] && filename="$filename
 
-$(up_next)"
+$up_next"
     case $1 in
         -i | --link)
             mpv_get filename --raw-output '.data'
             ;;
-        *)
+        -n | --notify)
             PROMPT_PROG=dmenu notify "Now Playing" "$filename"
+            ;;
+        *)
+            notify "Now Playing" "$filename"
             ;;
     esac
 }
