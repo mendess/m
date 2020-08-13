@@ -508,7 +508,7 @@ queue() {
                     "$IMG" >/dev/null
             fi
             convert -scale x64 -- "$IMG" "$IMG_BACK" && mv "$IMG_BACK" "$IMG"
-            notify "Queued '$name'" \
+            PROMPT_PROG=dmenu notify "Queued '$name'" \
                 "$([ "$CURRENT" ] &&
                     printf "Current: %s\nQueue pos: %s" "$CURRENT" "$TARGET")" \
                 -i "$IMG"
