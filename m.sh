@@ -817,6 +817,13 @@ main() {
                 [ "$input" = "c" ] || echo -en "\b"
             done
             ;;
+        jukebox)
+            if chmod a+rw /tmp/.mpvsocket*; then
+                notify "jukebox mode on"
+            else
+                error "no players currently on to jukebox"
+            fi
+            ;;
         r)
             ## Get help for interactive mode
             echo -en "\b"
