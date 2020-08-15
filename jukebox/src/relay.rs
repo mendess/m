@@ -177,7 +177,6 @@ impl Admin {
         {
             let r = serde_json::to_string(&response)?;
             writer.write_all(r.as_bytes()).await?;
-            writer.write_all(b"\n").await?;
             writer.flush().await?;
             Ok(())
         };
