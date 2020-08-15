@@ -1,5 +1,8 @@
+mod jukebox;
+mod prompt;
 mod relay;
 mod server;
+mod user;
 
 use std::{
     fmt::{self, Display},
@@ -11,6 +14,8 @@ use structopt::StructOpt;
 enum Mode {
     Server,
     Relay,
+    Jukebox,
+    RelayUser,
 }
 
 impl FromStr for Mode {
@@ -19,6 +24,8 @@ impl FromStr for Mode {
         match s {
             "server" => Ok(Self::Server),
             "relay" => Ok(Self::Relay),
+            "jukebox" => Ok(Self::Jukebox),
+            "user" => Ok(Self::RelayUser),
             _ => Err("Invalid running mode"),
         }
     }
@@ -29,6 +36,8 @@ impl Display for Mode {
         let s = match self {
             Self::Server => "server",
             Self::Relay => "relay",
+            Self::Jukebox => "jukebox",
+            Self::RelayUser => "user",
         };
         write!(f, "{}", s)
     }
@@ -42,6 +51,7 @@ struct Opt {
     /// Modes:
     ///  - server: listens for commands to run on the local player
     ///  - relay: receives a command and relays it to the registered player
+    ///  - jukebox: connect to a relay and serve as jukebox
     #[structopt(short, long)]
     mode: Mode,
     /// Port to use for server or relay
@@ -55,6 +65,8 @@ async fn main() {
     let r = match options.mode {
         Mode::Server => server::run(options.port).await,
         Mode::Relay => relay::run(options.port).await,
+        Mode::Jukebox => jukebox::run(options.port),
+        Mode::RelayUser => user::run(options.port),
     };
     if let Err(e) = r {
         eprintln!("Server stopped with error: {}", e);
