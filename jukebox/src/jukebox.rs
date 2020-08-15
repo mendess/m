@@ -6,12 +6,11 @@ use serde_json::Deserializer;
 use std::{
     borrow::Borrow,
     io::{self, BufReader, Read, Write},
-    net::{Ipv4Addr, TcpStream},
     process::Command,
 };
 
 pub fn run(port: u16) -> io::Result<()> {
-    let mut socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
+    let mut socket = crate::connect_to_relay(port)?;
     writeln!(socket, "jukebox")?;
     let mut prompt = Prompt::default();
     while prompt.p("Input room name:")? > 0 {

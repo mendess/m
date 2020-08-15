@@ -4,11 +4,28 @@ mod relay;
 mod server;
 mod user;
 
+use dns_lookup::getaddrinfo;
 use std::{
     fmt::{self, Display},
+    io,
+    net::TcpStream,
     str::FromStr,
 };
 use structopt::StructOpt;
+
+fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
+    let sockets =
+        getaddrinfo(Some("mendess.xyz"), None, None)?.collect::<std::io::Result<Vec<_>>>()?;
+
+    for socket in sockets {
+        // Try connecting to socket
+        match TcpStream::connect((socket.sockaddr.ip(), port)) {
+            Ok(s) => return Ok(s),
+            Err(_) => eprintln!("Failed to connect to {}", socket.sockaddr),
+        }
+    }
+    Err(io::ErrorKind::ConnectionRefused.into())
+}
 
 #[derive(Debug)]
 enum Mode {
@@ -69,6 +86,6 @@ async fn main() {
         Mode::RelayUser => user::run(options.port),
     };
     if let Err(e) = r {
-        eprintln!("Server stopped with error: {}", e);
+        eprintln!("Terminating because: {}", e);
     }
 }

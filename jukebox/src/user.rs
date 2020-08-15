@@ -1,12 +1,9 @@
 use crate::prompt::Prompt;
 use serde_json::Deserializer;
-use std::{
-    io::{self, Read, Write},
-    net::{Ipv4Addr, TcpStream},
-};
+use std::io::{self, Read, Write};
 
 pub fn run(port: u16) -> io::Result<()> {
-    let mut socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
+    let mut socket = crate::connect_to_relay(port)?;
     writeln!(socket, "user")?;
     let mut prompt = Prompt::default();
     loop {
