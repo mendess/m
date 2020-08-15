@@ -1,8 +1,13 @@
+pub mod admin;
+pub mod jukebox;
+pub mod user;
+
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Mutex};
 use tokio::{
-    io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{TcpListener, TcpStream},
     prelude::*,
     stream::StreamExt,
@@ -155,10 +160,51 @@ impl Jukebox {
     }
 }
 
+struct Admin;
+
+impl Admin {
+    async fn handle<W, R>(self, mut reader: R, writer: W) -> io::Result<()>
+    where
+        R: AsyncBufReadExt + Unpin,
+        W: AsyncWrite + Unpin,
+    {
+        eprintln!("[A] Handling");
+        let mut writer = BufWriter::new(writer);
+        let mut s = String::new();
+        async fn send<W>(mut writer: W, response: Result<String, String>) -> io::Result<()>
+        where
+            W: AsyncWrite + Unpin,
+        {
+            let r = serde_json::to_string(&response)?;
+            writer.write_all(r.as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await?;
+            Ok(())
+        };
+        while reader.read_line(&mut s).await? > 0 {
+            match s.trim() {
+                "rooms" => {
+                    send(
+                        &mut writer,
+                        Ok({
+                            let s: String = ROOMS.lock().unwrap().keys().join("\n");
+                            s
+                        }),
+                    )
+                    .await?
+                }
+                _ => send(&mut writer, Err("Invalid command".into())).await?,
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 enum Kind {
     Jukebox(Jukebox),
     User(User),
+    Admin,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -247,6 +293,7 @@ where
             let (name, ch) = create_room(&mut reader, &mut writer).await?;
             Ok(Kind::Jukebox(Jukebox::new(name, ch)))
         }
+        "admin" => Ok(Kind::Admin),
         _ => Err(io::Error::new(io::ErrorKind::Other, "Invalid user kind")),
     }?;
     writer.write_all(&[true as u8]).await?;
@@ -260,6 +307,7 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
     match k {
         Kind::User(user) => user.handle(reader, writer).await?,
         Kind::Jukebox(jb) => jb.handle(reader, writer).await?,
+        Kind::Admin => Admin.handle(reader, writer).await?,
     }
     Ok(())
 }

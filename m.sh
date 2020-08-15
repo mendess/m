@@ -402,8 +402,7 @@ interpret_song() {
                 wc -l)"
             [ "$n_titles" -ne 1 ] &&
                 error 'Invalid link:' "$1" &&
-                echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails" &&
-                return
+                echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails"
 
             echo "$1"
             ;;

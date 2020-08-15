@@ -1,8 +1,6 @@
-mod jukebox;
 mod prompt;
 mod relay;
 mod server;
-mod user;
 
 use dns_lookup::getaddrinfo;
 use std::{
@@ -27,12 +25,13 @@ fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
     Err(io::ErrorKind::ConnectionRefused.into())
 }
 
-#[derive(Debug)]
+#[derive(Debug, StructOpt)]
 enum Mode {
     Server,
     Relay,
     Jukebox,
-    RelayUser,
+    User,
+    Admin,
 }
 
 impl FromStr for Mode {
@@ -42,7 +41,8 @@ impl FromStr for Mode {
             "server" => Ok(Self::Server),
             "relay" => Ok(Self::Relay),
             "jukebox" => Ok(Self::Jukebox),
-            "user" => Ok(Self::RelayUser),
+            "user" => Ok(Self::User),
+            "admin" => Ok(Self::Admin),
             _ => Err("Invalid running mode"),
         }
     }
@@ -54,7 +54,8 @@ impl Display for Mode {
             Self::Server => "server",
             Self::Relay => "relay",
             Self::Jukebox => "jukebox",
-            Self::RelayUser => "user",
+            Self::User => "user",
+            Self::Admin => "admin",
         };
         write!(f, "{}", s)
     }
@@ -69,7 +70,7 @@ struct Opt {
     ///  - server: listens for commands to run on the local player
     ///  - relay: receives a command and relays it to the registered player
     ///  - jukebox: connect to a relay and serve as jukebox
-    #[structopt(short, long)]
+    #[structopt(subcommand)]
     mode: Mode,
     /// Port to use for server or relay
     #[structopt(default_value = "4192", short, long)]
@@ -82,8 +83,9 @@ async fn main() {
     let r = match options.mode {
         Mode::Server => server::run(options.port).await,
         Mode::Relay => relay::run(options.port).await,
-        Mode::Jukebox => jukebox::run(options.port),
-        Mode::RelayUser => user::run(options.port),
+        Mode::Jukebox => relay::jukebox::run(options.port),
+        Mode::User => relay::user::run(options.port),
+        Mode::Admin => relay::admin::run(options.port),
     };
     if let Err(e) = r {
         eprintln!("Terminating because: {}", e);
