@@ -58,9 +58,10 @@ fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
         let ip = stdout[(start_ip + 1)..end_ip]
             .parse::<IpAddr>()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-        TcpStream::connect((ip, port))?;
+        TcpStream::connect((ip, port))
+    } else {
+        Err(io::Error::new(io::ErrorKind::NotFound, "Could not resolve endpoint"))
     }
-    Err(io::ErrorKind::NotFound.into())
 }
 
 fn print_result<S: Display>(r: &Result<S, S>) {

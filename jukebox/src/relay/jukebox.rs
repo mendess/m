@@ -28,7 +28,7 @@ pub fn run(port: u16) -> io::Result<()> {
     let mut prompt = Prompt::default();
     loop {
         if prompt.p("Input room name:")? == 0 {
-            return Ok(());
+            return Ok(())
         }
         writeln!(socket, "{}", prompt)?;
         let mut b = [false as u8; 1];
