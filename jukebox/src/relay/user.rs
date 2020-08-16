@@ -16,10 +16,19 @@ pub fn run(port: u16) -> io::Result<()> {
         if b[0] == 1 {
             break;
         }
-        println!("\x1b[1;31mError:\x1b[0m No such room");
+        crate::print_result(&Err("No such room"));
     }
     println!("Room joined");
-    let (reader, mut writer) = &mut (&socket, &socket);
+    let (reader, writer) = &mut (&socket, &socket);
+    shell(prompt, reader, writer)?;
+    Ok(())
+}
+
+pub fn shell<R, W>(mut prompt: Prompt, reader: R, mut writer: W) -> io::Result<()>
+where
+    R: Read,
+    W: Write,
+{
     let mut responses = Deserializer::from_reader(reader).into_iter::<Result<String, String>>();
     while prompt.p("🎵>")? > 0 {
         writeln!(writer, "{}", prompt)?;
@@ -37,5 +46,6 @@ pub fn run(port: u16) -> io::Result<()> {
             Err(s) => println!("Error\n{}", s),
         }
     }
+
     Ok(())
 }

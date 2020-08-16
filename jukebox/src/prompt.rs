@@ -24,6 +24,10 @@ impl Prompt {
             break r;
         }
     }
+
+    pub fn buf(&self) -> &str {
+        &self.buf
+    }
 }
 
 impl Display for Prompt {

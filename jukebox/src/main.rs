@@ -2,7 +2,7 @@ mod prompt;
 mod relay;
 mod server;
 
-use dns_lookup::getaddrinfo;
+use once_cell::sync::Lazy;
 use std::{
     fmt::{self, Display},
     io,
@@ -11,18 +11,63 @@ use std::{
 };
 use structopt::StructOpt;
 
-fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
-    let options = Opt::from_args();
-    let sockets =
-        getaddrinfo(Some(&options.endpoint), None, None)?.collect::<std::io::Result<Vec<_>>>()?;
+#[derive(Debug, StructOpt)]
+#[structopt(name = "jukebox")]
+struct Opt {
+    /// Select running mode
+    ///
+    /// Modes:
+    ///  - server: listens for commands to run on the local player
+    ///  - relay: receives a command and relays it to the registered player
+    ///  - jukebox: connect to a relay and serve as jukebox
+    ///  - user: connect to a relay to remote control a jukebox
+    #[structopt(subcommand)]
+    mode: Mode,
+    /// Port to use for server or relay
+    #[structopt(default_value = "4192", short, long)]
+    port: u16,
+    /// Endpoint to use
+    #[structopt(default_value = "mendess.xyz", short, long)]
+    endpoint: String,
+}
 
-    for socket in sockets {
-        match TcpStream::connect((socket.sockaddr.ip(), port)) {
+static OPTIONS: Lazy<Opt> = Lazy::new(Opt::from_args);
+
+#[cfg(not(target_os = "android"))]
+fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
+    for ip in dns_lookup::lookup_host(&OPTIONS.endpoint)? {
+        match TcpStream::connect((ip, port)) {
             Ok(s) => return Ok(s),
-            Err(_) => eprintln!("Failed to connect to {}", socket.sockaddr),
+            Err(_) => eprintln!("Failed to connect to {}", ip),
         }
     }
     Err(io::ErrorKind::ConnectionRefused.into())
+}
+
+#[cfg(target_os = "android")]
+fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
+    use std::{net::IpAddr, process::Command};
+    let o = Command::new("ping")
+        .args(&["-c", "1", &OPTIONS.endpoint])
+        .output()?;
+    let stdout = std::str::from_utf8(&o.stdout)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    let start_ip = stdout.find('(');
+    let end_ip = stdout.find(')');
+    if let (Some(start_ip), Some(end_ip)) = (start_ip, end_ip) {
+        let ip = stdout[(start_ip + 1)..end_ip]
+            .parse::<IpAddr>()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        TcpStream::connect((ip, port))?;
+    }
+    Err(io::ErrorKind::NotFound.into())
+}
+
+fn print_result<S: Display>(r: &Result<S, S>) {
+    match r {
+        Ok(s) => println!("{}", s),
+        Err(e) => println!("\x1b[1;31mError:\x1b[0m\n{}", e),
+    }
 }
 
 #[derive(Debug, StructOpt)]
@@ -61,34 +106,14 @@ impl Display for Mode {
     }
 }
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "jukebox")]
-struct Opt {
-    /// Select running mode
-    ///
-    /// Modes:
-    ///  - server: listens for commands to run on the local player
-    ///  - relay: receives a command and relays it to the registered player
-    ///  - jukebox: connect to a relay and serve as jukebox
-    #[structopt(subcommand)]
-    mode: Mode,
-    /// Port to use for server or relay
-    #[structopt(default_value = "4192", short, long)]
-    port: u16,
-    /// Endpoint to use
-    #[structopt(default_value = "mendess.xyz", short, long)]
-    endpoint: String,
-}
-
 #[tokio::main]
 async fn main() {
-    let options = Opt::from_args();
-    let r = match options.mode {
-        Mode::Server => server::run(options.port).await,
-        Mode::Relay => relay::run(options.port).await,
-        Mode::Jukebox => relay::jukebox::run(options.port),
-        Mode::User => relay::user::run(options.port),
-        Mode::Admin => relay::admin::run(options.port),
+    let r = match OPTIONS.mode {
+        Mode::Server => server::run(OPTIONS.port).await,
+        Mode::Relay => relay::run(OPTIONS.port).await,
+        Mode::Jukebox => relay::jukebox::run(OPTIONS.port),
+        Mode::User => relay::user::run(OPTIONS.port),
+        Mode::Admin => relay::admin::run(OPTIONS.port),
     };
     if let Err(e) = r {
         eprintln!("Terminating because: {}", e);
