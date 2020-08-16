@@ -175,7 +175,7 @@ impl Admin {
         where
             W: AsyncWrite + Unpin,
         {
-            let r = serde_json::to_string(&response)?;
+            let r = dbg!(serde_json::to_string(&response)?);
             writer.write_all(r.as_bytes()).await?;
             writer.flush().await?;
             Ok(())
@@ -183,14 +183,8 @@ impl Admin {
         while reader.read_line(&mut s).await? > 0 {
             match s.trim() {
                 "rooms" => {
-                    send(
-                        &mut writer,
-                        Ok({
-                            let s: String = ROOMS.lock().unwrap().keys().join("\n");
-                            s
-                        }),
-                    )
-                    .await?
+                    let s = ROOMS.lock().unwrap().keys().join("\n");
+                    send(&mut writer, Ok(s)).await?
                 }
                 _ => send(&mut writer, Err("Invalid command".into())).await?,
             }

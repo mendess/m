@@ -12,11 +12,11 @@ use std::{
 use structopt::StructOpt;
 
 fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
+    let options = Opt::from_args();
     let sockets =
-        getaddrinfo(Some("mendess.xyz"), None, None)?.collect::<std::io::Result<Vec<_>>>()?;
+        getaddrinfo(Some(&options.endpoint), None, None)?.collect::<std::io::Result<Vec<_>>>()?;
 
     for socket in sockets {
-        // Try connecting to socket
         match TcpStream::connect((socket.sockaddr.ip(), port)) {
             Ok(s) => return Ok(s),
             Err(_) => eprintln!("Failed to connect to {}", socket.sockaddr),
@@ -75,6 +75,9 @@ struct Opt {
     /// Port to use for server or relay
     #[structopt(default_value = "4192", short, long)]
     port: u16,
+    /// Endpoint to use
+    #[structopt(default_value = "mendess.xyz", short, long)]
+    endpoint: String,
 }
 
 #[tokio::main]
