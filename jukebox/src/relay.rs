@@ -118,12 +118,16 @@ impl User {
 
 impl Drop for User {
     fn drop(&mut self) {
-        println!(
-            "[U::{}] leaving {:?}",
-            self.id,
-            tokio::runtime::Handle::current()
-                .block_on(self.requests.send(Message::Leave(self.id))),
-        );
+        let _ = crossbeam::scope(|s| {
+            s.spawn(|_| {
+                println!(
+                    "[U::{}] leaving {:?}",
+                    self.id,
+                    tokio::runtime::Handle::current()
+                        .block_on(self.requests.send(Message::Leave(self.id))),
+                );
+            });
+        });
     }
 }
 
