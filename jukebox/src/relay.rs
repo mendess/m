@@ -118,6 +118,7 @@ impl User {
 
 impl Drop for User {
     fn drop(&mut self) {
+        println!("[U::{}] leaving", self.id);
         let _ = self.requests.send(Message::Leave(self.id));
     }
 }
