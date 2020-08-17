@@ -5,7 +5,10 @@ pub mod user;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Arc};
+use std::{
+    collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Arc,
+    time::Duration,
+};
 use tokio::{
     io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{TcpListener, TcpStream},
@@ -71,7 +74,7 @@ impl User {
     }
 
     async fn handle<R, W>(
-        mut self,
+        &mut self,
         mut reader: R,
         mut writer: W,
     ) -> io::Result<()>
@@ -79,13 +82,13 @@ impl User {
         R: AsyncBufReadExt + Unpin,
         W: AsyncWrite + Unpin,
     {
-        println!("Handling user");
+        eprintln!("[U::handle::{}] Handling", self.id);
         let mut s = String::new();
         while {
             s.clear();
             reader.read_line(&mut s).await? > 0
         } {
-            println!("[U::{}] requesting {:?}", self.id, s);
+            eprintln!("[U::handle::{}] requesting {:?}", self.id, s);
             s.pop();
             if let Err(_) = self
                 .requests
@@ -95,7 +98,7 @@ impl User {
                 }))
                 .await
             {
-                println!("[U::{}] jukebox left", self.id);
+                eprintln!("[U::handle::{}] jukebox left", self.id);
                 writer
                     .write_all(
                         serde_json::to_string(&Result::<String, String>::Err(
@@ -110,11 +113,12 @@ impl User {
                 Some(r) => r,
                 None => break,
             };
-            println!("[U::{}] responding with '{:?}'", self.id, r);
+            eprintln!("[U::handle::{}] responding with '{:?}'", self.id, r);
             writer
                 .write_all(serde_json::to_string(&r.data)?.as_bytes())
                 .await?;
         }
+        eprintln!("[U::handle::{}] user left", self.id);
         Ok(())
     }
 }
@@ -152,47 +156,58 @@ impl Jukebox {
         R: AsyncBufReadExt + Unpin,
         W: AsyncWrite + Unpin,
     {
-        println!("[J::{}] Handling", self.name);
+        eprintln!("[J::handle::{}] Handling", self.name);
         let mut s = String::new();
         loop {
             tokio::select! {
                 Some(req) = self.channel.recv() => {
                     match req {
                         Message::Request(req) => {
-                            println!(
-                                "[J::{}] sending request {:?} to remote",
+                            eprintln!(
+                                "[J::handle::{}] sending request {:?} to remote",
                                 self.name,
                                 req
                             );
                             writer
                                 .write_all(serde_json::to_string(&req)?.as_bytes())
                                 .await?;
+                            eprintln!("[J::handle::{}] sent", self.name)
                         }
                         Message::Register(id, ch) => {
-                            println!("[J::{}] Registering {}", self.name, id);
+                            eprintln!("[J::handle::{}] Registering {}", self.name, id);
                             self.users.insert(id, ch);
                         }
                         Message::Leave(id) => {
-                            println!("[J::{}] Removing user {}", self.name, id);
+                            eprintln!("[J::handle::{}] Removing user {}", self.name, id);
                             self.users.remove(&id);
                         }
                         Message::Reconnect(n) => {
+                            eprintln!(
+                                "[J::handle::{}] Terminating this intance as \
+                                requested",
+                                self.name
+                            );
                             break Ok(Some(n))
                         }
                     }
                 }
                 o = reader.read_line(&mut s) => {
-                    o?;
+                    match o? {
+                        0 => break Ok(None),
+                        1 => continue,
+                        _ => (),
+                    }
                     s.pop();
                     let r = serde_json::from_str::<Response>(&s)?;
-                    println!("[J::{}] got {:?} from remote", self.name, r);
+                    eprintln!("[J::handle::{}] got {:?} from remote", self.name, r);
                     let sender = match self.users.get_mut(&r.id) {
                         Some(s) => s,
                         None => continue,
                     };
                     if let Err(_) = sender.send(r).await {
-                        println!(
-                            "[J::{}] user went away, can't send result of command",
+                        eprintln!(
+                            "[J::handle::{}] user went away, can't send \
+                            result of command",
                             self.name
                         );
                     }
@@ -341,6 +356,7 @@ where
                 Ok(jbox)
             } else {
                 let n = Arc::new(Notify::new());
+                eprintln!("[J::{}] Terminating old task", s);
                 match room
                     .channel
                     .send(Message::Reconnect(Arc::clone(&n)))
@@ -349,17 +365,22 @@ where
                     Ok(_) => {
                         drop(guard);
                         n.notified().await;
-                        ROOMS.lock().await.get_mut(&s)
+                        ROOMS
+                            .lock()
+                            .await
+                            .get_mut(&s)
                             .and_then(|r| r.jukebox.take())
-                            .ok_or_else(|| io::Error::new(
+                            .ok_or_else(|| {
+                                io::Error::new(
                                 io::ErrorKind::Other,
                                 "jukebox disapeared when trying to reconnect"
-                            ))
+                            )
+                            })
                     }
                     Err(_) => {
                         eprintln!(
-                            "[J::{}] Something terrible has happened.\
-                                    The jukebox was dropped instead of\
+                            "[J::{}] Something terrible has happened. \
+                                    The jukebox was dropped instead of \
                                     returned to the ROOMS variable",
                             s
                         );
@@ -391,7 +412,7 @@ where
 {
     let mut s = String::with_capacity(7);
     reader.read_line(&mut s).await?;
-    let kind = match s.trim() {
+    let kind = match dbg!(s.trim()) {
         "user" => {
             let name = get_name(&mut reader, &mut writer).await?;
             match User::new(&name).await {
@@ -420,11 +441,26 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
     let mut reader = BufReader::new(reader);
     let k = protocol(&mut reader, &mut writer).await?;
     match k {
-        Kind::User(user) => user.handle(reader, writer).await,
+        Kind::User(mut user) => {
+            eprintln!("[U::{}] Handling", user.id);
+            let e = user.handle(reader, writer).await;
+            match &e {
+                Ok(_) => eprintln!("[U::{}] User left", user.id),
+                Err(e) => eprintln!("[U::{}] User left: {:?}", user.id, e),
+            }
+            e
+        }
         Kind::Jukebox(mut jb) => {
+            eprintln!("[J::{}] Handling", jb.name);
             let e = jb.handle(reader, writer).await;
+            match &e {
+                Ok(_) => eprintln!("[J::{}] Jukebox left", jb.name),
+                Err(e) => eprintln!("[J::{}] Jukebox left: {:?}", jb.name, e),
+            }
             let name = jb.name.clone();
+            eprintln!("[J::{}] returning jukebox to rooms", name);
             ROOMS.lock().await.get_mut(&name).unwrap().jukebox = Some(jb);
+            eprintln!("[J::{}] returned", name);
             e.map(|n| n.as_deref().map(Notify::notify)).map(|_| ())
         }
         Kind::Admin => Admin.handle(reader, writer).await,
@@ -436,6 +472,7 @@ pub async fn run(port: u16) -> io::Result<()> {
     let mut incoming = listener.incoming();
     while let Some(stream) = incoming.next().await {
         let stream = stream?;
+        stream.set_keepalive(Some(Duration::from_secs(5)))?;
         tokio::spawn(async {
             if let Err(e) = handle(stream).await {
                 eprintln!("Handing failed with {}", e);

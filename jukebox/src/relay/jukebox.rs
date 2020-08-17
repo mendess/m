@@ -31,7 +31,9 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
     let room_name = RefCell::new(String::new());
     let mut socket = TcpStream::connect(addr, reconnect, |s| {
         writeln!(s, "reconnect")?;
-        writeln!(s, "{}", room_name.borrow())
+        writeln!(s, "{}", room_name.borrow())?;
+        s.read(&mut [0])?;
+        Ok(())
     })?;
     writeln!(socket, "jukebox")?;
     let mut prompt = Prompt::default();

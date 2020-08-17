@@ -69,8 +69,8 @@ where
                         self.timeout
                     );
                     sleep(self.timeout);
-                    self.inner = TcpStream::connect(self.addr)?;
-                    (self.protocol)(&mut self.inner)?;
+                    // self.inner = TcpStream::connect(self.addr)?;
+                    // (self.protocol)(&mut self.inner)?;
                 }
                 o => break o,
             }
