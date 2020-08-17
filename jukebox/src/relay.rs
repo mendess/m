@@ -118,12 +118,13 @@ impl User {
 
 impl Drop for User {
     fn drop(&mut self) {
+        let handle = tokio::runtime::Handle::current();
         let _ = crossbeam::scope(|s| {
             s.spawn(|_| {
                 println!(
                     "[U::{}] leaving {:?}",
                     self.id,
-                    tokio::runtime::Handle::current()
+                    handle
                         .block_on(self.requests.send(Message::Leave(self.id))),
                 );
             });
