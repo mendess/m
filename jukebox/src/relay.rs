@@ -4,8 +4,9 @@ pub mod user;
 
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Mutex};
+use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr};
 use tokio::{
     io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{TcpListener, TcpStream},
@@ -15,27 +16,30 @@ use tokio::{
 };
 
 #[derive(Debug)]
-struct State {
+struct Room {
     channel: Sender<Message>,
+    jukebox: Option<Jukebox>,
     counter: usize,
 }
 
-impl From<Sender<Message>> for State {
+impl From<Sender<Message>> for Room {
     fn from(channel: Sender<Message>) -> Self {
         Self {
             channel,
+            jukebox: Default::default(),
             counter: Default::default(),
         }
     }
 }
 
-type Rooms = HashMap<String, State>;
+type Rooms = HashMap<String, Room>;
 static ROOMS: Lazy<Mutex<Rooms>> = Lazy::new(Mutex::default);
 
 #[derive(Debug)]
 enum Message {
     Register(usize, Sender<Response>),
     Request(Request),
+    Leave(usize),
 }
 
 #[derive(Debug)]
@@ -48,7 +52,7 @@ struct User {
 impl User {
     async fn new(name: &str) -> Option<Self> {
         let (id, mut requests) = {
-            let mut rooms = ROOMS.lock().unwrap();
+            let mut rooms = ROOMS.lock();
             let mut state = rooms.get_mut(name)?;
             let id = state.counter;
             state.counter += 1;
@@ -88,8 +92,15 @@ impl User {
                 }))
                 .await
             {
-                //TODO: Inform user that jukebox has left
                 println!("[U::{}] jukebox left", self.id);
+                writer
+                    .write_all(
+                        serde_json::to_string(&Result::<String, String>::Err(
+                            String::from("Jukebox left"),
+                        ))?
+                        .as_bytes(),
+                    )
+                    .await?;
                 break;
             }
             let r = match self.responses.recv().await {
@@ -102,6 +113,12 @@ impl User {
                 .await?;
         }
         Ok(())
+    }
+}
+
+impl Drop for User {
+    fn drop(&mut self) {
+        let _ = self.requests.send(Message::Leave(self.id));
     }
 }
 
@@ -122,7 +139,7 @@ impl Jukebox {
     }
 
     async fn handle<R, W>(
-        mut self,
+        &mut self,
         mut reader: R,
         mut writer: W,
     ) -> io::Result<()>
@@ -145,6 +162,10 @@ impl Jukebox {
                         Message::Register(id, ch) => {
                             println!("[J::{}] Registering {}", self.name, id);
                             self.users.insert(id, ch);
+                        }
+                        Message::Leave(id) => {
+                            println!("[J::{}] Removing user {}", self.name, id);
+                            self.users.remove(&id);
                         }
                     }
                 }
@@ -194,7 +215,7 @@ impl Admin {
         while reader.read_line(&mut s).await? > 0 {
             match s.trim() {
                 "rooms" => {
-                    let s = ROOMS.lock().unwrap().keys().join("\n");
+                    let s = ROOMS.lock().keys().join("\n");
                     send(&mut writer, Ok(s)).await?
                 }
                 _ => send(&mut writer, Err("Invalid command".into())).await?,
@@ -248,7 +269,7 @@ where
         s.clear();
         reader.read_line(&mut s).await?;
         s.pop();
-        if ROOMS.lock().unwrap().contains_key(&s) {
+        if ROOMS.lock().contains_key(&s) {
             break;
         }
         writer.write_all(&[false as u8]).await?;
@@ -256,10 +277,7 @@ where
     Ok(s)
 }
 
-async fn create_room<R, W>(
-    mut reader: R,
-    mut writer: W,
-) -> io::Result<(String, Receiver<Message>)>
+async fn create_room<R, W>(mut reader: R, mut writer: W) -> io::Result<Jukebox>
 where
     R: AsyncBufReadExt + Unpin,
     W: AsyncWrite + Unpin,
@@ -270,11 +288,18 @@ where
         reader.read_line(&mut s).await?;
         s.pop();
         {
-            let mut guard = ROOMS.lock().unwrap();
-            if !guard.contains_key(&s) {
-                let (tx, rx) = mpsc::channel(64);
-                guard.insert(s.clone(), tx.into());
-                break Ok((s, rx));
+            let mut guard = ROOMS.lock();
+            match guard.get_mut(&s) {
+                Some(room) => {
+                    if let Some(jbox) = room.jukebox.take() {
+                        break Ok(jbox);
+                    }
+                }
+                None => {
+                    let (tx, rx) = mpsc::channel(64);
+                    guard.insert(s.clone(), tx.into());
+                    break Ok(Jukebox::new(s, rx));
+                }
             }
         }
         writer.write_all(&[false as u8]).await?;
@@ -302,8 +327,7 @@ where
             }
         }
         "jukebox" => {
-            let (name, ch) = create_room(&mut reader, &mut writer).await?;
-            Ok(Kind::Jukebox(Jukebox::new(name, ch)))
+            Ok(Kind::Jukebox(create_room(&mut reader, &mut writer).await?))
         }
         "admin" => Ok(Kind::Admin),
         _ => Err(io::Error::new(io::ErrorKind::Other, "Invalid user kind")),
@@ -317,11 +341,15 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
     let mut reader = BufReader::new(reader);
     let k = protocol(&mut reader, &mut writer).await?;
     match k {
-        Kind::User(user) => user.handle(reader, writer).await?,
-        Kind::Jukebox(jb) => jb.handle(reader, writer).await?,
-        Kind::Admin => Admin.handle(reader, writer).await?,
+        Kind::User(user) => user.handle(reader, writer).await,
+        Kind::Jukebox(mut jb) => {
+            let e = jb.handle(reader, writer).await;
+            let name = jb.name.clone();
+            ROOMS.lock().get_mut(&name).unwrap().jukebox = Some(jb);
+            e
+        }
+        Kind::Admin => Admin.handle(reader, writer).await,
     }
-    Ok(())
 }
 
 pub async fn run(port: u16) -> io::Result<()> {
