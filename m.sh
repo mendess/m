@@ -531,7 +531,7 @@ now() {
     #shellcheck disable=SC2016
     mpv_get playlist -r '.data | .[] | .filename' |
         sed -n "${START},${END}p;$((END + 1))q;" |
-        perl -ne 's|^.*/([^/]*?)(-[A-Za-z0-9\-_-]{11})?\.[^./]*$|\1\n|; print' |
+        perl -ne 's|^.*/([^/]*?)(-[A-Za-z0-9\-_-]{11}=m)?\.[^./]*$|\1\n|; print' |
         python -c 'from threading import Thread
 import fileinput
 from subprocess import check_output as popen
@@ -548,7 +548,7 @@ titles = []
 ts = []
 for line in fileinput.input():
     titles.append(None)
-    t = Thread(target=get_title, args=(i, line))
+    t = Thread(target=get_title, args=(i, line.strip()))
     t.start()
     ts.append(t)
     i += 1
