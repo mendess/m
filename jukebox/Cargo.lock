@@ -147,17 +147,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dns-lookup"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cbea23c15f7e685a7ad01c994407f3849fa7c88556aaafe4054215b6df93f78"
-dependencies = [
- "libc",
- "socket2",
- "winapi 0.3.9",
-]
-
-[[package]]
 name = "either"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -250,7 +239,6 @@ name = "jukebox"
 version = "0.1.0"
 dependencies = [
  "crossbeam",
- "dns-lookup",
  "itertools",
  "once_cell",
  "parking_lot",

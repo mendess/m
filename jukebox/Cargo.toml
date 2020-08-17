@@ -19,6 +19,3 @@ crossbeam = "0.7"
 [dependencies.tokio]
 version = "0.2"
 features = ["io-util", "io-std", "tcp", "process", "rt-core", "stream", "rt-threaded", "macros", "sync" ]
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-dns-lookup = "1"

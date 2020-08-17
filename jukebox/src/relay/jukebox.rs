@@ -1,3 +1,4 @@
+use crate::reconnect::Reconnect as TcpStream;
 use crate::{
     prompt::Prompt,
     relay::{Request, Response},
@@ -6,7 +7,9 @@ use serde_json::Deserializer;
 use std::{
     borrow::Borrow,
     io::{self, BufReader, Read, Write},
+    net::ToSocketAddrs,
     process::Command,
+    time::Duration,
 };
 
 pub fn execute(args: &[&str]) -> io::Result<Result<String, String>> {
@@ -22,8 +25,8 @@ pub fn execute(args: &[&str]) -> io::Result<Result<String, String>> {
     }
 }
 
-pub fn run(port: u16) -> io::Result<()> {
-    let mut socket = crate::connect_to_relay(port)?;
+pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
+    let mut socket = TcpStream::connect(addr, reconnect)?;
     writeln!(socket, "jukebox")?;
     let mut prompt = Prompt::default();
     loop {
@@ -40,7 +43,7 @@ pub fn run(port: u16) -> io::Result<()> {
     }
     println!("Room created");
     std::thread::spawn(|| local_client(prompt));
-    let (reader, mut writer) = &mut (&socket, &socket);
+    let (reader, mut writer) = socket.split()?;
     for r in
         Deserializer::from_reader(BufReader::new(reader)).into_iter::<Request>()
     {

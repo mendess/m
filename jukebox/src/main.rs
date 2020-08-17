@@ -1,13 +1,12 @@
 mod prompt;
+mod reconnect;
 mod relay;
 mod server;
 
-use once_cell::sync::Lazy;
 use std::{
     fmt::{self, Display},
-    io,
-    net::TcpStream,
     str::FromStr,
+    time::Duration,
 };
 use structopt::StructOpt;
 
@@ -17,10 +16,6 @@ struct Opt {
     /// Select running mode
     ///
     /// Modes:
-    ///  - server: listens for commands to run on the local player
-    ///  - relay: receives a command and relays it to the registered player
-    ///  - jukebox: connect to a relay and serve as jukebox
-    ///  - user: connect to a relay to remote control a jukebox
     #[structopt(subcommand)]
     mode: Mode,
     /// Port to use for server or relay
@@ -29,41 +24,25 @@ struct Opt {
     /// Endpoint to use
     #[structopt(default_value = "mendess.xyz", short, long)]
     endpoint: String,
+    /// Reconnect timeout
+    #[structopt(parse(try_from_str = parse_duration), default_value = "5s", short, long)]
+    reconnect: Duration,
 }
 
-static OPTIONS: Lazy<Opt> = Lazy::new(Opt::from_args);
-
-#[cfg(not(target_os = "android"))]
-fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
-    for ip in dns_lookup::lookup_host(&OPTIONS.endpoint)? {
-        match TcpStream::connect((ip, port)) {
-            Ok(s) => return Ok(s),
-            Err(_) => eprintln!("Failed to connect to {}", ip),
+fn parse_duration(s: &str) -> Result<Duration, String> {
+    match s.chars().last() {
+        Some(c) if c.len_utf8() == 1 => {
+            let n = s[..(s.len() - 1)]
+                .parse::<u64>()
+                .map_err(|_| "invalid digit".to_string())?;
+            match c {
+                's' => Ok(Duration::from_secs(n)),
+                'm' => Ok(Duration::from_millis(n)),
+                _ => Err(format!("invalid format '{}'", c)),
+            }
         }
-    }
-    Err(io::ErrorKind::ConnectionRefused.into())
-}
-
-#[cfg(target_os = "android")]
-fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
-    use std::{net::IpAddr, process::Command};
-    let o = Command::new("ping")
-        .args(&["-c", "1", &OPTIONS.endpoint])
-        .output()?;
-    let stdout = std::str::from_utf8(&o.stdout)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-    let start_ip = stdout.find('(');
-    let end_ip = stdout.find(')');
-    if let (Some(start_ip), Some(end_ip)) = (start_ip, end_ip) {
-        let ip = stdout[(start_ip + 1)..end_ip]
-            .parse::<IpAddr>()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-        TcpStream::connect((ip, port))
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Could not resolve endpoint",
-        ))
+        None => Err("empty duration".into()),
+        Some(c) => Err(format!("invalid format '{}'", c)),
     }
 }
 
@@ -76,9 +55,13 @@ fn print_result<S: Display>(r: &Result<S, S>) {
 
 #[derive(Debug, StructOpt)]
 enum Mode {
+    /// listens for commands to run on the local player
     Server,
+    /// receives a command and relays it to the registered player
     Relay,
+    /// connect to a relay and serve as jukebox
     Jukebox,
+    /// connect to a relay to remote control a jukebox
     User,
     Admin,
 }
@@ -112,13 +95,16 @@ impl Display for Mode {
 
 #[tokio::main]
 async fn main() {
-    let r = match OPTIONS.mode {
-        Mode::Server => server::run(OPTIONS.port).await,
-        Mode::Relay => relay::run(OPTIONS.port).await,
-        Mode::Jukebox => relay::jukebox::run(OPTIONS.port),
-        Mode::User => relay::user::run(OPTIONS.port),
-        Mode::Admin => relay::admin::run(OPTIONS.port),
+    let options = Opt::from_args();
+    let addr = (options.endpoint.as_str(), options.port);
+    let r = match options.mode {
+        Mode::Server => server::run(options.port).await,
+        Mode::Relay => relay::run(options.port).await,
+        Mode::Jukebox => relay::jukebox::run(addr, options.reconnect),
+        Mode::User => relay::user::run(addr, options.reconnect),
+        Mode::Admin => relay::admin::run(addr),
     };
+    // disconnect: io::ErrorKind::ConnectionAborted
     if let Err(e) = r {
         eprintln!("Terminating because: {}", e);
     }

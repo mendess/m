@@ -1,9 +1,9 @@
 use crate::prompt::Prompt;
 use serde_json::Deserializer;
-use std::io::{self, Write};
+use std::{net::{ToSocketAddrs, TcpStream},io::{self, Write}};
 
-pub fn run(port: u16) -> io::Result<()> {
-    let mut socket = crate::connect_to_relay(port)?;
+pub fn run<A: ToSocketAddrs>(addr: A) -> io::Result<()> {
+    let mut socket = TcpStream::connect(addr)?;
     writeln!(socket, "admin")?;
     let (reader, writer) = &mut (&socket, &socket);
     let mut responses =

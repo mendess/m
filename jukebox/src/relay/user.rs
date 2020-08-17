@@ -1,9 +1,14 @@
 use crate::prompt::Prompt;
+use crate::reconnect::Reconnect as TcpStream;
 use serde_json::Deserializer;
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    net::ToSocketAddrs,
+    time::Duration,
+};
 
-pub fn run(port: u16) -> io::Result<()> {
-    let mut socket = crate::connect_to_relay(port)?;
+pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
+    let mut socket = TcpStream::connect(addr, reconnect)?;
     writeln!(socket, "user")?;
     let mut prompt = Prompt::default();
     loop {
@@ -19,7 +24,7 @@ pub fn run(port: u16) -> io::Result<()> {
         crate::print_result(&Err("No such room"));
     }
     println!("Room joined");
-    let (reader, writer) = &mut (&socket, &socket);
+    let (reader, writer) = socket.split()?;
     shell(prompt, reader, writer)?;
     Ok(())
 }
