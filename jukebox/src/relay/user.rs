@@ -2,13 +2,19 @@ use crate::prompt::Prompt;
 use crate::reconnect::Reconnect as TcpStream;
 use serde_json::Deserializer;
 use std::{
+    cell::RefCell,
+    fmt::Write as _,
     io::{self, Read, Write},
     net::ToSocketAddrs,
     time::Duration,
 };
 
 pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
-    let mut socket = TcpStream::connect(addr, reconnect)?;
+    let room_name = RefCell::new(String::new());
+    let mut socket = TcpStream::connect(addr, reconnect, |s| {
+        writeln!(s, "user")?;
+        writeln!(s, "{}", room_name.borrow())
+    })?;
     writeln!(socket, "user")?;
     let mut prompt = Prompt::default();
     loop {
@@ -19,6 +25,7 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
         let mut b = [false as u8; 1];
         socket.read(&mut b)?;
         if b[0] == 1 {
+            let _ = writeln!(room_name.borrow_mut(), "{}", prompt);
             break;
         }
         crate::print_result(&Err("No such room"));

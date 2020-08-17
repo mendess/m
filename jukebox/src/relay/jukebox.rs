@@ -10,6 +10,8 @@ use std::{
     net::ToSocketAddrs,
     process::Command,
     time::Duration,
+    fmt::Write as _,
+    cell::RefCell,
 };
 
 pub fn execute(args: &[&str]) -> io::Result<Result<String, String>> {
@@ -26,7 +28,11 @@ pub fn execute(args: &[&str]) -> io::Result<Result<String, String>> {
 }
 
 pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
-    let mut socket = TcpStream::connect(addr, reconnect)?;
+    let room_name = RefCell::new(String::new());
+    let mut socket = TcpStream::connect(addr, reconnect, |s| {
+        writeln!(s, "reconnect")?;
+        writeln!(s, "{}", room_name.borrow())
+    })?;
     writeln!(socket, "jukebox")?;
     let mut prompt = Prompt::default();
     loop {
@@ -37,6 +43,7 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
         let mut b = [false as u8; 1];
         socket.read(&mut b)?;
         if b[0] == 1 {
+            let _ = writeln!(room_name.borrow_mut(), "{}", prompt);
             break;
         }
         crate::print_result(&Err("Name taken"));

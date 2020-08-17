@@ -4,15 +4,17 @@ pub mod user;
 
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr};
+use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Arc};
 use tokio::{
     io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{TcpListener, TcpStream},
     prelude::*,
     stream::StreamExt,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Mutex, Notify,
+    },
 };
 
 #[derive(Debug)]
@@ -39,6 +41,7 @@ static ROOMS: Lazy<Mutex<Rooms>> = Lazy::new(Mutex::default);
 enum Message {
     Register(usize, Sender<Response>),
     Request(Request),
+    Reconnect(Arc<Notify>),
     Leave(usize),
 }
 
@@ -52,7 +55,7 @@ struct User {
 impl User {
     async fn new(name: &str) -> Option<Self> {
         let (id, mut requests) = {
-            let mut rooms = ROOMS.lock();
+            let mut rooms = ROOMS.lock().await;
             let mut state = rooms.get_mut(name)?;
             let id = state.counter;
             state.counter += 1;
@@ -118,17 +121,9 @@ impl User {
 
 impl Drop for User {
     fn drop(&mut self) {
-        let handle = tokio::runtime::Handle::current();
-        let _ = crossbeam::scope(|s| {
-            s.spawn(|_| {
-                println!(
-                    "[U::{}] leaving {:?}",
-                    self.id,
-                    handle
-                        .block_on(self.requests.send(Message::Leave(self.id))),
-                );
-            });
-        });
+        let mut requests = self.requests.clone();
+        let id = self.id;
+        tokio::spawn(async move { requests.send(Message::Leave(id)).await });
     }
 }
 
@@ -152,7 +147,7 @@ impl Jukebox {
         &mut self,
         mut reader: R,
         mut writer: W,
-    ) -> io::Result<()>
+    ) -> io::Result<Option<Arc<Notify>>>
     where
         R: AsyncBufReadExt + Unpin,
         W: AsyncWrite + Unpin,
@@ -164,7 +159,11 @@ impl Jukebox {
                 Some(req) = self.channel.recv() => {
                     match req {
                         Message::Request(req) => {
-                            println!("[J::{}] sending request {:?} to remote", self.name, req);
+                            println!(
+                                "[J::{}] sending request {:?} to remote",
+                                self.name,
+                                req
+                            );
                             writer
                                 .write_all(serde_json::to_string(&req)?.as_bytes())
                                 .await?;
@@ -176,6 +175,9 @@ impl Jukebox {
                         Message::Leave(id) => {
                             println!("[J::{}] Removing user {}", self.name, id);
                             self.users.remove(&id);
+                        }
+                        Message::Reconnect(n) => {
+                            break Ok(Some(n))
                         }
                     }
                 }
@@ -189,11 +191,14 @@ impl Jukebox {
                         None => continue,
                     };
                     if let Err(_) = sender.send(r).await {
-                        println!("[J::{}] user went away, can't send result of command", self.name);
+                        println!(
+                            "[J::{}] user went away, can't send result of command",
+                            self.name
+                        );
                     }
                     s.clear();
                 }
-                else => break Ok(())
+                else => break Ok(None)
             }
         }
     }
@@ -225,7 +230,7 @@ impl Admin {
         while reader.read_line(&mut s).await? > 0 {
             match s.trim() {
                 "rooms" => {
-                    let s = ROOMS.lock().keys().join("\n");
+                    let s = ROOMS.lock().await.keys().join("\n");
                     send(&mut writer, Ok(s)).await?
                 }
                 _ => send(&mut writer, Err("Invalid command".into())).await?,
@@ -279,7 +284,7 @@ where
         s.clear();
         reader.read_line(&mut s).await?;
         s.pop();
-        if ROOMS.lock().contains_key(&s) {
+        if ROOMS.lock().await.contains_key(&s) {
             break;
         }
         writer.write_all(&[false as u8]).await?;
@@ -298,7 +303,7 @@ where
         reader.read_line(&mut s).await?;
         s.pop();
         {
-            let mut guard = ROOMS.lock();
+            let mut guard = ROOMS.lock().await;
             match guard.get_mut(&s) {
                 Some(room) => {
                     if let Some(jbox) = room.jukebox.take() {
@@ -315,6 +320,67 @@ where
             }
         }
         writer.write_all(&[false as u8]).await?;
+    }
+}
+
+async fn reconnect_room<R>(mut reader: R) -> io::Result<Jukebox>
+where
+    R: AsyncBufReadExt + Unpin,
+{
+    let mut s = String::new();
+    reader.read_line(&mut s).await?;
+    s.pop();
+    let mut guard = ROOMS.lock().await;
+    match guard.get_mut(&s) {
+        Some(room) => {
+            if let Some(jbox) = room.jukebox.take() {
+                eprintln!(
+                    "[J::{}] Reconnecting to existing room and jb already returned",
+                    s
+                );
+                Ok(jbox)
+            } else {
+                let n = Arc::new(Notify::new());
+                match room
+                    .channel
+                    .send(Message::Reconnect(Arc::clone(&n)))
+                    .await
+                {
+                    Ok(_) => {
+                        drop(guard);
+                        n.notified().await;
+                        ROOMS.lock().await.get_mut(&s)
+                            .and_then(|r| r.jukebox.take())
+                            .ok_or_else(|| io::Error::new(
+                                io::ErrorKind::Other,
+                                "jukebox disapeared when trying to reconnect"
+                            ))
+                    }
+                    Err(_) => {
+                        eprintln!(
+                            "[J::{}] Something terrible has happened.\
+                                    The jukebox was dropped instead of\
+                                    returned to the ROOMS variable",
+                            s
+                        );
+                        let (tx, rx) = mpsc::channel(64);
+                        guard.insert(s.clone(), tx.into());
+                        eprintln!("[J::{}] Creating new room", s);
+                        Ok(Jukebox::new(s, rx))
+                    }
+                }
+            }
+        }
+        None => {
+            let (tx, rx) = mpsc::channel(64);
+            guard.insert(s.clone(), tx.into());
+            eprintln!(
+                "[J::{}] Trying to reconnect to a room that doesn't exist. \
+                    Creating new room",
+                s
+            );
+            Ok(Jukebox::new(s, rx))
+        }
     }
 }
 
@@ -341,6 +407,7 @@ where
         "jukebox" => {
             Ok(Kind::Jukebox(create_room(&mut reader, &mut writer).await?))
         }
+        "reconnect" => Ok(Kind::Jukebox(reconnect_room(&mut reader).await?)),
         "admin" => Ok(Kind::Admin),
         _ => Err(io::Error::new(io::ErrorKind::Other, "Invalid user kind")),
     }?;
@@ -357,8 +424,8 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
         Kind::Jukebox(mut jb) => {
             let e = jb.handle(reader, writer).await;
             let name = jb.name.clone();
-            ROOMS.lock().get_mut(&name).unwrap().jukebox = Some(jb);
-            e
+            ROOMS.lock().await.get_mut(&name).unwrap().jukebox = Some(jb);
+            e.map(|n| n.as_deref().map(Notify::notify)).map(|_| ())
         }
         Kind::Admin => Admin.handle(reader, writer).await,
     }
