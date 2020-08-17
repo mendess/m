@@ -292,12 +292,14 @@ where
             match guard.get_mut(&s) {
                 Some(room) => {
                     if let Some(jbox) = room.jukebox.take() {
+                        eprintln!("[J::{}] Reconnecting to existing room", s);
                         break Ok(jbox);
                     }
                 }
                 None => {
                     let (tx, rx) = mpsc::channel(64);
                     guard.insert(s.clone(), tx.into());
+                    eprintln!("[J::{}] Creating new room", s);
                     break Ok(Jukebox::new(s, rx));
                 }
             }
