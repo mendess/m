@@ -118,8 +118,12 @@ impl User {
 
 impl Drop for User {
     fn drop(&mut self) {
-        println!("[U::{}] leaving", self.id);
-        let _ = self.requests.send(Message::Leave(self.id));
+        println!(
+            "[U::{}] leaving {:?}",
+            self.id,
+            tokio::runtime::Handle::current()
+                .block_on(self.requests.send(Message::Leave(self.id))),
+        );
     }
 }
 
