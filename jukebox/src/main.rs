@@ -60,7 +60,10 @@ fn connect_to_relay(port: u16) -> io::Result<TcpStream> {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         TcpStream::connect((ip, port))
     } else {
-        Err(io::Error::new(io::ErrorKind::NotFound, "Could not resolve endpoint"))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Could not resolve endpoint",
+        ))
     }
 }
 
