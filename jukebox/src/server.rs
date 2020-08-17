@@ -16,10 +16,12 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
         eprintln!("Running command: {:?}", args);
         let o = Command::new("m").args(&args).output().await?;
 
-        let mut response = String::from_utf8(o.stdout)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid utf-8"))?;
-        response += std::str::from_utf8(&o.stderr)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid utf-8"))?;
+        let mut response = String::from_utf8(o.stdout).map_err(|_| {
+            io::Error::new(io::ErrorKind::Other, "invalid utf-8")
+        })?;
+        response += std::str::from_utf8(&o.stderr).map_err(|_| {
+            io::Error::new(io::ErrorKind::Other, "invalid utf-8")
+        })?;
 
         let r = if o.status.success() {
             Ok(response)

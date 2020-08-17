@@ -6,7 +6,8 @@ pub fn run(port: u16) -> io::Result<()> {
     let mut socket = crate::connect_to_relay(port)?;
     writeln!(socket, "admin")?;
     let (reader, writer) = &mut (&socket, &socket);
-    let mut responses = Deserializer::from_reader(reader).into_iter::<Result<String, String>>();
+    let mut responses =
+        Deserializer::from_reader(reader).into_iter::<Result<String, String>>();
     let mut prompt = Prompt::default();
     while prompt.p("root>")? > 0 {
         writeln!(writer, "{}", prompt)?;

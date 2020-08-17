@@ -63,7 +63,11 @@ impl User {
         })
     }
 
-    async fn handle<R, W>(mut self, mut reader: R, mut writer: W) -> io::Result<()>
+    async fn handle<R, W>(
+        mut self,
+        mut reader: R,
+        mut writer: W,
+    ) -> io::Result<()>
     where
         R: AsyncBufReadExt + Unpin,
         W: AsyncWrite + Unpin,
@@ -117,7 +121,11 @@ impl Jukebox {
         }
     }
 
-    async fn handle<R, W>(mut self, mut reader: R, mut writer: W) -> io::Result<()>
+    async fn handle<R, W>(
+        mut self,
+        mut reader: R,
+        mut writer: W,
+    ) -> io::Result<()>
     where
         R: AsyncBufReadExt + Unpin,
         W: AsyncWrite + Unpin,
@@ -171,7 +179,10 @@ impl Admin {
         eprintln!("[A] Handling");
         let mut writer = BufWriter::new(writer);
         let mut s = String::new();
-        async fn send<W>(mut writer: W, response: Result<String, String>) -> io::Result<()>
+        async fn send<W>(
+            mut writer: W,
+            response: Result<String, String>,
+        ) -> io::Result<()>
         where
             W: AsyncWrite + Unpin,
         {
@@ -245,7 +256,10 @@ where
     Ok(s)
 }
 
-async fn create_room<R, W>(mut reader: R, mut writer: W) -> io::Result<(String, Receiver<Message>)>
+async fn create_room<R, W>(
+    mut reader: R,
+    mut writer: W,
+) -> io::Result<(String, Receiver<Message>)>
 where
     R: AsyncBufReadExt + Unpin,
     W: AsyncWrite + Unpin,
@@ -279,7 +293,12 @@ where
             let name = get_name(&mut reader, &mut writer).await?;
             match User::new(&name).await {
                 Some(u) => Ok(Kind::User(u)),
-                None => return Err(io::Error::new(io::ErrorKind::Other, "jukebox is gone")),
+                None => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "jukebox is gone",
+                    ))
+                }
             }
         }
         "jukebox" => {

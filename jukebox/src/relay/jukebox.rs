@@ -28,7 +28,7 @@ pub fn run(port: u16) -> io::Result<()> {
     let mut prompt = Prompt::default();
     loop {
         if prompt.p("Input room name:")? == 0 {
-            return Ok(())
+            return Ok(());
         }
         writeln!(socket, "{}", prompt)?;
         let mut b = [false as u8; 1];
@@ -41,7 +41,9 @@ pub fn run(port: u16) -> io::Result<()> {
     println!("Room created");
     std::thread::spawn(|| local_client(prompt));
     let (reader, mut writer) = &mut (&socket, &socket);
-    for r in Deserializer::from_reader(BufReader::new(reader)).into_iter::<Request>() {
+    for r in
+        Deserializer::from_reader(BufReader::new(reader)).into_iter::<Request>()
+    {
         let r = match r {
             Ok(r) => r,
             Err(e) if e.is_eof() => break,

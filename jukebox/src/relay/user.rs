@@ -24,12 +24,17 @@ pub fn run(port: u16) -> io::Result<()> {
     Ok(())
 }
 
-pub fn shell<R, W>(mut prompt: Prompt, reader: R, mut writer: W) -> io::Result<()>
+pub fn shell<R, W>(
+    mut prompt: Prompt,
+    reader: R,
+    mut writer: W,
+) -> io::Result<()>
 where
     R: Read,
     W: Write,
 {
-    let mut responses = Deserializer::from_reader(reader).into_iter::<Result<String, String>>();
+    let mut responses =
+        Deserializer::from_reader(reader).into_iter::<Result<String, String>>();
     while prompt.p("🎵>")? > 0 {
         writeln!(writer, "{}", prompt)?;
         let r = match responses.next() {
