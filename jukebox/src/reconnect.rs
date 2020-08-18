@@ -67,19 +67,19 @@ impl<R> Reconnect<R>
 where
     R: Fn(&mut TcpStream) -> io::Result<()>,
 {
-    fn do_reconnect<F, T>(&mut self, mut f: F) -> io::Result<T>
+    fn do_reconnect<F, T: std::fmt::Debug>(&mut self, mut f: F) -> io::Result<T>
     where
         F: FnMut(&mut TcpStream) -> io::Result<T>,
     {
         loop {
-            match f(&mut self.inner) {
+            match dbg!(f(&mut self.inner)) {
                 Err(e) if e.kind() == io::ErrorKind::ConnectionAborted => {
                     println!(
                         "Lost connection reconnecting in {:?}...",
                         self.timeout
                     );
                     sleep(self.timeout);
-                    self.inner = configure_socket(self.addr)?;
+                    self.inner = configure_socket(self.addr)?; // returns a :TcpStream
                     (self.protocol)(&mut self.inner)?;
                 }
                 o => break o,

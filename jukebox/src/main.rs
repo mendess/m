@@ -104,7 +104,6 @@ async fn main() {
         Mode::User => relay::user::run(addr, options.reconnect),
         Mode::Admin => relay::admin::run(addr),
     };
-    // disconnect: io::ErrorKind::ConnectionAborted
     if let Err(e) = r {
         eprintln!("Terminating because: {}", e);
     }

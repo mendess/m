@@ -1,5 +1,4 @@
-use crate::prompt::Prompt;
-use crate::reconnect::Reconnect as TcpStream;
+use crate::{prompt::Prompt, reconnect::Reconnect as TcpStream};
 use serde_json::Deserializer;
 use std::{
     cell::RefCell,
@@ -57,13 +56,9 @@ where
         };
         let r = match r {
             Ok(r) => r,
-            Err(e) if e.is_eof() => break,
             Err(e) => return Err(e.into()),
         };
-        match r {
-            Ok(s) => println!("{}", s),
-            Err(s) => println!("Error\n{}", s),
-        }
+        crate::print_result(&r)
     }
 
     Ok(())
