@@ -7,6 +7,8 @@ use std::{
     time::Duration,
 };
 
+pub const KEEP_ALIVE: Duration = Duration::from_secs(10);
+
 pub struct Reconnect<R> {
     inner: TcpStream,
     addr: SocketAddr,
@@ -16,7 +18,7 @@ pub struct Reconnect<R> {
 
 fn configure_socket(addr: SocketAddr) -> io::Result<TcpStream> {
     let s = Socket::new(Domain::ipv4(), Type::stream(), Some(Protocol::tcp()))?;
-    s.set_keepalive(Some(Duration::from_secs(10)))?;
+    s.set_keepalive(Some(KEEP_ALIVE))?;
     s.connect(&addr.into())?;
     Ok(s.into_tcp_stream())
 }

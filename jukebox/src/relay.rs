@@ -5,10 +5,7 @@ pub mod user;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Arc};
 use tokio::{
     io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{TcpListener, TcpStream},
@@ -459,7 +456,11 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
             }
             let name = jb.name.clone();
             eprintln!("[J::{}] returning jukebox to rooms", name);
-            ROOMS.lock().await.get_mut(&name).unwrap().jukebox = Some(jb);
+            ROOMS
+                .lock()
+                .await
+                .get_mut(&name)
+                .map(|o| o.jukebox = Some(jb));
             eprintln!("[J::{}] returned", name);
             e.map(|n| n.as_deref().map(Notify::notify)).map(|_| ())
         }
@@ -472,12 +473,8 @@ pub async fn run(port: u16) -> io::Result<()> {
     let mut incoming = listener.incoming();
     while let Some(stream) = incoming.next().await {
         let stream = stream?;
-        stream.set_keepalive(Some(Duration::from_secs(5)))?;
-        tokio::spawn(async {
-            if let Err(e) = handle(stream).await {
-                eprintln!("Handing failed with {}", e);
-            }
-        });
+        stream.set_keepalive(Some(crate::reconnect::KEEP_ALIVE))?;
+        tokio::spawn(handle(stream));
     }
     Ok(())
 }
