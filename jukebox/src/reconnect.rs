@@ -1,3 +1,4 @@
+use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     fmt,
     io::{self, Read, Write},
@@ -11,6 +12,13 @@ pub struct Reconnect<R> {
     addr: SocketAddr,
     timeout: Duration,
     protocol: R,
+}
+
+fn configure_socket(addr: SocketAddr) -> io::Result<TcpStream> {
+    let s = Socket::new(Domain::ipv4(), Type::stream(), Some(Protocol::tcp()))?;
+    s.set_keepalive(Some(Duration::from_secs(10)))?;
+    s.connect(&addr.into())?;
+    Ok(s.into_tcp_stream())
 }
 
 impl<R> Reconnect<R>
@@ -28,7 +36,7 @@ where
         ))?;
         Ok(Self {
             addr,
-            inner: TcpStream::connect(addr)?,
+            inner: configure_socket(addr)?,
             timeout,
             protocol,
         })
@@ -69,8 +77,8 @@ where
                         self.timeout
                     );
                     sleep(self.timeout);
-                    // self.inner = TcpStream::connect(self.addr)?;
-                    // (self.protocol)(&mut self.inner)?;
+                    self.inner = configure_socket(self.addr)?;
+                    (self.protocol)(&mut self.inner)?;
                 }
                 o => break o,
             }

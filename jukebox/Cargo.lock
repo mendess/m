@@ -244,6 +244,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "socket2",
  "structopt",
  "tokio",
  "tokio-util",
