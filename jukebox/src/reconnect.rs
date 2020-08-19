@@ -1,8 +1,10 @@
+use parking_lot::Mutex;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     fmt,
     io::{self, Read, Write},
     net::{SocketAddr, TcpStream, ToSocketAddrs},
+    sync::Arc,
     thread::sleep,
     time::Duration,
 };
@@ -10,7 +12,7 @@ use std::{
 pub const KEEP_ALIVE: Duration = Duration::from_secs(10);
 
 pub struct Reconnect<R> {
-    inner: TcpStream,
+    inner: Arc<Mutex<TcpStream>>,
     addr: SocketAddr,
     timeout: Duration,
     protocol: R,
@@ -38,7 +40,7 @@ where
         ))?;
         Ok(Self {
             addr,
-            inner: configure_socket(addr)?,
+            inner: Arc::new(Mutex::new(configure_socket(addr)?)),
             timeout,
             protocol,
         })
@@ -50,7 +52,7 @@ where
     R: Fn(&mut TcpStream) -> io::Result<()> + Clone,
 {
     pub fn split(self) -> io::Result<(Self, Self)> {
-        let inner = self.inner.try_clone()?;
+        let inner = Arc::clone(&self.inner);
         let protocol = self.protocol.clone();
         Ok((
             Reconnect {
@@ -72,15 +74,17 @@ where
         F: FnMut(&mut TcpStream) -> io::Result<T>,
     {
         loop {
-            match dbg!(f(&mut self.inner)) {
+            let e = { f(&mut *self.inner.lock()) };
+            match dbg!(e) {
                 Err(e) if e.kind() == io::ErrorKind::ConnectionAborted => {
                     println!(
                         "Lost connection reconnecting in {:?}...",
                         self.timeout
                     );
                     sleep(self.timeout);
-                    self.inner = configure_socket(self.addr)?; // returns a :TcpStream
-                    (self.protocol)(&mut self.inner)?;
+                    *self.inner.lock() = dbg!(configure_socket(self.addr))?; // returns a :TcpStream
+                    println!("running protocol");
+                    (self.protocol)(&mut *self.inner.lock())?;
                 }
                 o => break o,
             }

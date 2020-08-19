@@ -30,8 +30,11 @@ pub fn execute(args: &[&str]) -> io::Result<Result<String, String>> {
 pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
     let room_name = RefCell::new(String::new());
     let mut socket = TcpStream::connect(addr, reconnect, |s| {
+        println!("Sending reconnect");
         writeln!(s, "reconnect")?;
+        println!("Sending room name");
         writeln!(s, "{}", room_name.borrow())?;
+        println!("Reading response");
         s.read(&mut [0])?;
         Ok(())
     })?;
