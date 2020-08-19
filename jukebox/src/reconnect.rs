@@ -1,4 +1,3 @@
-use parking_lot::Mutex;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     fmt,
@@ -7,12 +6,13 @@ use std::{
     sync::Arc,
     thread::sleep,
     time::Duration,
+    cell::RefCell,
 };
 
 pub const KEEP_ALIVE: Duration = Duration::from_secs(10);
 
 pub struct Reconnect<R> {
-    inner: Arc<Mutex<TcpStream>>,
+    inner: Arc<RefCell<TcpStream>>,
     addr: SocketAddr,
     timeout: Duration,
     protocol: R,
@@ -40,7 +40,7 @@ where
         ))?;
         Ok(Self {
             addr,
-            inner: Arc::new(Mutex::new(configure_socket(addr)?)),
+            inner: Arc::new(RefCell::new(configure_socket(addr)?)),
             timeout,
             protocol,
         })
@@ -74,7 +74,7 @@ where
         F: FnMut(&mut TcpStream) -> io::Result<T>,
     {
         loop {
-            let e = { f(&mut *self.inner.lock()) };
+            let e = { f(&mut *self.inner.borrow_mut()) };
             match dbg!(e) {
                 Err(e) if e.kind() == io::ErrorKind::ConnectionAborted => {
                     println!(
@@ -82,9 +82,9 @@ where
                         self.timeout
                     );
                     sleep(self.timeout);
-                    *self.inner.lock() = dbg!(configure_socket(self.addr))?; // returns a :TcpStream
+                    *self.inner.borrow_mut() = dbg!(configure_socket(self.addr))?; // returns a :TcpStream
                     println!("running protocol");
-                    (self.protocol)(&mut *self.inner.lock())?;
+                    (self.protocol)(&mut *self.inner.borrow_mut())?;
                 }
                 o => break o,
             }

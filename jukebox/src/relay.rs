@@ -87,6 +87,9 @@ impl User {
         } {
             eprintln!("[U::handle::{}] requesting {:?}", self.id, s);
             s.pop();
+            if s.is_empty() {
+                continue;
+            }
             if let Err(_) = self
                 .requests
                 .send(Message::Request(Request {
