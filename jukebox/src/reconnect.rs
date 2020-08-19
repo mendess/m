@@ -74,17 +74,16 @@ where
         F: FnMut(&mut TcpStream) -> io::Result<T>,
     {
         loop {
-            let e = { f(&mut *self.inner.borrow_mut()) };
-            match dbg!(e) {
+            match { f(&mut *self.inner.borrow_mut()) } {
                 Err(e) if e.kind() == io::ErrorKind::ConnectionAborted => {
                     println!(
                         "Lost connection reconnecting in {:?}...",
                         self.timeout
                     );
                     sleep(self.timeout);
-                    *self.inner.borrow_mut() = dbg!(configure_socket(self.addr))?; // returns a :TcpStream
-                    println!("running protocol");
+                    *self.inner.borrow_mut() = configure_socket(self.addr)?;
                     (self.protocol)(&mut *self.inner.borrow_mut())?;
+                    println!("Reconnected");
                 }
                 o => break o,
             }
