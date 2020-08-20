@@ -12,7 +12,7 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
     let mut reader = BufReader::new(reader);
     let mut s = String::new();
     while reader.read_line(&mut s).await? > 0 {
-        let args = s.split_whitespace().collect::<Vec<_>>();
+        let args = crate::arg_split::quoted_parse(&s);
         eprintln!("Running command: {:?}", args);
         let o = Command::new("m").args(&args).output().await?;
 

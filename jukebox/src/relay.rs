@@ -269,11 +269,8 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn command(&self) -> impl Iterator<Item = &str> {
-        self.s
-            .split_whitespace()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
+    pub fn command(&self) -> Vec<&str> {
+        crate::arg_split::quoted_parse(&self.s)
     }
 }
 

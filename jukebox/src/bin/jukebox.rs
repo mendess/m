@@ -1,33 +1,10 @@
-mod prompt;
-mod reconnect;
-mod relay;
-mod server;
-
+use jukebox::{relay, server};
 use std::{
     fmt::{self, Display},
     str::FromStr,
     time::Duration,
 };
 use structopt::StructOpt;
-
-#[derive(Debug, StructOpt)]
-#[structopt(name = "jukebox")]
-struct Opt {
-    /// Select running mode
-    ///
-    /// Modes:
-    #[structopt(subcommand)]
-    mode: Mode,
-    /// Port to use for server or relay
-    #[structopt(default_value = "4192", short, long)]
-    port: u16,
-    /// Endpoint to use
-    #[structopt(default_value = "mendess.xyz", short, long)]
-    endpoint: String,
-    /// Reconnect timeout
-    #[structopt(parse(try_from_str = parse_duration), default_value = "5s", short, long)]
-    reconnect: Duration,
-}
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
     match s.chars().last() {
@@ -46,11 +23,23 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
     }
 }
 
-fn print_result<S: Display>(r: &Result<S, S>) {
-    match r {
-        Ok(s) => println!("{}", s),
-        Err(e) => println!("\x1b[1;31mError:\x1b[0m\n{}", e),
-    }
+#[derive(Debug, StructOpt)]
+#[structopt(name = "jukebox")]
+struct Opt {
+    /// Select running mode
+    ///
+    /// Modes:
+    #[structopt(subcommand)]
+    mode: Mode,
+    /// Port to use for server or relay
+    #[structopt(default_value = "4192", short, long)]
+    port: u16,
+    /// Endpoint to use
+    #[structopt(default_value = "mendess.xyz", short, long)]
+    endpoint: String,
+    /// Reconnect timeout
+    #[structopt(parse(try_from_str = parse_duration), default_value = "5s", short, long)]
+    reconnect: Duration,
 }
 
 #[derive(Debug, StructOpt)]
@@ -97,11 +86,12 @@ impl Display for Mode {
 async fn main() {
     let options = Opt::from_args();
     let addr = (options.endpoint.as_str(), options.port);
+    let prompt = jukebox::prompt::Prompt::default();
     let r = match options.mode {
         Mode::Server => server::run(options.port).await,
         Mode::Relay => relay::run(options.port).await,
         Mode::Jukebox => relay::jukebox::run(addr, options.reconnect),
-        Mode::User => relay::user::run(addr, options.reconnect),
+        Mode::User => relay::user::run(addr, options.reconnect, prompt),
         Mode::Admin => relay::admin::run(addr),
     };
     if let Err(e) = r {

@@ -51,7 +51,7 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
             let _ = writeln!(room_name.borrow_mut(), "{}", prompt);
             break;
         }
-        crate::print_result(&Err("Name taken"));
+        crate::print_result(&Result::<&str, _>::Err("Name taken"));
     }
     println!("Room created");
     std::thread::spawn(|| local_client(prompt));
@@ -64,7 +64,7 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
             Err(e) if e.is_eof() => break,
             Err(e) => return Err(e.into()),
         };
-        let cmd = r.command().collect::<Vec<_>>();
+        let cmd = r.command();
         let data = execute(&cmd)?;
         serde_json::to_writer(&mut writer, &Response::new(r, data))?;
         writer.write_all(b"\n")?;

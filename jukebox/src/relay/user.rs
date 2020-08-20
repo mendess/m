@@ -1,14 +1,17 @@
-use crate::{prompt::Prompt, reconnect::Reconnect as TcpStream};
+use crate::{reconnect::Reconnect as TcpStream, Ui, UiError};
 use serde_json::Deserializer;
 use std::{
     cell::RefCell,
-    fmt::Write as _,
     io::{self, Read, Write},
     net::ToSocketAddrs,
     time::Duration,
 };
 
-pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
+pub fn run<A, P>(addr: A, reconnect: Duration, mut prompt: P) -> io::Result<()>
+where
+    A: ToSocketAddrs,
+    P: Ui,
+{
     let room_name = RefCell::new(String::new());
     let mut socket = TcpStream::connect(addr, reconnect, |s| {
         writeln!(s, "user")?;
@@ -17,39 +20,34 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
         Ok(())
     })?;
     writeln!(socket, "user")?;
-    let mut prompt = Prompt::default();
     loop {
-        if prompt.p("Input room name:")? == 0 {
-            return Ok(());
-        }
-        writeln!(socket, "{}", prompt)?;
+        let rn = match prompt.room_name() {
+            Ok(rn) => rn,
+            Err(UiError::Closed) => return Ok(()),
+            Err(UiError::Io(e)) => return Err(e),
+        };
+        writeln!(socket, "{}", rn)?;
         let mut b = [false as u8; 1];
         socket.read(&mut b)?;
         if b[0] == 1 {
-            let _ = writeln!(room_name.borrow_mut(), "{}", prompt);
+            let mut room_name = room_name.borrow_mut();
+            room_name.clear();
+            room_name.push_str(rn);
             break;
         }
-        crate::print_result(&Err("No such room"));
+        prompt.inform(&Result::<&str, _>::Err("No such room"));
     }
     println!("Room joined");
-    let (reader, writer) = socket.split()?;
-    shell(prompt, reader, writer)?;
-    Ok(())
-}
-
-pub fn shell<R, W>(
-    mut prompt: Prompt,
-    reader: R,
-    mut writer: W,
-) -> io::Result<()>
-where
-    R: Read,
-    W: Write,
-{
+    let (reader, mut writer) = socket.split()?;
     let mut responses =
         Deserializer::from_reader(reader).into_iter::<Result<String, String>>();
-    while prompt.p("🎵>")? > 0 {
-        writeln!(writer, "{}", prompt)?;
+    loop {
+        let cmd = match prompt.command() {
+            Ok(cmd) => cmd,
+            Err(UiError::Closed) => return Ok(()),
+            Err(UiError::Io(e)) => return Err(e),
+        };
+        writeln!(writer, "{}", cmd)?;
         let r = match responses.next() {
             Some(r) => r,
             None => break,
@@ -58,8 +56,7 @@ where
             Ok(r) => r,
             Err(e) => return Err(e.into()),
         };
-        crate::print_result(&r)
+        prompt.inform(&r);
     }
-
     Ok(())
 }
