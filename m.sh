@@ -482,7 +482,7 @@ queue() {
             mpv_do '["playlist-move", '$((COUNT - 1))', '$TARGET']' --raw-output .error
             echo "$TARGET" >"$LAST_QUEUE"
         }
-        [ "$notify" ] && {
+        [ "$notify" = 1 ] && {
             local IMG IMG_BACK name
             IMG=$(mktemp --tmpdir tmp.XXXXXXXXXXXXXXXXX.png)
             IMG_BACK="${IMG}_back.png"
