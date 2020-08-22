@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod jukebox;
 pub mod user;
+pub mod client_util;
 
 use itertools::Itertools;
 use once_cell::sync::Lazy;

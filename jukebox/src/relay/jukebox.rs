@@ -1,17 +1,18 @@
 use crate::reconnect::Reconnect as TcpStream;
 use crate::{
     prompt::Prompt,
-    relay::{Request, Response},
+    relay::{client_util::attempt_room_name, Request, Response},
 };
 use serde_json::Deserializer;
 use std::{
     borrow::Borrow,
+    cell::RefCell,
+    fmt::Write as _,
     io::{self, BufReader, Read, Write},
     net::ToSocketAddrs,
     process::Command,
     time::Duration,
-    fmt::Write as _,
-    cell::RefCell,
+    rc::Rc,
 };
 
 pub fn execute(args: &[&str]) -> io::Result<Result<String, String>> {
@@ -27,27 +28,36 @@ pub fn execute(args: &[&str]) -> io::Result<Result<String, String>> {
     }
 }
 
-pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
-    let room_name = RefCell::new(String::new());
-    let mut socket = TcpStream::connect(addr, reconnect, |s| {
+pub fn start_protocol<A: ToSocketAddrs>(
+    addr: A,
+    reconnect: Duration,
+) -> io::Result<(
+    TcpStream<impl Fn(&mut std::net::TcpStream) -> io::Result<()> + Clone>,
+    Rc<RefCell<String>>,
+)> {
+    let room_name = Rc::new(RefCell::new(String::new()));
+    let ref_room = Rc::clone(&room_name);
+    let mut socket = TcpStream::connect(addr, reconnect, move |s| {
         println!("Sending reconnect");
         writeln!(s, "reconnect")?;
         println!("Sending room name");
-        writeln!(s, "{}", room_name.borrow())?;
+        writeln!(s, "{}", (&*ref_room).borrow())?;
         println!("Reading response");
         s.read(&mut [0])?;
         Ok(())
     })?;
     writeln!(socket, "jukebox")?;
+    Ok((socket, room_name))
+}
+
+pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
+    let (mut socket, room_name) = start_protocol(addr, reconnect)?;
     let mut prompt = Prompt::default();
     loop {
         if prompt.p("Input room name:")? == 0 {
             return Ok(());
         }
-        writeln!(socket, "{}", prompt)?;
-        let mut b = [false as u8; 1];
-        socket.read(&mut b)?;
-        if b[0] == 1 {
+        if attempt_room_name(&mut socket, prompt.buf())? {
             let _ = writeln!(room_name.borrow_mut(), "{}", prompt);
             break;
         }
@@ -55,6 +65,13 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
     }
     println!("Room created");
     std::thread::spawn(|| local_client(prompt));
+    execute_loop(socket)
+}
+
+pub fn execute_loop<T>(socket: TcpStream<T>) -> io::Result<()>
+where
+    T: Fn(&mut std::net::TcpStream) -> io::Result<()> + Clone,
+{
     let (reader, mut writer) = socket.split()?;
     for r in
         Deserializer::from_reader(BufReader::new(reader)).into_iter::<Request>()

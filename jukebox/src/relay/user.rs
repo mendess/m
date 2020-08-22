@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-pub fn run<A, P>(addr: A, reconnect: Duration, mut prompt: P) -> io::Result<()>
+pub fn run<'p, A, P>(addr: A, reconnect: Duration, mut prompt: P) -> io::Result<()>
 where
     A: ToSocketAddrs,
     P: Ui,
@@ -32,7 +32,7 @@ where
         if b[0] == 1 {
             let mut room_name = room_name.borrow_mut();
             room_name.clear();
-            room_name.push_str(rn);
+            room_name.push_str(&rn);
             break;
         }
         prompt.inform(&Result::<&str, _>::Err("No such room"));

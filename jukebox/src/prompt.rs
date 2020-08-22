@@ -57,12 +57,12 @@ impl Ui for Prompt {
         if e.is_ok() {
             self.prompt_str = format!("{} 🎵>", self.buf());
         }
-        e.map(move |_| self.buf())
+        e.map(move |_| self.buf().into())
     }
 
     fn command(&mut self) -> UiResult {
         match prompt_conv(&mut self.buf, &self.prompt_str) {
-            Ok(_) => Ok(self.buf()),
+            Ok(_) => Ok(self.buf().into()),
             Err(e) => Err(e),
         }
     }

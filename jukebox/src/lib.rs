@@ -3,6 +3,8 @@ pub mod prompt;
 mod reconnect;
 pub mod relay;
 pub mod server;
+#[cfg(target_os = "android")]
+pub mod android;
 
 use std::{fmt::Display, io};
 
@@ -11,7 +13,7 @@ pub enum UiError {
     Closed,
 }
 
-pub type UiResult<'s, T = &'s str> = Result<T, UiError>;
+pub type UiResult<'s, T = String> = Result<T, UiError>;
 
 pub trait Ui {
     fn room_name(&mut self) -> UiResult;

@@ -1,6 +1,10 @@
-use jukebox::{relay, server};
+use jukebox::{
+    relay::{self, client_util},
+    server,
+};
 use std::{
     fmt::{self, Display},
+    io,
     str::FromStr,
     time::Duration,
 };
@@ -40,6 +44,9 @@ struct Opt {
     /// Reconnect timeout
     #[structopt(parse(try_from_str = parse_duration), default_value = "5s", short, long)]
     reconnect: Duration,
+    /// Room name
+    #[structopt(short, long)]
+    room: Option<String>,
 }
 
 #[derive(Debug, StructOpt)]
@@ -90,7 +97,22 @@ async fn main() {
     let r = match options.mode {
         Mode::Server => server::run(options.port).await,
         Mode::Relay => relay::run(options.port).await,
-        Mode::Jukebox => relay::jukebox::run(addr, options.reconnect),
+        Mode::Jukebox => match options.room {
+            Some(r) => relay::jukebox::start_protocol(addr, options.reconnect)
+                .and_then(|(mut socket, room_name)| {
+                    if client_util::attempt_room_name(&mut socket, &r)? {
+                        *room_name.borrow_mut() = r;
+                        Ok(socket)
+                    } else {
+                        Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "room name taken",
+                        ))
+                    }
+                })
+                .and_then(relay::jukebox::execute_loop),
+            None => relay::jukebox::run(addr, options.reconnect),
+        },
         Mode::User => relay::user::run(addr, options.reconnect, prompt),
         Mode::Admin => relay::admin::run(addr),
     };
