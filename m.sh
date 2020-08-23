@@ -133,7 +133,7 @@ clipboard"
     readonly local mode=$(echo "$MODES" |
         selector -i -p "Mode?" -l "$(echo "$MODES" | wc -l)")
 
-    readonly local vidlist=$(sed '/^$/ d' "$PLAYLIST")
+    local vidlist=$(sed '/^$/ d' "$PLAYLIST")
 
     case "$mode" in
         single)
@@ -176,7 +176,7 @@ clipboard"
                 sed -E 's/^[ ]*[0-9]*[ ]*//')
 
             [ -z "$catg" ] && exit
-            readonly local vidlist=$(echo "$vidlist" | shuf)
+            local vidlist=$(echo "$vidlist" | shuf)
             readonly local vids="$(echo "$vidlist" |
                 grep -P ".*\t.*\t.*\t.*$catg" |
                 awk -F'\t' '{print $2}' |
