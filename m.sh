@@ -133,7 +133,8 @@ clipboard"
     readonly local mode=$(echo "$MODES" |
         selector -i -p "Mode?" -l "$(echo "$MODES" | wc -l)")
 
-    local vidlist=$(sed '/^$/ d' "$PLAYLIST")
+    local vidlist
+    vidlist=$(sed '/^$/ d' "$PLAYLIST")
 
     case "$mode" in
         single)
@@ -176,7 +177,7 @@ clipboard"
                 sed -E 's/^[ ]*[0-9]*[ ]*//')
 
             [ -z "$catg" ] && exit
-            local vidlist=$(echo "$vidlist" | shuf)
+            vidlist=$(echo "$vidlist" | shuf)
             readonly local vids="$(echo "$vidlist" |
                 grep -P ".*\t.*\t.*\t.*$catg" |
                 awk -F'\t' '{print $2}' |
@@ -232,7 +233,9 @@ clipboard"
                 fi
             done
         else
-            main queue "${final_list[@]}" --notify
+            local cmd=(main queue "${final_list[@]}" --notify)
+            [ "$mode" = All ] && cmd+=(--no-move)
+            "${cmd[@]}"
         fi
     else
         (
@@ -489,7 +492,7 @@ queue() {
                 -i "$IMG"
             rm -f "$IMG"
         } &
-        if [ "$(jobs -p | wc -l)" -ge $(($(nproc) * 2)) ]; then
+        if [ "$(jobs -p | wc -l)" -ge "$(nproc)" ]; then
             wait -n
         fi
     done
