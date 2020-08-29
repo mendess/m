@@ -22,8 +22,21 @@ version = "0.2"
 features = ["io-util", "io-std", "tcp", "process", "rt-core", "stream", "rt-threaded", "macros", "sync" ]
 
 [target.'cfg(target_os="android")'.dependencies]
-jni = { version = "0.5", default-features = false }
+jni = { version = "0.17", default-features = false }
 
 [lib]
 name = "jukebox"
 crate-type = ["rlib", "dylib"]
+
+
+[target.aarch64-linux-android]
+ar = "../app/NDK/arm64/bin/aarch64-linux-android-ar"
+linker = "../app/NDK/arm64/bin/aarch64-linux-android-clang"
+
+[target.armv7-linux-androideabi]
+ar = "../app/NDK/arm/bin/arm-linux-androideabi-ar"
+linker = "../app/NDK/arm/bin/arm-linux-androideabi-clang"
+
+[target.i686-linux-android]
+ar = "../app/NDK/x86/bin/i686-linux-android-ar"
+linker = "../app/NDK/x86/bin/i686-linux-android-clang"

@@ -13,12 +13,14 @@ where
     P: Ui,
 {
     let room_name = RefCell::new(String::new());
+    prompt.inform("connecting to socket");
     let mut socket = TcpStream::connect(addr, reconnect, |s| {
         writeln!(s, "user")?;
         writeln!(s, "{}", room_name.borrow())?;
         s.read(&mut [0])?;
         Ok(())
     })?;
+    prompt.inform("setting client type to user");
     writeln!(socket, "user")?;
     loop {
         let rn = match prompt.room_name() {
@@ -37,7 +39,7 @@ where
         }
         prompt.inform(&Result::<&str, _>::Err("No such room"));
     }
-    println!("Room joined");
+    prompt.inform(&Result::<_, &str>::Ok("Room joined"));
     let (reader, mut writer) = socket.split()?;
     let mut responses =
         Deserializer::from_reader(reader).into_iter::<Result<String, String>>();

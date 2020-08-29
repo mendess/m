@@ -1,4 +1,4 @@
-use crate::{Ui, UiError, UiResult};
+use crate::{Information, Ui, UiError, UiResult};
 use std::{
     fmt::{self, Display},
     io::{self, stdin, stdout, Write},
@@ -67,7 +67,8 @@ impl Ui for Prompt {
         }
     }
 
-    fn inform<T: Display, E: Display>(&mut self, r: &Result<T, E>) {
-        crate::print_result(r)
+    fn inform<I: Information>(&mut self, r: I) {
+        r.info(|d| println!("{}", d));
+        // crate::print_result(r)
     }
 }
