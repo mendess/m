@@ -142,6 +142,7 @@ clipboard"
         single)
             readonly local vidname="$(echo "$vidlist" |
                 awk -F'\t' '{print $1}' |
+                tac |
                 selector -i -p "Which video?" -l "$(echo "$vidlist" | wc -l)")"
 
             if [ -z "$vidname" ]; then
@@ -569,7 +570,8 @@ add_song() {
     entry="$(grep "$url" "$PLAYLIST")" &&
         error "$entry already in $PLAYLIST" &&
         exit 1
-    categories=$(echo "${@:2}" | tr '[:upper:]' '[:lower:]' | tr ' ' '\t')
+    categories=$(echo "${@:2}" | tr '[:upper:]' '[:lower:]' | tr ' ' '\t' | sed -E 's/\t$//')
+    [ -n "$categories" ] && "	$categories"
     notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
     [ "${PIPESTATUS[0]}" -ne 0 ] && error 'Failed to get title from output' && exit 1
@@ -580,7 +582,8 @@ add_song() {
         bc -l)"
 
     notify 'adding to playlist'
-    echo "$title	$url	$duration	$categories" >>"$PLAYLIST"
+    echo "$title	$url	$duration$categories"
+    echo "$title	$url	$duration$categories" >>"$PLAYLIST"
 }
 
 del_song() {
