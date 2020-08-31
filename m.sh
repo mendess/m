@@ -588,7 +588,7 @@ add_song() {
 
 del_song() {
     num_results="$(grep -c -i "$*" "$PLAYLIST")"
-    results="$(awk -F'\t' '$0 ~ /'"$*"'/ {print $1}' "$PLAYLIST")"
+    results="$(awk -F'\t' 'BEGIN {IGNORECASE = 1} $0 ~ /'"$*"'/ {print $1}' "$PLAYLIST")"
     case "$num_results" in
         0) error 'no results' && return 1 ;;
         1)
