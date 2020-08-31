@@ -363,7 +363,7 @@ add_cat() {
                 cat=$(echo | dmenu -p "Category name? (Esq to quit)")
                 ;;
             fzf)
-                read -r -p "Category name? (Empty to quit)" cat
+                read -r -p "Category name [Empty to quit]? " cat
                 ;;
         esac
         if [ -z "$cat" ]; then
