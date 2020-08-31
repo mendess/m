@@ -366,7 +366,7 @@ add_cat() {
                 cat=$(echo | dmenu -p "Category name? (Esq to quit)")
                 ;;
             fzf)
-                read -r -p "Category name [Empty to quit]? " cat
+                read -r -p "Category name [Empty to quit]? " cat || echo
                 ;;
         esac
         if [ -z "$cat" ]; then
@@ -705,7 +705,7 @@ main() {
             ;;
         cat)
             ## List all current categories
-            cut -f4- "$PLAYLIST" | tr '\t' '\n' | grep -vP '^$' | sort | uniq
+            cut -f4- "$PLAYLIST" | tr '\t' '\n' | grep -vP '^$' | sort | uniq -c | sort -n
             ;;
         now)
             ## Shows the current playlist
