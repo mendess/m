@@ -3,7 +3,7 @@ pub mod prompt;
 mod reconnect;
 pub mod relay;
 pub mod server;
-#[cfg(target_os = "android")]
+#[cfg(feature = "jni_lib")]
 pub mod android;
 
 use std::{fmt::Display, io};

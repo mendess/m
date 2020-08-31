@@ -4,7 +4,9 @@ version = "0.1.0"
 authors = ["mendess <pedro.mendes.26@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = []
+jni_lib = ["jni"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -21,22 +23,27 @@ socket2 = "0.3"
 version = "0.2"
 features = ["io-util", "io-std", "tcp", "process", "rt-core", "stream", "rt-threaded", "macros", "sync" ]
 
-[target.'cfg(target_os="android")'.dependencies]
-jni = { version = "0.17", default-features = false }
+[target.aarch64-linux-android.dependencies]
+jni = { version = "0.17", default-features = false, optional = true }
+[target.armv7-linux-androidabi.dependencies]
+jni = { version = "0.17", default-features = false, optional = true }
+[target.i686-linux-android.dependencies]
+jni = { version = "0.17", default-features = false, optional = true }
 
 [lib]
 name = "jukebox"
 crate-type = ["rlib", "dylib"]
+required-features = ["jni_lib"]
 
 
-[target.aarch64-linux-android]
-ar = "../app/NDK/arm64/bin/aarch64-linux-android-ar"
-linker = "../app/NDK/arm64/bin/aarch64-linux-android-clang"
+# [target.aarch64-linux-android]
+# ar = "../app/NDK/arm64/bin/aarch64-linux-android-ar"
+# linker = "../app/NDK/arm64/bin/aarch64-linux-android-clang"
 
-[target.armv7-linux-androideabi]
-ar = "../app/NDK/arm/bin/arm-linux-androideabi-ar"
-linker = "../app/NDK/arm/bin/arm-linux-androideabi-clang"
+# [target.armv7-linux-androideabi]
+# ar = "../app/NDK/arm/bin/arm-linux-androideabi-ar"
+# linker = "../app/NDK/arm/bin/arm-linux-androideabi-clang"
 
-[target.i686-linux-android]
-ar = "../app/NDK/x86/bin/i686-linux-android-ar"
-linker = "../app/NDK/x86/bin/i686-linux-android-clang"
+# [target.i686-linux-android]
+# ar = "../app/NDK/x86/bin/i686-linux-android-ar"
+# linker = "../app/NDK/x86/bin/i686-linux-android-clang"
