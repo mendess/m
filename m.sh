@@ -298,9 +298,11 @@ up_next() {
 }
 
 current_song() {
+    local filename videoId chapter categories up_next
     filename=$(mpv_get media-title --raw-output '.data')
 
-    videoId="$(mpv_get filename --raw-output '.data')"
+    videoId="$(mpv_get filename --raw-output '.data' |
+        sed -E 's/.*-([a-zA-Z0-9\-\_]{11})(=m)?.*/\1/g')"
 
     chapter=$(mpv_get chapter-metadata '.data.title' -r)
 
@@ -335,7 +337,7 @@ $cateories"
 $up_next"
     case $1 in
         -i | --link)
-            mpv_get filename --raw-output '.data'
+            echo "https://youtu.be/$videoId"
             ;;
         -n | --notify)
             PROMPT_PROG=dmenu notify "Now Playing" "$filename"
@@ -347,7 +349,8 @@ $up_next"
 }
 
 add_cat() {
-    current_song=$(current_song --link |
+    local cat
+    readonly local current_song=$(current_song --link |
         tail -1 |
         sed 's/"//g' |
         sed -E 's/.*-([a-zA-Z0-9\-\_]{11})(=m)?.*/\1/g')
@@ -355,7 +358,14 @@ add_cat() {
     [ -z "$current_song" ] && exit 2
 
     while :; do
-        cat=$(echo | dmenu -p "Category name? (Esq to quit)")
+        case "$PROMPT_PROG" in
+            dmenu)
+                cat=$(echo | dmenu -p "Category name? (Esq to quit)")
+                ;;
+            fzf)
+                read -r -p "Category name? (Empty to quit)" cat
+                ;;
+        esac
         if [ -z "$cat" ]; then
             break
         fi
