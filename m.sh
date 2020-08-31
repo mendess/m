@@ -353,7 +353,7 @@ add_cat() {
     readonly local current_song=$(current_song --link |
         tail -1 |
         sed 's/"//g' |
-        sed -E 's/.*-([a-zA-Z0-9\-\_]{11})(=m)?.*/\1/g')
+        sed -E 's|.*/([^/]+)$|\1|g')
 
     [ -z "$current_song" ] && exit 2
 
