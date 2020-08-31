@@ -100,11 +100,12 @@ yes" | selector -i -p "With video?")
 play() {
     case $WITH_VIDEO in
         yes)
-            mpv --loop-playlist --input-ipc-server="$(mpvsocket new)" "$@"
+            mpv --geometry 820x466 --loop-playlist --input-ipc-server="$(mpvsocket new)" "$@"
             ;;
         no)
             if [ -z "$DISPLAY" ]; then
                 mpv \
+                    --geometry 820x466 \
                     --loop-playlist \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video "$@"
@@ -113,6 +114,7 @@ play() {
                 $TERMINAL \
                     --class m-media-player \
                     -e mpv \
+                    --geometry 820x466 \
                     --loop-playlist \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video \
@@ -814,6 +816,9 @@ main() {
             else
                 error "no players currently on to jukebox"
             fi
+            ;;
+        toggle-video)
+            echo 'cycle vid' | socat - "$(mpvsocket)"
             ;;
         r)
             ## Get help for interactive mode
