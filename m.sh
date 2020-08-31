@@ -305,7 +305,7 @@ current_song() {
     filename=$(mpv_get media-title --raw-output '.data')
 
     videoId="$(mpv_get filename --raw-output '.data' |
-        sed -E 's/.*-([a-zA-Z0-9\-\_]{11})(=m)?.*/\1/g')"
+        sed -E 's/.*-([a-zA-Z0-9\-_-]{11})(=m)?.*/\1/g')"
 
     chapter=$(mpv_get chapter-metadata '.data.title' -r)
 
@@ -323,16 +323,16 @@ Song:   $chapter"
     fi
     width=40
     [ "${#filename}" -gt $width ] && width="${#filename}"
-    cateories=$(awk -F'\t' '/'"$videoId"'/ {
+    categories=$(awk -F'\t' '/'"$videoId"'/ {
             for(i = 4; i <= NF; i++) {
                 acc = acc " | " $i
             };
             print("Categories:"acc" |")
         }' "$PLAYLIST" |
         fold -s -w "$width")
-    if [ -n "$cateories" ]; then
+    if [ "$categories" != 'Categories: |' ]; then
         filename="$filename
-$cateories"
+$categories"
     fi
     up_next="$(up_next)"
     [ -n "$up_next" ] && filename="$filename
@@ -588,15 +588,15 @@ add_song() {
 
 del_song() {
     num_results="$(grep -c -i "$*" "$PLAYLIST")"
-    [ "$num_results" -gt 1 ] &&
-        error 'too many results' \
-            "$(awk -F'\t' '$0 ~ /'"$*"'/ {print $1}' "$PLAYLIST")" &&
-        exit 1
-    [ "$num_results" -lt 1 ] &&
-        error 'no results' &&
-        exit 1
-    notify 'Deleting song' "$*"
-    sed -i '/'"$*"'/Id' "$PLAYLIST"
+    results="$(awk -F'\t' '$0 ~ /'"$*"'/ {print $1}' "$PLAYLIST")"
+    case "$num_results" in
+        0) error 'no results' && return 1 ;;
+        1)
+            notify 'Deleting song' "$results"
+            sed -i '/'"$*"'/Id' "$PLAYLIST"
+            ;;
+        *) error 'too many results' "$results" && return 1 ;;
+    esac
 }
 
 clean_dl_songs() {
