@@ -347,7 +347,10 @@ $up_next"
 }
 
 add_cat() {
-    current_song=$(current_song --link | tail -1 | sed 's/"//g')
+    current_song=$(current_song --link |
+        tail -1 |
+        sed 's/"//g' |
+        sed -E 's/.*-([a-zA-Z0-9\-\_]{11})(=m)?.*/\1/g')
 
     [ -z "$current_song" ] && exit 2
 
@@ -712,7 +715,7 @@ main() {
             ##     --notify        Send a notification
             queue "${@:2}"
             ;;
-         del | delete-song)
+        del | delete-song)
             ## Delete a passed song
             [ $# -gt 1 ] || exit 1
             del_song "${@:2}"
@@ -826,7 +829,7 @@ $0 ~ /main\(\)/         {in_main=1}
 in_main && /case/       {in_case=1}
 in_case && /\w[^)]*\)$/ {sub(/)/, "", $0); sub(/^ */, "", $0); print($0)}
 in_case && /^\s+##.*/   {sub(/^\s+##/, "", $0); print("\t"$0)}' \
-        "$0"
+                    "$0"
             fi
             ;;
         *)
