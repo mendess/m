@@ -9,6 +9,7 @@ readonly PLAYLIST="$(realpath "$CONFIG_DIR/playlist")"
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly TMPDIR="${TMPDIR:-/tmp}"
 readonly MUSIC_DIR="${XDG_MUSIC_DIR:-~/Music}"
+LOOP_PLAYLIST="--loop-playlist"
 WITH_VIDEO=no
 
 mkdir -p "$CONFIG_DIR"
@@ -100,13 +101,17 @@ yes" | selector -i -p "With video?")
 play() {
     case $WITH_VIDEO in
         yes)
-            mpv --geometry 820x466 --loop-playlist --input-ipc-server="$(mpvsocket new)" "$@"
+            mpv \
+                --geometry=820x466 \
+                "$LOOP_PLAYLIST" \
+                --input-ipc-server="$(mpvsocket new)"
+                "$@"
             ;;
         no)
             if [ -z "$DISPLAY" ]; then
                 mpv \
-                    --geometry 820x466 \
-                    --loop-playlist \
+                    --geometry=820x466 \
+                    "$LOOP_PLAYLIST" \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video "$@"
             else
@@ -114,15 +119,20 @@ play() {
                 $TERMINAL \
                     --class m-media-player \
                     -e mpv \
-                    --geometry 820x466 \
-                    --loop-playlist \
+                    --geometry=820x466 \
+                    "$LOOP_PLAYLIST" \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video \
                     "$@" &
             fi
             ;;
     esac
+}
 
+songs_in_cat() {
+    sed '/^$/ d' "$PLAYLIST" |
+        grep -P ".*\t.*\t.*\t.*$1" |
+        awk -F'\t' '{print $2}'
 }
 
 start_playlist_interactive() {
@@ -152,6 +162,7 @@ clipboard"
                     grep -F "$vidname" |
                     awk -F'\t' '{print $2}')"
             fi
+            LOOP_PLAYLIST=""
             ;;
 
         random)
@@ -159,7 +170,7 @@ clipboard"
                 shuf |
                 sed '1q' |
                 awk -F'\t' '{print $2}')"
-
+            LOOP_PLAYLIST=""
             ;;
 
         All)
@@ -179,26 +190,23 @@ clipboard"
                 selector -i -p "Which category?" -l 30 |
                 sed -E 's/^[ ]*[0-9]*[ ]*//')
 
-            [ -z "$catg" ] && exit
+            [ -z "$catg" ] && return 1
             vidlist=$(echo "$vidlist" | shuf)
-            readonly local vids="$(echo "$vidlist" |
-                grep -P ".*\t.*\t.*\t.*$catg" |
-                awk -F'\t' '{print $2}' |
-                xargs)"
-
+            readonly local vids="$(songs_in_cat "$catg" | xargs)"
             ;;
 
         clipboard)
             readonly local clipboard=1
             readonly local vids="$(xclip -sel clip -o)"
-            [ -n "$vids" ] || exit 1
+            [ -n "$vids" ] || return 1
+            LOOP_PLAYLIST=""
             ;;
         *)
-            exit
+            return 1
             ;;
     esac
 
-    [ -z "$vids" ] && exit
+    [ -z "$vids" ] && return 1
 
     with_video
 
@@ -236,7 +244,7 @@ clipboard"
                 fi
             done
         else
-            local cmd=(main queue "${final_list[@]}" --notify)
+            local cmd=(queue "${final_list[@]}" --notify)
             [ "$mode" = All ] && cmd+=(--no-move)
             "${cmd[@]}"
         fi
@@ -390,14 +398,14 @@ interpret_song() {
             return 1
             ;;
         http*)
-            readonly local n_titles="$(youtube-dl \
-                --max-downloads 1 \
-                --get-title "$1" \
-                --quiet |
-                wc -l)"
-            [ "$n_titles" -ne 1 ] &&
-                error 'Invalid link:' "$1" &&
-                echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails"
+            # readonly local n_titles="$(youtube-dl \
+            #     --max-downloads 1 \
+            #     --get-title "$1" \
+            #     --quiet |
+            #     wc -l)"
+            # [ "$n_titles" -ne 1 ] &&
+            #     error 'Invalid link:' "$1" &&
+            #     echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails"
 
             echo "$1"
             ;;
@@ -443,6 +451,17 @@ queue() {
             -s | --search)
                 shift
                 targets+=("ytdl://ytsearch:$1")
+                ;;
+            -c | --category)
+                shift
+                while read -r line; do
+                    targets+=("$(check_cache "$line")");
+                done < <(songs_in_cat "$1")
+                ;;
+            --category=*)
+                while read -r line; do
+                    targets+=("$(check_cache "$line")")
+                done < <(songs_in_cat "${1#*=}")
                 ;;
             *)
                 local t
@@ -669,6 +688,7 @@ main() {
                     ;;
             esac
             with_video force
+            [[ "$song" != *playlist* ]] && LOOP_PLAYLIST=""
             play "$song"
             ;;
         playlist | play-interactive)
@@ -725,9 +745,11 @@ main() {
         queue)
             ## Queue a song
             ## Options:
-            ##     --reset         Resets the queue fairness
-            ##     --seach STRING  Searches youtube for the STRING
-            ##     --notify        Send a notification
+            ##     -r | --reset            Resets the queue fairness
+            ##     -s | --search STRING    Searches youtube for the STRING
+            ##     -n | --notify           Send a notification
+            ##     -m | --no-move          Don't move in the playlist, keep it at the end
+            ##     -c | --category STRING  Queue all songs in a category
             queue "${@:2}"
             ;;
         del | delete-song)
