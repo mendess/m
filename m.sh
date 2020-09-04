@@ -456,12 +456,12 @@ queue() {
                 shift
                 while read -r line; do
                     targets+=("$(check_cache "$line")");
-                done < <(songs_in_cat "$1")
+                done < <(songs_in_cat "$1" | shuf)
                 ;;
             --category=*)
                 while read -r line; do
                     targets+=("$(check_cache "$line")")
-                done < <(songs_in_cat "${1#*=}")
+                done < <(songs_in_cat "${1#*=}" | shuf)
                 ;;
             *)
                 local t
