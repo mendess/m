@@ -590,7 +590,7 @@ add_song() {
         error "$entry already in $PLAYLIST" &&
         exit 1
     categories=$(echo "${@:2}" | tr '[:upper:]' '[:lower:]' | tr ' ' '\t' | sed -E 's/\t$//')
-    [ -n "$categories" ] && "	$categories"
+    [ -n "$categories" ] && categories="	$categories"
     notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
     [ "${PIPESTATUS[0]}" -ne 0 ] && error 'Failed to get title from output' && exit 1
