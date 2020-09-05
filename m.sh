@@ -549,7 +549,7 @@ queue() {
         fi
     done
     wait
-    [ ${#targets} -ge 5 ] && queue --reset
+    [ ${#targets[@]} -ge 5 ] && queue --reset
 }
 
 preempt_download() {
