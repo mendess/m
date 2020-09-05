@@ -83,7 +83,7 @@ notify() {
         fi
     else
         local args=("${text[@]}")
-        args+=(-a "m")
+        args+=(-a "$SCRIPT_NAME")
         [ -n "$img" ] && args+=(-i "$img")
         [ -n "$err" ] && args+=(--urgency critical)
         notify-send "${args[@]}"
@@ -567,7 +567,9 @@ preempt_download() {
     mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
     local count=$(mpv_get playlist-count --raw-output '.data')
     mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
-    sleep 60m
+    while [ "$(($(mpv_get playlist-pos --raw-output .data) - 5))" -lt "$queue_pos" ]; do
+        sleep 10m
+    done
     mpv_do '["loadfile", "'"$2"'", "append"]' >/dev/null
     mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
     count=$(mpv_get playlist-count --raw-output '.data')
