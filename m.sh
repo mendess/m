@@ -54,6 +54,8 @@ selector() {
 }
 
 notify() {
+    bold() { if [ -t 1 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
+    red() { if [ -t 1 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
     local text=()
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -71,12 +73,12 @@ notify() {
         shift
     done
     tty() {
-        echo -e "\e[1m${text[0]}\e[0m"
+        bold "${text[0]}\n"
         if [ -n "${text[1]}" ]; then echo -e "${text[1]}"; fi # don't change to short form
     }
     if [ "$PROMPT_PROG" = fzf ]; then
         if [[ "$err" ]]; then
-            echo -ne "\e[31mError:\e[0m" >&2
+            red "Error:" >&2
             tty >&2
         else
             tty
@@ -106,7 +108,7 @@ play() {
                 --geometry=820x466 \
                 "$LOOP_PLAYLIST" \
                 --input-ipc-server="$(mpvsocket new)"
-                "$@"
+            "$@"
             ;;
         no)
             if [ -z "$DISPLAY" ]; then
@@ -311,10 +313,11 @@ up_next() {
 
 current_song() {
     local filename videoId chapter categories up_next
-    filename=$(mpv_get media-title --raw-output '.data')
-
     videoId="$(mpv_get filename --raw-output '.data' |
         sed -E 's/.*-([a-zA-Z0-9\-_-]{11})(=m)?.*/\1/g')"
+    [[ "$1" =~ (-i|--link) ]] && notify "https://youtu.be/$videoId" && return
+
+    filename=$(mpv_get media-title --raw-output '.data')
 
     chapter=$(mpv_get chapter-metadata '.data.title' -r)
 
@@ -326,10 +329,20 @@ current_song() {
         filename=$(grep "$videoId" "$PLAYLIST" | awk -F '\t' '{print $1}')
         [ -z "$filename" ] && filename="$videoId"
     fi
-    if [ -n "$chapter" ] && [ "$chapter" != "null" ]; then
-        filename="Video:  $filename
-Song:   $chapter"
-    fi
+    local status
+    case "$(mpv_get pause --raw-output .data)" in
+        true) status="||" ;;
+        false) status=">" ;;
+    esac
+    local volume="$(mpv_get volume --raw-output .data)"
+    [[ "$1" =~ (-s|--short) ]] && {
+        if [ -n "$chapter" ] && [ "$chapter" != "null" ]; then
+            notify "Video: $filename Song: $chapter $status ${volume}%"
+        else
+            notify "$filename $status ${volume}%"
+        fi
+        return
+    }
     width=40
     [ "${#filename}" -gt $width ] && width="${#filename}"
     categories=$(awk -F'\t' '/'"$videoId"'/ {
@@ -339,6 +352,9 @@ Song:   $chapter"
             print("Categories:"acc" |")
         }' "$PLAYLIST" |
         fold -s -w "$width")
+    [[ ! "$1" =~ (-n|--notify) ]] && filename="$filename
+$status 🔉${volume}%"
+
     if [ "$categories" != 'Categories: |' ]; then
         filename="$filename
 $categories"
@@ -347,17 +363,10 @@ $categories"
     [ -n "$up_next" ] && filename="$filename
 
 $up_next"
-    case $1 in
-        -i | --link)
-            echo "https://youtu.be/$videoId"
-            ;;
-        -n | --notify)
-            PROMPT_PROG=dmenu notify "Now Playing" "$filename"
-            ;;
-        *)
-            notify "Now Playing" "$filename"
-            ;;
-    esac
+    local pprog="$PROMPT_PROG"
+    [[ "$1" =~ (-n|--notify) ]] && PROMPT_PROG=dmenu
+    notify "Now Playing" "$filename"
+    PROMPT_PROG="$pprog"
 }
 
 add_cat() {
@@ -456,7 +465,7 @@ queue() {
             -c | --category)
                 shift
                 while read -r line; do
-                    targets+=("$(check_cache "$line")");
+                    targets+=("$(check_cache "$line")")
                 done < <(songs_in_cat "$1" | shuf)
                 ;;
             --category=*)
