@@ -5,11 +5,11 @@
 #shellcheck disable=SC1090
 [ -e ~/.config/user-dirs.dirs ] && . ~/.config/user-dirs.dirs
 
-readonly CONFIG_DIR="${XDG_CONFIG_HOME:-~/.config/}/m"
-readonly PLAYLIST="$(realpath "$CONFIG_DIR/playlist")"
-readonly SCRIPT_NAME="$(basename "$0")"
-readonly TMPDIR="${TMPDIR:-/tmp}"
-readonly MUSIC_DIR="${XDG_MUSIC_DIR:-~/Music}"
+CONFIG_DIR="${XDG_CONFIG_HOME:-~/.config/}/m"
+PLAYLIST="$(realpath "$CONFIG_DIR/playlist")"
+SCRIPT_NAME="$(basename "$0")"
+TMPDIR="${TMPDIR:-/tmp}"
+MUSIC_DIR="${XDG_MUSIC_DIR:-~/Music}"
 LOOP_PLAYLIST="--loop-playlist"
 WITH_VIDEO=no
 
@@ -42,8 +42,8 @@ check_cache() {
 selector() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            -l) readonly local listsize="$2" ;;
-            -p) readonly local prompt="$2" ;;
+            -l) local listsize="$2" ;;
+            -p) local prompt="$2" ;;
         esac
         shift
     done
@@ -137,13 +137,13 @@ songs_in_cat() {
 }
 
 start_playlist_interactive() {
-    readonly local modes="single
+    local modes="single
 random
 All
 Category
 clipboard"
 
-    readonly local mode=$(echo "$modes" |
+    local mode=$(echo "$modes" |
         selector -i -p "Mode?" -l "$(echo "$modes" | wc -l)")
 
     local vidlist
@@ -151,7 +151,7 @@ clipboard"
 
     case "$mode" in
         single)
-            readonly local vidname="$(echo "$vidlist" |
+            local vidname="$(echo "$vidlist" |
                 awk -F'\t' '{print $1}' |
                 tac |
                 selector -i -p "Which video?" -l "$(echo "$vidlist" | wc -l)")"
@@ -159,7 +159,7 @@ clipboard"
             if [ -z "$vidname" ]; then
                 exit 1
             else
-                readonly local vids="$(echo "$vidlist" |
+                local vids="$(echo "$vidlist" |
                     grep -F "$vidname" |
                     awk -F'\t' '{print $2}')"
             fi
@@ -167,7 +167,7 @@ clipboard"
             ;;
 
         random)
-            readonly local vids="$(echo "$vidlist" |
+            local vids="$(echo "$vidlist" |
                 shuf |
                 sed '1q' |
                 awk -F'\t' '{print $2}')"
@@ -175,14 +175,14 @@ clipboard"
             ;;
 
         All)
-            readonly local vids="$(echo "$vidlist" |
+            local vids="$(echo "$vidlist" |
                 shuf |
                 awk -F'\t' '{print $2}' |
                 xargs)"
             ;;
 
         Category)
-            readonly local catg=$(echo "$vidlist" |
+            local catg=$(echo "$vidlist" |
                 awk -F'\t' '{for(i = 4; i <= NF; i++) { print $i } }' |
                 tr '\t' '\n' |
                 sed '/^$/ d' |
@@ -193,12 +193,12 @@ clipboard"
 
             [ -z "$catg" ] && return 1
             vidlist=$(echo "$vidlist" | shuf)
-            readonly local vids="$(songs_in_cat "$catg" | xargs)"
+            local vids="$(songs_in_cat "$catg" | xargs)"
             ;;
 
         clipboard)
-            readonly local clipboard=1
-            readonly local vids="$(xclip -sel clip -o)"
+            local clipboard=1
+            local vids="$(xclip -sel clip -o)"
             [ -n "$vids" ] || return 1
             LOOP_PLAYLIST=""
             ;;
@@ -231,7 +231,7 @@ clipboard"
     if [ "$(mpvsocket)" != "/dev/null" ]; then
         for song in "${final_list[@]}"; do
             [[ "$song" == *playlist* ]] &&
-                readonly local playlist=1 &&
+                local playlist=1 &&
                 break
         done
         if [ "$playlist" ]; then
@@ -256,7 +256,7 @@ clipboard"
             sleep 5
             m queue "${final_list[@]:10}" --no-move
         ) &
-        readonly local starting_queue=("${final_list[@]:0:10}")
+        local starting_queue=("${final_list[@]:0:10}")
         play "${starting_queue[@]}"
     fi
 }
@@ -362,7 +362,7 @@ $up_next"
 
 add_cat() {
     local cat
-    readonly local current_song=$(current_song --link |
+    local current_song=$(current_song --link |
         tail -1 |
         sed 's/"//g' |
         sed -E 's|.*/([^/]+)$|\1|g')
@@ -399,7 +399,7 @@ interpret_song() {
             return 1
             ;;
         http*)
-            # readonly local n_titles="$(youtube-dl \
+            # local n_titles="$(youtube-dl \
             #     --max-downloads 1 \
             #     --get-title "$1" \
             #     --quiet |
@@ -417,9 +417,9 @@ interpret_song() {
             elif [ -e "$1" ]; then
                 echo "$1"
             else
-                readonly local matches="$(awk -F'\t' '{print($1"\t"$2)}' "$PLAYLIST" |
+                local matches="$(awk -F'\t' '{print($1"\t"$2)}' "$PLAYLIST" |
                     grep -i "$1")"
-                readonly local link="$(echo "$matches" | cut -f2)"
+                local link="$(echo "$matches" | cut -f2)"
                 { {
                     [ -z "$link" ] && error "No song found"
                 } || {
@@ -483,7 +483,7 @@ queue() {
         echo -n "Queueing song: '$file'... "
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
         if [[ "$no_move" ]]; then
-            readonly local playlist_pos=$(mpv_get playlist-count --raw-output '.data')
+            local playlist_pos=$(mpv_get playlist-count --raw-output '.data')
         else
             local count current target last_queue
             count=$(mpv_get playlist-count --raw-output '.data')
@@ -497,7 +497,7 @@ queue() {
             echo -n "Moving from $count -> $target ... "
             mpv_do '["playlist-move", '$((count - 1))', '$target']' --raw-output .error
             echo "$target" >"$last_queue"
-            readonly local playlist_pos=$target
+            local playlist_pos=$target
         fi
         [ "$notify" = 1 ] && {
             local img img_back name
@@ -543,13 +543,13 @@ queue() {
 }
 
 preempt_download() {
-    readonly local queue_pos="$1"
+    local queue_pos="$1"
     case "$2" in
         ytdl://ytsearch:*)
-            readonly local link="ytsearch1:${2#ytdl://ytsearch:}"
+            local link="ytsearch1:${2#ytdl://ytsearch:}"
             ;;
         *)
-            readonly local link="$2"
+            local link="$2"
             ;;
     esac
     youtube-dl "$link" \
@@ -557,11 +557,11 @@ preempt_download() {
         --add-metadata \
         --output ~/.cache/queue_cache/'%(id)s.%(ext)s' &
 
-    readonly local id="$(youtube-dl "$link" --get-id)" || return
+    local id="$(youtube-dl "$link" --get-id)" || return
     wait
 
     echo "i: $id"
-    readonly local filename=~/.cache/queue_cache/"$id.m4a"
+    local filename=~/.cache/queue_cache/"$id.m4a"
     mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
     mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
     local count=$(mpv_get playlist-count --raw-output '.data')
@@ -717,14 +717,14 @@ main() {
             ##      -s | --search  Search the song on youtube
             case "$2" in
                 -s | --search)
-                    readonly local song="$(interpret_song "--search=$3")"
+                    local song="$(interpret_song "--search=$3")"
                     ;;
                 '')
                     error 'Give me something to play'
                     exit 1
                     ;;
                 *)
-                    readonly local song="$(interpret_song "$2")"
+                    local song="$(interpret_song "$2")"
                     ;;
             esac
             with_video force
