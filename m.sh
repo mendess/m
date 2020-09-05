@@ -1,5 +1,6 @@
 #!/bin/bash
 #shellcheck disable=SC2119
+#shellcheck disable=SC2155
 
 #shellcheck disable=SC1090
 [ -e ~/.config/user-dirs.dirs ] && . ~/.config/user-dirs.dirs
@@ -136,14 +137,14 @@ songs_in_cat() {
 }
 
 start_playlist_interactive() {
-    readonly local MODES="single
+    readonly local modes="single
 random
 All
 Category
 clipboard"
 
-    readonly local mode=$(echo "$MODES" |
-        selector -i -p "Mode?" -l "$(echo "$MODES" | wc -l)")
+    readonly local mode=$(echo "$modes" |
+        selector -i -p "Mode?" -l "$(echo "$modes" | wc -l)")
 
     local vidlist
     vidlist=$(sed '/^$/ d' "$PLAYLIST")
@@ -481,30 +482,32 @@ queue() {
     for file in "${targets[@]}"; do
         echo -n "Queueing song: '$file'... "
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
+        if [[ "$no_move" ]]; then
+            readonly local playlist_pos=$(mpv_get playlist-count --raw-output '.data')
+        else
+            local count current target last_queue
+            count=$(mpv_get playlist-count --raw-output '.data')
+            current=$(mpv_get playlist-pos --raw-output '.data')
 
-        [ "$no_move" ] || {
-            local COUNT CURRENT TARGET LAST_QUEUE
-            COUNT=$(mpv_get playlist-count --raw-output '.data')
-            CURRENT=$(mpv_get playlist-pos --raw-output '.data')
-
-            TARGET=$((CURRENT + 1))
-            LAST_QUEUE="$(last_queue)"
-            [ -e "$LAST_QUEUE" ] &&
-                [ "$TARGET" -le "$(cat "$LAST_QUEUE")" ] &&
-                TARGET=$(($(cat "$LAST_QUEUE") + 1))
-            echo -n "Moving from $COUNT -> $TARGET ... "
-            mpv_do '["playlist-move", '$((COUNT - 1))', '$TARGET']' --raw-output .error
-            echo "$TARGET" >"$LAST_QUEUE"
-        }
+            target=$((current + 1))
+            last_queue="$(last_queue)"
+            [ -e "$last_queue" ] &&
+                [ "$target" -le "$(cat "$last_queue")" ] &&
+                target=$(($(cat "$last_queue") + 1))
+            echo -n "Moving from $count -> $target ... "
+            mpv_do '["playlist-move", '$((count - 1))', '$target']' --raw-output .error
+            echo "$target" >"$last_queue"
+            readonly local playlist_pos=$target
+        fi
         [ "$notify" = 1 ] && {
-            local IMG IMG_BACK name
-            IMG=$(mktemp --tmpdir tmp.XXXXXXXXXXXXXXXXX.png)
-            IMG_BACK="${IMG}_back.png"
+            local img img_back name
+            img=$(mktemp --tmpdir tmp.XXXXXXXXXXXXXXXXX.png)
+            img_back="${img}_back.png"
             if [[ "$file" == https* ]]; then
                 local data
                 data=$(youtube-dl --get-title "$file" --get-thumbnail)
                 name=$(echo "$data" | head -1)
-                echo "$data" | tail -1 | xargs -r wget --quiet -O "$IMG"
+                echo "$data" | tail -1 | xargs -r wget --quiet -O "$img"
                 [ -z "$name" ] && name="$file"
             else
                 name="$(ffprobe "$file" 2>&1 |
@@ -518,15 +521,20 @@ queue() {
                     -vsync 2 \
                     -i "$file" \
                     -frames:v 1 \
-                    "$IMG" >/dev/null
+                    "$img" >/dev/null
             fi
-            convert -scale x64 -- "$IMG" "$IMG_BACK" && mv "$IMG_BACK" "$IMG"
+            convert -scale x64 -- "$img" "$img_back" && mv "$img_back" "$img"
             PROMPT_PROG=dmenu notify "Queued '$name'" \
-                "$([ "$CURRENT" ] &&
-                    printf "Current: %s\nQueue pos: %s" "$CURRENT" "$TARGET")" \
-                -i "$IMG"
-            rm -f "$IMG"
+                "$([ "$current" ] &&
+                    printf "Current: %s\nQueue pos: %s" "$current" "$target")" \
+                -i "$img"
+            rm -f "$img"
         } &
+        [[ "$file" =~ (ytdl|http).* ]] && {
+            preempt_download "$playlist_pos" "$file" &
+            disown
+        }
+
         if [ "$(jobs -p | wc -l)" -ge "$(nproc)" ]; then
             wait -n
         fi
@@ -534,17 +542,49 @@ queue() {
     wait
 }
 
-now() {
-    local CURRENT START END
-    CURRENT="$(mpv_get playlist-pos | jq .data)"
-    START="$((CURRENT - 1))"
-    case "$START" in
-        -1 | 0) START="1" ;;
+preempt_download() {
+    readonly local queue_pos="$1"
+    case "$2" in
+        ytdl://ytsearch:*)
+            readonly local link="ytsearch1:${2#ytdl://ytsearch:}"
+            ;;
+        *)
+            readonly local link="$2"
+            ;;
     esac
-    END="$((START + 10))"
+    youtube-dl "$link" \
+        --format 'bestaudio[ext=m4a]' \
+        --add-metadata \
+        --output ~/.cache/queue_cache/'%(id)s.%(ext)s' &
+
+    readonly local id="$(youtube-dl "$link" --get-id)" || return
+    wait
+
+    echo "i: $id"
+    readonly local filename=~/.cache/queue_cache/"$id.m4a"
+    mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
+    mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
+    local count=$(mpv_get playlist-count --raw-output '.data')
+    mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
+    sleep 60m
+    mpv_do '["loadfile", "'"$2"'", "append"]' >/dev/null
+    mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
+    count=$(mpv_get playlist-count --raw-output '.data')
+    mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
+    rm "$filename"
+}
+
+now() {
+    local current start end
+    current="$(mpv_get playlist-pos | jq .data)"
+    start="$((current - 1))"
+    case "$start" in
+        -1 | 0) start="1" ;;
+    esac
+    end="$((start + 10))"
     #shellcheck disable=SC2016
     mpv_get playlist -r '.data | .[] | .filename' |
-        sed -n "${START},${END}p;$((END + 1))q;" |
+        sed -n "${start},${end}p;$((end + 1))q;" |
         perl -ne 's|^.*/([^/]*?)(-[A-Za-z0-9\-_-]{11}=m)?\.[^./]*$|\1\n|; print' |
         python -c 'from threading import Thread
 import fileinput
@@ -572,7 +612,7 @@ for i in range(11):
         ts[i].join()
         if titles[i]:
             print(titles[i])' |
-        awk -v current="$CURRENT" -v pos="$((--START))" \
+        awk -v current="$current" -v pos="$((--start))" \
             '{
             if (pos != current) {
                 printf("%3d     %s\n", pos, $0)
