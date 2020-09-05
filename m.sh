@@ -795,7 +795,7 @@ main() {
             ## Add a category to the current song
             add_cat "${@:2}"
             ;;
-        queue)
+        q | queue)
             ## Queue a song
             ## Options:
             ##     -r | --reset            Resets the queue fairness
