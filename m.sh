@@ -35,7 +35,7 @@ update_panel() {
 
 check_cache() {
     local PATTERN
-    PATTERN=("$MUSIC_DIR"/*"$(basename "$1")"*)
+    PATTERN=("$MUSIC_DIR"/*"$(basename "$1" | grep -Eo '.......$')"*)
     [[ -f "${PATTERN[0]}" ]] && echo "${PATTERN[0]}" || echo "$1"
 }
 
@@ -408,7 +408,7 @@ interpret_song() {
             #     error 'Invalid link:' "$1" &&
             #     echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails"
 
-            echo "$1"
+            check_cache "$1"
             ;;
         *)
             if [ -z "$1" ]; then
@@ -540,6 +540,7 @@ queue() {
         fi
     done
     wait
+    [ ${#targets} -ge 5 ] && queue --reset
 }
 
 preempt_download() {
