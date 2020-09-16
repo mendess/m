@@ -371,7 +371,7 @@ $up_next"
 
 add_cat() {
     local cat
-    local current_song=$(current_song --link |
+    local current_song=$(PROMPT_PROG=fzf current_song --link |
         tail -1 |
         sed 's/"//g' |
         sed -E 's|.*/([^/]+)$|\1|g')
