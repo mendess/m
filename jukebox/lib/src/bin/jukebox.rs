@@ -1,5 +1,6 @@
 use jukebox::{
     relay::{self, client_util},
+    relay2,
     server,
 };
 use std::{
@@ -96,7 +97,7 @@ async fn main() {
     let prompt = jukebox::prompt::Prompt::default();
     let r = match options.mode {
         Mode::Server => server::run(options.port).await,
-        Mode::Relay => relay::server::run(options.port).await,
+        Mode::Relay => relay2::start(options.port).await,
         Mode::Jukebox => match options.room {
             Some(r) => relay::jukebox::start_protocol(addr, options.reconnect)
                 .and_then(|(mut socket, room_name)| {

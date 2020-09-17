@@ -30,4 +30,11 @@ impl Response {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+enum Protocol {
+    User,
+    Jukebox,
+    Reconnect,
+    Admin,
+}
 

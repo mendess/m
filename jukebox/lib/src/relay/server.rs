@@ -1,11 +1,11 @@
-use super::{Request, Response};
+use super::{Protocol, Request, Response};
+use crate::socket_channel::{self, Receiver as SReceiver, Sender as SSender};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use std::{collections::HashMap, marker::Unpin, net::Ipv4Addr, sync::Arc};
+use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 use tokio::{
-    io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
+    io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
-    prelude::*,
     stream::StreamExt,
     sync::{
         mpsc::{self, Receiver, Sender},
@@ -46,74 +46,49 @@ struct User {
     id: usize,
     requests: Sender<Message>,
     responses: Receiver<Response>,
-    read_socket: BufReader<TcpStream>,
-    write_socket: TcpStream,
-    buf: String,
 }
 
 impl User {
-    async fn new(
-        name: &str,
-        read_socket: BufReader<TcpStream>,
-        write_socket: TcpStream,
-    ) -> Option<Self> {
-        let (id, mut requests) = {
-            let mut rooms = ROOMS.lock().await;
-            let mut state = rooms.get_mut(name)?;
-            let id = state.counter;
-            state.counter += 1;
-            (id, state.channel.clone())
-        };
-        let (tx, rx) = mpsc::channel(2);
-        requests.send(Message::Register(id, tx)).await.ok()?;
-        Some(Self {
+    fn new(
+        id: usize,
+        requests: Sender<Message>,
+        responses: Receiver<Response>,
+    ) -> Self {
+        Self {
             id,
             requests,
-            responses: rx,
-            read_socket,
-            write_socket,
-            buf: Default::default(),
-        })
+            responses,
+        }
     }
 
-    async fn recv(&mut self) -> io::Result<usize> {
-        let mut i = 0;
-        while {
-            self.buf.clear();
-            i = self.read_socket.read_line(&mut self.buf).await?;
-            self.buf.pop();
-            self.buf.is_empty()
-        } {}
-        Ok(i)
-    }
-
-    async fn send<M: serde::Serialize>(&mut self, m: M) -> io::Result<()> {
-        self.write_socket
-            .write_all(serde_json::to_string(&m)?.as_bytes())
-            .await
-    }
-
-    async fn handle<R, W>(&mut self) -> io::Result<()>
+    async fn handle<R, W>(
+        &mut self,
+        mut receiver: SReceiver<R>,
+        mut sender: SSender<W>,
+    ) -> io::Result<()>
     where
         R: AsyncBufReadExt + Unpin,
-        W: AsyncWrite + Unpin,
+        W: AsyncWriteExt + Unpin,
     {
         eprintln!("[U::handle::{}] Handling", self.id);
-        while self.recv().await? > 0 {
-            eprintln!("[U::handle::{}] requesting {:?}", self.id, self.buf);
+        loop {
+            // TODO: select and use an id per msg
+            let msg = receiver.arecv::<String>().await?;
+            eprintln!("[U::handle::{}] requesting {:?}", self.id, msg);
             if let Err(_) = self
                 .requests
                 .send(Message::Request(Request {
                     id: self.id,
-                    s: self.buf.clone(),
+                    s: msg,
                 }))
                 .await
             {
                 eprintln!("[U::handle::{}] jukebox left", self.id);
-                self.send(Result::<String, String>::Err(String::from(
-                    "Jukebox left",
-                )))
-                .await?;
+                sender
+                    .asend(Result::<String, String>::Err(String::from(
+                        "Jukebox left",
+                    )))
+                    .await?;
                 break;
             }
             let r = match self.responses.recv().await {
@@ -121,7 +96,7 @@ impl User {
                 None => break,
             };
             eprintln!("[U::handle::{}] responding with '{:?}'", self.id, r);
-            self.send(&r.data).await?;
+            sender.asend(&r.data).await?;
         }
         eprintln!("[U::handle::{}] user left", self.id);
         Ok(())
@@ -154,12 +129,12 @@ impl Jukebox {
 
     async fn handle<R, W>(
         &mut self,
-        mut reader: R,
-        mut writer: W,
+        mut receiver: SReceiver<R>,
+        mut sender: SSender<W>,
     ) -> io::Result<Option<Arc<Notify>>>
     where
         R: AsyncBufReadExt + Unpin,
-        W: AsyncWrite + Unpin,
+        W: AsyncWriteExt + Unpin,
     {
         eprintln!("[J::handle::{}] Handling", self.name);
         let mut s = String::new();
@@ -173,9 +148,7 @@ impl Jukebox {
                                 self.name,
                                 req
                             );
-                            writer
-                                .write_all(serde_json::to_string(&req)?.as_bytes())
-                                .await?;
+                            sender.asend(&req).await?;
                             eprintln!("[J::handle::{}] sent", self.name)
                         }
                         Message::Register(id, ch) => {
@@ -196,14 +169,8 @@ impl Jukebox {
                         }
                     }
                 }
-                o = reader.read_line(&mut s) => {
-                    match o? {
-                        0 => break Ok(None),
-                        1 => continue,
-                        _ => (),
-                    }
-                    s.pop();
-                    let r = serde_json::from_str::<Response>(&s)?;
+                r = receiver.arecv_with_buf::<Response>(&mut s) => {
+                    let r = r?;
                     eprintln!("[J::handle::{}] got {:?} from remote", self.name, r);
                     let sender = match self.users.get_mut(&r.id) {
                         Some(s) => s,
@@ -227,36 +194,31 @@ impl Jukebox {
 struct Admin;
 
 impl Admin {
-    async fn handle<W, R>(self, mut reader: R, writer: W) -> io::Result<()>
+    async fn handle<R, W>(
+        self,
+        mut receiver: SReceiver<R>,
+        mut sender: SSender<W>,
+    ) -> io::Result<()>
     where
         R: AsyncBufReadExt + Unpin,
-        W: AsyncWrite + Unpin,
+        W: AsyncWriteExt + Unpin,
     {
         eprintln!("[A] Handling");
-        let mut writer = BufWriter::new(writer);
         let mut s = String::new();
-        async fn send<W>(
-            mut writer: W,
-            response: Result<String, String>,
-        ) -> io::Result<()>
-        where
-            W: AsyncWrite + Unpin,
-        {
-            let r = dbg!(serde_json::to_string(&response)?);
-            writer.write_all(r.as_bytes()).await?;
-            writer.flush().await?;
-            Ok(())
-        };
-        while reader.read_line(&mut s).await? > 0 {
-            match s.trim() {
+        loop {
+            let msg = receiver.arecv_with_buf::<String>(&mut s).await?;
+            match msg.trim() {
                 "rooms" => {
                     let s = ROOMS.lock().await.keys().join("\n");
-                    send(&mut writer, Ok(s)).await?
+                    sender.asend::<Result<_, ()>>(Ok(s)).await?
                 }
-                _ => send(&mut writer, Err("Invalid command".into())).await?,
+                _ => {
+                    sender
+                        .asend::<Result<(), _>>(Err("Invalid command"))
+                        .await?
+                }
             }
         }
-        Ok(())
     }
 }
 
@@ -267,37 +229,40 @@ enum Kind {
     Admin,
 }
 
-async fn get_name<R, W>(mut reader: R, mut writer: W) -> io::Result<String>
+async fn get_name<R, W>(
+    receiver: &mut SReceiver<R>,
+    sender: &mut SSender<W>,
+) -> io::Result<String>
 where
     R: AsyncBufReadExt + Unpin,
-    W: AsyncWrite + Unpin,
+    W: AsyncWriteExt + Unpin,
 {
     let mut s = String::new();
     loop {
-        s.clear();
-        reader.read_line(&mut s).await?;
-        s.pop();
-        if ROOMS.lock().await.contains_key(&s) {
+        let msg = receiver.arecv_with_buf::<String>(&mut s).await?;
+        if ROOMS.lock().await.contains_key(&msg) {
             break;
         }
-        writer.write_all(&[false as u8]).await?;
+        sender.asend(false).await?;
     }
+    sender.asend(true).await?;
     Ok(s)
 }
 
-async fn create_room<R, W>(mut reader: R, mut writer: W) -> io::Result<Jukebox>
+async fn create_room<R, W>(
+    receiver: &mut SReceiver<R>,
+    sender: &mut SSender<W>,
+) -> io::Result<Jukebox>
 where
     R: AsyncBufReadExt + Unpin,
-    W: AsyncWrite + Unpin,
+    W: AsyncWriteExt + Unpin,
 {
     let mut s = String::new();
-    loop {
-        s.clear();
-        reader.read_line(&mut s).await?;
-        s.pop();
+    let r = loop {
+        let msg = receiver.arecv_with_buf::<String>(&mut s).await?;
         {
             let mut guard = ROOMS.lock().await;
-            match guard.get_mut(&s) {
+            match guard.get_mut(&msg) {
                 Some(room) => {
                     if let Some(jbox) = room.jukebox.take() {
                         eprintln!("[J::{}] Reconnecting to existing room", s);
@@ -312,19 +277,23 @@ where
                 }
             }
         }
-        writer.write_all(&[false as u8]).await?;
-    }
+        sender.asend(false).await?;
+    };
+    sender.asend(true).await?;
+    r
 }
 
-async fn reconnect_room<R>(mut reader: R) -> io::Result<Jukebox>
+async fn reconnect_room<R, W>(
+    receiver: &mut SReceiver<R>,
+    sender: &mut SSender<W>,
+) -> io::Result<Jukebox>
 where
     R: AsyncBufReadExt + Unpin,
+    W: AsyncWriteExt + Unpin,
 {
-    let mut s = String::new();
-    reader.read_line(&mut s).await?;
-    s.pop();
+    let s = receiver.arecv::<String>().await?;
     let mut guard = ROOMS.lock().await;
-    match guard.get_mut(&s) {
+    let r = match guard.get_mut(&s) {
         Some(room) => {
             if let Some(jbox) = room.jukebox.take() {
                 eprintln!(
@@ -380,49 +349,65 @@ where
             );
             Ok(Jukebox::new(s, rx))
         }
+    };
+    sender.asend(true).await?;
+    r
+}
+
+async fn protocol<R, W>(
+    receiver: &mut SReceiver<R>,
+    sender: &mut SSender<W>,
+) -> io::Result<Kind>
+where
+    R: AsyncBufReadExt + Unpin,
+    W: AsyncWriteExt + Unpin,
+{
+    match receiver.arecv().await? {
+        Protocol::User => {
+            let name = get_name(receiver, sender).await?;
+            let (id, mut requests) = {
+                let mut rooms = ROOMS.lock().await;
+                let mut state = match rooms.get_mut(&name) {
+                    Some(state) => state,
+                    None => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "jukebox is gone",
+                        ))
+                    }
+                };
+                let id = state.counter;
+                state.counter += 1;
+                (id, state.channel.clone())
+            };
+            let (tx, rx) = mpsc::channel(2);
+            if let Err(_) = requests.send(Message::Register(id, tx)).await {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "jukebox is gone",
+                ));
+            }
+            Ok(Kind::User(User::new(id, requests, rx)))
+        }
+        Protocol::Jukebox => {
+            Ok(Kind::Jukebox(create_room(receiver, sender).await?))
+        }
+        Protocol::Reconnect => {
+            Ok(Kind::Jukebox(reconnect_room(receiver, sender).await?))
+        }
+        Protocol::Admin => Ok(Kind::Admin),
     }
 }
 
-async fn protocol(
-    mut read_socket: BufReader<TcpStream>,
-    mut write_socket: TcpStream,
-) -> io::Result<Kind> {
-    let mut s = String::with_capacity(7);
-    read_socket.read_line(&mut s).await?;
-    let kind = match dbg!(s.trim()) {
-        "user" => {
-            let name = get_name(&mut read_socket, &mut write_socket).await?;
-            match User::new(&name, read_socket, write_socket).await {
-                Some(u) => Ok(Kind::User(u)),
-                None => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "jukebox is gone",
-                    ))
-                }
-            }
-        }
-        "jukebox" => Ok(Kind::Jukebox(
-            create_room(&mut read_socket, &mut write_socket).await?,
-        )),
-        "reconnect" => {
-            Ok(Kind::Jukebox(reconnect_room(&mut read_socket).await?))
-        }
-        "admin" => Ok(Kind::Admin),
-        _ => Err(io::Error::new(io::ErrorKind::Other, "Invalid user kind")),
-    }?;
-    write_socket.write_all(&[true as u8]).await?;
-    Ok(kind)
-}
-
 async fn handle(mut stream: TcpStream) -> io::Result<()> {
-    let (reader, mut writer) = stream.split();
-    let mut reader = BufReader::new(reader);
-    let k = protocol(&mut reader, &mut writer).await?;
+    let (reader, writer) = stream.split();
+    let (mut receiver, mut sender) =
+        socket_channel::make(BufReader::new(reader), writer);
+    let k = protocol(&mut receiver, &mut sender).await?;
     match k {
         Kind::User(mut user) => {
             eprintln!("[U::{}] Handling", user.id);
-            let e = user.handle(reader, writer).await;
+            let e = user.handle(receiver, sender).await;
             match &e {
                 Ok(_) => eprintln!("[U::{}] User left", user.id),
                 Err(e) => eprintln!("[U::{}] User left: {:?}", user.id, e),
@@ -431,7 +416,7 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
         }
         Kind::Jukebox(mut jb) => {
             eprintln!("[J::{}] Handling", jb.name);
-            let e = jb.handle(reader, writer).await;
+            let e = jb.handle(receiver, sender).await;
             match &e {
                 Ok(_) => eprintln!("[J::{}] Jukebox left", jb.name),
                 Err(e) => eprintln!("[J::{}] Jukebox left: {:?}", jb.name, e),
@@ -446,7 +431,7 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
             eprintln!("[J::{}] returned", name);
             e.map(|n| n.as_deref().map(Notify::notify)).map(|_| ())
         }
-        Kind::Admin => Admin.handle(reader, writer).await,
+        Kind::Admin => Admin.handle(receiver, sender).await,
     }
 }
 

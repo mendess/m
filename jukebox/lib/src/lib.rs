@@ -1,10 +1,13 @@
+#[cfg(feature = "jni_lib")]
+pub mod android;
 mod arg_split;
 pub mod prompt;
 mod reconnect;
 pub mod relay;
+pub mod relay2;
 pub mod server;
-#[cfg(feature = "jni_lib")]
-pub mod android;
+pub mod socket_channel;
+pub mod net;
 
 use std::{fmt::Display, io};
 
