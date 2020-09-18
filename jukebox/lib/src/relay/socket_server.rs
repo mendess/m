@@ -230,12 +230,12 @@ where
             match rooms.rooms.get_mut(&name) {
                 Some(mut room) => {
                     if let Some(jbox) = room.jukebox.take() {
-                        eprintln!("[J::{}] Reconnecting to existing room", s);
+                        eprintln!("[J::{}] Reconnecting to existing room", name);
                         break Ok(jbox);
                     }
                 }
                 None => {
-                    eprintln!("[J::{}] Creating new room", s);
+                    eprintln!("[J::{}] Creating new room", name);
                     break Ok(rooms.create_jukebox(name));
                 }
             }
