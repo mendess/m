@@ -17,7 +17,7 @@ tokio-util = { version = "0.3", features = ["codec"] }
 socket2 = "0.3"
 warp = "0.2"
 dashmap = "3"
-reqwest = "0.10"
+reqwest = { version = "0.10", features = ["json"] }
 url = "2"
 
 [dependencies.tokio]

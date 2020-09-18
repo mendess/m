@@ -1,5 +1,6 @@
 use crate::{
     prompt::{pretty_prompt, Prompt},
+    relay::web_server::Req,
     try_prompt, RoomName, Ui,
 };
 use reqwest::{Client as RClient, Url};
@@ -74,26 +75,20 @@ impl Client {
         loop {
             let cmd = try_prompt!(prompt.command());
             let url = match method_picker(&cmd) {
-                Some(Method::Get) => gets.join(&cmd),
-                Some(Method::Run) => runs.join(&cmd),
+                Some(Method::Get) => &gets,
+                Some(Method::Run) => &runs,
                 None => {
                     prompt.inform::<Result<&str, _>>(Err("Invalid command"));
                     continue;
                 }
             };
-            match url {
-                Ok(u) => {
-                    let r = requests.get(u).send().await;
-                    match r {
-                        Ok(r) => prompt.inform(r.text().await),
-                        Err(e) => prompt.inform(
-                            e.status()
-                                .map(|s| s.as_str().to_string())
-                                .ok_or_else(|| e.to_string()),
-                        ),
-                    }
-                }
-                Err(e) => prompt.inform::<Result<&str, _>>(Err(e)),
+            match requests.get(url.clone()).json(&Req::from(cmd)).send().await {
+                Ok(r) => prompt.inform(r.text().await),
+                Err(e) => prompt.inform(
+                    e.status()
+                        .map(|s| s.as_str().to_string())
+                        .ok_or_else(|| e.to_string()),
+                ),
             }
         }
     }

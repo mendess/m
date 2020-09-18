@@ -1,5 +1,6 @@
 use super::socket_server::Rooms;
 use crate::RoomName;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::{convert::Infallible, net::Ipv4Addr};
 use tokio::io;
@@ -8,6 +9,7 @@ use warp::{
     reply::{with_status, WithStatus},
     Filter, Rejection,
 };
+
 type OkResult<T> = Result<T, Infallible>;
 
 async fn get_cmd(
@@ -55,11 +57,35 @@ pub async fn start(port: u16, rooms: &'static Rooms) -> io::Result<()> {
     let run = warp::path!("run" / RoomName / String)
         .and_then(move |name, s| run_cmd(rooms, name, s));
     let get = warp::path!("get" / RoomName / String)
-        .and_then(move |name, s| get_cmd(rooms, RoomName::from(name), s));
-    warp::serve(room_route.or(run).or(get).recover(handle_rejection))
-        .run((Ipv4Addr::UNSPECIFIED, port))
-        .await;
+        .and_then(move |name, s| get_cmd(rooms, name, s));
+    let run_body = warp::path!("run" / RoomName)
+        .and(warp::body::json())
+        .and_then(move |name, req: Req| run_cmd(rooms, name, req.cmd_line));
+    let get_body = warp::path!("get" / RoomName)
+        .and(warp::body::json())
+        .and_then(move |name, req: Req| get_cmd(rooms, name, req.cmd_line));
+    warp::serve(
+        room_route
+            .or(run)
+            .or(get)
+            .or(run_body)
+            .or(get_body)
+            .recover(handle_rejection),
+    )
+    .run((Ipv4Addr::UNSPECIFIED, port))
+    .await;
     Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Req {
+    cmd_line: String,
+}
+
+impl From<String> for Req {
+    fn from(cmd_line: String) -> Self {
+        Self { cmd_line }
+    }
 }
 
 // This function receives a `Rejection` and tries to return a custom
