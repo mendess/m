@@ -25,6 +25,40 @@ use tokio::{
     },
 };
 
+macro_rules! function_name {
+    () => {{
+        fn f() {}
+        fn type_name_of<T>(_: T) -> &'static str {
+            std::any::type_name::<T>()
+        }
+        let name = type_name_of(f);
+        &name[..name.len() - 3]
+            .rsplit("::")
+            .skip_while(|s| s.contains("closure"))
+            .next()
+            .unwrap_or("")
+    }};
+}
+macro_rules! log {
+    ($msg:expr $(,$args:expr)*$(,)?) => {
+        ::std::eprintln!(
+            "[{}::{}] {}",
+            ::chrono::offset::Utc::now().format("%m/%d-%H:%M"),
+            function_name!(),
+            format!($msg, $($args,)*)
+        )
+    };
+    (@$name:expr, $msg:expr $(,$args:expr)*$(,)?) => {
+        ::std::eprintln!(
+            "[{}::{}::{}] {}",
+            ::chrono::offset::Utc::now().format("%m/%d-%H:%M"),
+            $name,
+            function_name!(),
+            format!($msg, $($args,)*)
+        )
+    };
+}
+
 #[derive(Debug)]
 struct Room {
     requests: Sender<Message>,
@@ -160,7 +194,7 @@ impl Jukebox {
         R: AsyncBufReadExt + Unpin,
         W: AsyncWriteExt + Unpin,
     {
-        eprintln!("[J::handle::{}] Handling", self.name);
+        log!(@self.name, "Handling");
         let mut s = String::new();
         let gets = DashMap::new();
         loop {
@@ -168,41 +202,32 @@ impl Jukebox {
                 Some(req) = self.channel.recv() => {
                     match req {
                         Message::Get(req, ch) => {
-                            eprintln!(
-                                "[J::handle::{}] sending request {:?} to remote",
-                                self.name,
+                            log!(
+                                @self.name,
+                                "sending get request {:?} to remote",
                                 req
                             );
                             sender.asend(&req).await?;
-                            eprintln!("[J::handle::{}] sent", self.name);
                             gets.insert(req.id, ch);
                         },
                         Message::Run(req) => {
-                            eprintln!(
-                                "[J::handle::{}] sending request {:?} to remote",
-                                self.name,
-                                req);
+                            log!(@self.name, "sending run request {:?} to remote", req);
                             sender.asend(&req).await?;
                         },
                         Message::Reconnect(n) => {
-                            eprintln!(
-                                "[J::handle::{}] Terminating this intance as \
-                                requested",
-                                self.name
-                            );
+                            log!(@self.name, "Terminating this intance as requested");
                             break Ok(Some(n))
                         }
                     }
                 }
                 r = receiver.arecv_with_buf::<Response>(&mut s) => {
                     let r = r?;
-                    eprintln!("[J::handle::{}] got {:?} from remote", self.name, r);
+                    log!(@self.name, "got {:?} from remote", r);
                     if let Some((_, ch)) = gets.remove(&r.id) {
                         if let Err(_) = ch.send(r.response) {
-                            eprintln!(
-                                "[J::handle::{}] user went away, can't send \
-                                result of command",
-                                self.name
+                            log!(
+                                @self.name,
+                                "user went away, can't send result of command",
                             );
                         }
                     }
@@ -230,12 +255,12 @@ where
             match rooms.rooms.get_mut(&name) {
                 Some(mut room) => {
                     if let Some(jbox) = room.jukebox.take() {
-                        eprintln!("[J::{}] Reconnecting to existing room", name);
+                        log!(@name, "Reconnecting to existing room");
                         break Ok(jbox);
                     }
                 }
                 None => {
-                    eprintln!("[J::{}] Creating new room", name);
+                    log!(@name, "Creating new room");
                     break Ok(rooms.create_jukebox(name));
                 }
             }
@@ -259,14 +284,11 @@ where
     let r = match rooms.rooms.get_mut(&s) {
         Some(mut room) => {
             if let Some(jbox) = room.jukebox.take() {
-                eprintln!(
-                    "[J::{}] Reconnecting to existing room and jb already returned",
-                    s
-                );
+                log!(@s, "Reconnecting to existing room and jb already returned");
                 Ok(jbox)
             } else {
                 let n = Arc::new(Notify::new());
-                eprintln!("[J::{}] Terminating old task", s);
+                log!(@s, "Terminating old task");
                 match room
                     .requests
                     .send(Message::Reconnect(Arc::clone(&n)))
@@ -286,23 +308,23 @@ where
                             })
                     }
                     Err(_) => {
-                        eprintln!(
-                            "[J::{}] Something terrible has happened. \
+                        log!(
+                            @s,
+                            "Something terrible has happened. \
                                     The jukebox was dropped instead of \
                                     returned to the ROOMS variable",
-                            s
                         );
-                        eprintln!("[J::{}] Creating new room", s);
+                        log!(@s, "Creating new room");
                         Ok(rooms.create_jukebox(s.to_owned()))
                     }
                 }
             }
         }
         None => {
-            eprintln!(
-                "[J::{}] Trying to reconnect to a room that doesn't exist. \
+            log!(
+                @s,
+                "Trying to reconnect to a room that doesn't exist. \
                     Creating new room",
-                s
             );
             Ok(rooms.create_jukebox(s.to_owned()))
         }
@@ -317,8 +339,8 @@ pub enum Protocol {
     Reconnect,
 }
 
-async fn handle(rooms: &Rooms, mut stream: TcpStream) -> io::Result<()> {
-    eprintln!("New connection");
+async fn handle_conn(rooms: &Rooms, mut stream: TcpStream) -> io::Result<()> {
+    log!("New connection");
     let (reader, writer) = stream.split();
     let (mut receiver, mut sender) =
         socket_channel::make(BufReader::new(reader), writer);
@@ -330,16 +352,15 @@ async fn handle(rooms: &Rooms, mut stream: TcpStream) -> io::Result<()> {
             reconnect_room(rooms, &mut receiver, &mut sender).await?
         }
     };
-    eprintln!("[J::{}] Handling", jb.name);
     let e = jb.handle(receiver, sender).await;
     match &e {
-        Ok(_) => eprintln!("[J::{}] Jukebox left", jb.name),
-        Err(e) => eprintln!("[J::{}] Jukebox left: {:?}", jb.name, e),
+        Ok(_) => log!(@jb.name, "Jukebox left"),
+        Err(e) => log!(@jb.name, "Jukebox left: {:?}", e),
     }
     let name = jb.name.clone();
-    eprintln!("[J::{}] returning jukebox to rooms", name);
+    log!(@name, "returning jukebox to rooms");
     rooms.rooms.get_mut(&name).map(|mut o| o.jukebox = Some(jb));
-    eprintln!("[J::{}] returned", name);
+    log!(@name, "returned");
     e.map(|n| n.as_deref().map(Notify::notify)).map(|_| ())
 }
 
@@ -348,11 +369,11 @@ pub static ROOMS: Lazy<Rooms> = Lazy::new(Default::default);
 pub async fn start(port: u16) -> io::Result<()> {
     let mut listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)).await?;
     let mut incoming = listener.incoming();
-    eprintln!("Socket server listening on port: {}", port);
+    log!("Socket server listening on port: {}", port);
     while let Some(stream) = incoming.next().await {
         let stream = stream?;
         stream.set_keepalive(Some(KEEP_ALIVE))?;
-        tokio::spawn(handle(&*ROOMS, stream));
+        tokio::spawn(handle_conn(&*ROOMS, stream));
     }
 
     Ok(())
