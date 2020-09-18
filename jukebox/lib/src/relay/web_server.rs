@@ -53,7 +53,7 @@ async fn run_cmd(
 pub async fn start(port: u16, rooms: &'static Rooms) -> io::Result<()> {
     println!("Serving on port: {}", port);
     let room_route =
-        warp::path("rooms").map(move || format!("{:?}", rooms.list()));
+        warp::path("rooms").map(move || format!("{}", rooms.list().join("\n")));
     let run = warp::path!("run" / RoomName / String)
         .and_then(move |name, s| run_cmd(rooms, name, s));
     let get = warp::path!("get" / RoomName / String)
