@@ -21,6 +21,8 @@ socket2 = "0.3"
 warp = "0.2"
 dashmap = "3"
 either = "1"
+reqwest = "0.10"
+url = "2"
 
 [dependencies.tokio]
 version = "0.2"

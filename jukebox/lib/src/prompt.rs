@@ -1,4 +1,4 @@
-use crate::{Information, Ui, UiError, UiResult};
+use crate::{Information, RoomName, Ui, UiError, UiResult};
 use std::{
     fmt::{self, Display},
     io::{self, stdin, stdout, Write},
@@ -10,7 +10,18 @@ pub struct Prompt {
     prompt_str: String,
 }
 
+pub fn pretty_prompt() -> Prompt {
+    Prompt::with_prompt_str("🎵>".into())
+}
+
 impl Prompt {
+    pub fn with_prompt_str(prompt_str: String) -> Self {
+        Self {
+            prompt_str,
+            ..Default::default()
+        }
+    }
+
     pub fn p(&mut self, msg: &str) -> io::Result<usize> {
         prompt(&mut self.buf, msg)
     }
@@ -52,12 +63,14 @@ impl Display for Prompt {
 }
 
 impl Ui for Prompt {
-    fn room_name(&mut self) -> UiResult {
+    fn room_name(&mut self) -> UiResult<RoomName> {
         let e = prompt_conv(&mut self.buf, "Input room name:");
         if e.is_ok() {
             self.prompt_str = format!("{} 🎵>", self.buf());
         }
-        e.map(move |_| self.buf().into())
+        self.buf()
+            .parse::<RoomName>()
+            .map_err(|e| UiError::Invalid(e.to_string()))
     }
 
     fn command(&mut self) -> UiResult {

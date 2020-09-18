@@ -1,11 +1,10 @@
 use jukebox::{
-    relay::{self, client_util},
-    relay2,
+    relay::{self, client::Client, jbox},
     server,
+    RoomName,
 };
 use std::{
     fmt::{self, Display},
-    io,
     str::FromStr,
     time::Duration,
 };
@@ -46,8 +45,8 @@ struct Opt {
     #[structopt(parse(try_from_str = parse_duration), default_value = "5s", short, long)]
     reconnect: Duration,
     /// Room name
-    #[structopt(short, long)]
-    room: Option<String>,
+    #[structopt(short("n"), long)]
+    room: Option<RoomName>,
 }
 
 #[derive(Debug, StructOpt)]
@@ -60,7 +59,6 @@ enum Mode {
     Jukebox,
     /// connect to a relay to remote control a jukebox
     User,
-    Admin,
 }
 
 impl FromStr for Mode {
@@ -71,7 +69,6 @@ impl FromStr for Mode {
             "relay" => Ok(Self::Relay),
             "jukebox" => Ok(Self::Jukebox),
             "user" => Ok(Self::User),
-            "admin" => Ok(Self::Admin),
             _ => Err("Invalid running mode"),
         }
     }
@@ -84,7 +81,6 @@ impl Display for Mode {
             Self::Relay => "relay",
             Self::Jukebox => "jukebox",
             Self::User => "user",
-            Self::Admin => "admin",
         };
         write!(f, "{}", s)
     }
@@ -93,29 +89,26 @@ impl Display for Mode {
 #[tokio::main]
 async fn main() {
     let options = Opt::from_args();
-    let addr = (options.endpoint.as_str(), options.port);
-    let prompt = jukebox::prompt::Prompt::default();
     let r = match options.mode {
         Mode::Server => server::run(options.port).await,
-        Mode::Relay => relay2::start(options.port).await,
-        Mode::Jukebox => match options.room {
-            Some(r) => relay::jukebox::start_protocol(addr, options.reconnect)
-                .and_then(|(mut socket, room_name)| {
-                    if client_util::attempt_room_name(&mut socket, &r)? {
-                        *room_name.borrow_mut() = r;
-                        Ok(socket)
-                    } else {
-                        Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "room name taken",
-                        ))
-                    }
-                })
-                .and_then(relay::jukebox::execute_loop),
-            None => relay::jukebox::run(addr, options.reconnect),
-        },
-        Mode::User => relay::user::run(addr, options.reconnect, prompt),
-        Mode::Admin => relay::admin::run(addr),
+        Mode::Relay => relay::start(options.port).await,
+        Mode::Jukebox => {
+            let addr = (options.endpoint.as_str(), options.port);
+            match options.room {
+                Some(r) => jbox::with_room_name(addr, options.reconnect, r),
+                None => jbox::run(addr, options.reconnect),
+            }
+        }
+        Mode::User => {
+            let cli = match options.room {
+                Some(r) => {
+                    Client::with_room_name(&options.endpoint, options.port, r)
+                }
+                None => Client::new(&options.endpoint, options.port),
+            }
+            .unwrap();
+            cli.run().await
+        }
     };
     if let Err(e) = r {
         eprintln!("Terminating because: {}", e);

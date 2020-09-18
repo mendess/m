@@ -33,8 +33,8 @@ impl<W: AsyncWriteExt + Unpin> Sender<W> {
     }
 }
 
-impl<W: Write> Sender<W> {
-    pub fn send<M: Serialize>(&mut self, m: M) -> io::Result<()> {
+impl<W: Write> SocketChannelSend for Sender<W> {
+    fn send<M: Serialize>(&mut self, m: M) -> io::Result<()> {
         serde_json::to_writer(&mut self.socket, &m)?;
         writeln!(self.socket)
     }
@@ -72,12 +72,8 @@ impl<R: AsyncBufReadExt + Unpin> Receiver<R> {
     }
 }
 
-impl<R: BufRead> Receiver<R> {
-    pub fn recv<M: DeserializeOwned>(&mut self) -> io::Result<M> {
-        self.recv_with_buf(&mut String::new())
-    }
-
-    pub fn recv_with_buf<M: DeserializeOwned>(
+impl<R: BufRead> SocketChannelReceive for Receiver<R> {
+    fn recv_with_buf<M: DeserializeOwned>(
         &mut self,
         buf: &mut String,
     ) -> io::Result<M> {
@@ -102,4 +98,19 @@ impl<R: BufRead> Receiver<R> {
             }
         }
     }
+}
+
+pub trait SocketChannelReceive {
+    fn recv<M: DeserializeOwned>(&mut self) -> io::Result<M> {
+        self.recv_with_buf(&mut String::new())
+    }
+
+    fn recv_with_buf<M: DeserializeOwned>(
+        &mut self,
+        buf: &mut String,
+    ) -> io::Result<M>;
+}
+
+pub trait SocketChannelSend {
+    fn send<M: Serialize>(&mut self, m: M) -> io::Result<()>;
 }

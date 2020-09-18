@@ -1,4 +1,10 @@
-use crate::socket_channel::{self, Receiver as SReceiver, Sender as SSender};
+use crate::{
+    net::{
+        reconnect::KEEP_ALIVE,
+        socket_channel::{self, Receiver as SReceiver, Sender as SSender},
+    },
+    RoomName,
+};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -27,7 +33,7 @@ struct Room {
 }
 
 impl Room {
-    fn new(name: String) -> Self {
+    fn new(name: RoomName) -> Self {
         let (tx, rx) = mpsc::channel(64);
         Self {
             requests: tx,
@@ -39,21 +45,20 @@ impl Room {
 
 #[derive(Debug, Default)]
 pub struct Rooms {
-    rooms: DashMap<String, Room>,
+    rooms: DashMap<RoomName, Room>,
 }
 
 impl Rooms {
     pub fn list(&self) -> Vec<String> {
-        self.rooms.iter().map(|kv| kv.key().clone()).collect()
+        self.rooms.iter().map(|kv| kv.key().name.clone()).collect()
     }
 
-    pub async fn run_cmd<C>(&self, room: &str, cmd_line: C) -> bool
+    pub async fn run_cmd<C>(&self, room: &RoomName, cmd_line: C) -> bool
     where
         C: Into<Box<[String]>>,
     {
         match self.rooms.get_mut(room) {
             Some(mut r) => {
-                let r = r.value_mut();
                 if r.jukebox.is_none() {
                     if let Err(_) = r
                         .requests
@@ -71,14 +76,17 @@ impl Rooms {
         }
     }
 
-    pub async fn get_cmd<C>(&self, room: &str, cmd_line: C) -> Option<String>
+    pub async fn get_cmd<C>(
+        &self,
+        room: &RoomName,
+        cmd_line: C,
+    ) -> Option<Result<String, String>>
     where
         C: Into<Box<[String]>>,
     {
         match self.rooms.get_mut(room) {
-            Some(mut r) if r.value().jukebox.is_none() => {
+            Some(mut r) if r.jukebox.is_none() => {
                 let (tx, rx) = oneshot::channel();
-                let r = r.value_mut();
                 r.requests
                     .send(Message::Get(Request::new(cmd_line.into()), tx))
                     .await
@@ -89,7 +97,7 @@ impl Rooms {
         }
     }
 
-    fn create_jukebox(&self, name: String) -> Jukebox {
+    fn create_jukebox(&self, name: RoomName) -> Jukebox {
         let mut r = Room::new(name.clone());
         let jb = r.jukebox.take().unwrap();
         self.rooms.insert(name, r);
@@ -100,7 +108,7 @@ impl Rooms {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Request {
     id: usize,
-    cmd_line: Box<[String]>,
+    pub cmd_line: Box<[String]>,
 }
 
 impl Request {
@@ -116,24 +124,30 @@ impl Request {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Response {
     id: usize,
-    response: String,
+    response: Result<String, String>,
+}
+
+impl Response {
+    pub fn new(r: Request, response: Result<String, String>) -> Self {
+        Self { id: r.id, response }
+    }
 }
 
 #[derive(Debug)]
 enum Message {
     Run(Request),
-    Get(Request, oneshot::Sender<String>),
+    Get(Request, oneshot::Sender<Result<String, String>>),
     Reconnect(Arc<Notify>),
 }
 
 #[derive(Debug)]
 struct Jukebox {
-    name: String,
+    name: RoomName,
     channel: Receiver<Message>,
 }
 
 impl Jukebox {
-    fn new(name: String, channel: Receiver<Message>) -> Self {
+    fn new(name: RoomName, channel: Receiver<Message>) -> Self {
         Self { name, channel }
     }
 
@@ -211,18 +225,18 @@ where
 {
     let mut s = String::new();
     let r = loop {
-        let name = receiver.arecv_with_buf::<String>(&mut s).await?;
+        let name = receiver.arecv_with_buf::<RoomName>(&mut s).await?;
         {
             match rooms.rooms.get_mut(&name) {
                 Some(mut room) => {
-                    if let Some(jbox) = room.value_mut().jukebox.take() {
+                    if let Some(jbox) = room.jukebox.take() {
                         eprintln!("[J::{}] Reconnecting to existing room", s);
                         break Ok(jbox);
                     }
                 }
                 None => {
                     eprintln!("[J::{}] Creating new room", s);
-                    break Ok(rooms.create_jukebox(s));
+                    break Ok(rooms.create_jukebox(name));
                 }
             }
         }
@@ -241,10 +255,10 @@ where
     R: AsyncBufReadExt + Unpin,
     W: AsyncWriteExt + Unpin,
 {
-    let s = receiver.arecv::<String>().await?;
+    let s = receiver.arecv::<RoomName>().await?;
     let r = match rooms.rooms.get_mut(&s) {
         Some(mut room) => {
-            if let Some(jbox) = room.value_mut().jukebox.take() {
+            if let Some(jbox) = room.jukebox.take() {
                 eprintln!(
                     "[J::{}] Reconnecting to existing room and jb already returned",
                     s
@@ -263,7 +277,7 @@ where
                         rooms
                             .rooms
                             .get_mut(&s)
-                            .and_then(|mut r| r.value_mut().jukebox.take())
+                            .and_then(|mut r| r.jukebox.take())
                             .ok_or_else(|| {
                                 io::Error::new(
                                 io::ErrorKind::Other,
@@ -279,7 +293,7 @@ where
                             s
                         );
                         eprintln!("[J::{}] Creating new room", s);
-                        Ok(rooms.create_jukebox(s))
+                        Ok(rooms.create_jukebox(s.to_owned()))
                     }
                 }
             }
@@ -290,7 +304,7 @@ where
                     Creating new room",
                 s
             );
-            Ok(rooms.create_jukebox(s))
+            Ok(rooms.create_jukebox(s.to_owned()))
         }
     };
     sender.asend(true).await?;
@@ -303,29 +317,19 @@ pub enum Protocol {
     Reconnect,
 }
 
-async fn protocol<R, W>(
-    rooms: &Rooms,
-    receiver: &mut SReceiver<R>,
-    sender: &mut SSender<W>,
-) -> io::Result<Jukebox>
-where
-    R: AsyncBufReadExt + Unpin,
-    W: AsyncWriteExt + Unpin,
-{
-    match receiver.arecv().await? {
-        Protocol::Jukebox => Ok(create_room(rooms, receiver, sender).await?),
-        Protocol::Reconnect => {
-            Ok(reconnect_room(rooms, receiver, sender).await?)
-        }
-    }
-}
-
 async fn handle(rooms: &Rooms, mut stream: TcpStream) -> io::Result<()> {
     eprintln!("New connection");
     let (reader, writer) = stream.split();
     let (mut receiver, mut sender) =
         socket_channel::make(BufReader::new(reader), writer);
-    let mut jb = protocol(rooms, &mut receiver, &mut sender).await?;
+    let mut jb = match receiver.arecv().await? {
+        Protocol::Jukebox => {
+            create_room(rooms, &mut receiver, &mut sender).await?
+        }
+        Protocol::Reconnect => {
+            reconnect_room(rooms, &mut receiver, &mut sender).await?
+        }
+    };
     eprintln!("[J::{}] Handling", jb.name);
     let e = jb.handle(receiver, sender).await;
     match &e {
@@ -334,10 +338,7 @@ async fn handle(rooms: &Rooms, mut stream: TcpStream) -> io::Result<()> {
     }
     let name = jb.name.clone();
     eprintln!("[J::{}] returning jukebox to rooms", name);
-    rooms
-        .rooms
-        .get_mut(&name)
-        .map(|mut o| o.value_mut().jukebox = Some(jb));
+    rooms.rooms.get_mut(&name).map(|mut o| o.jukebox = Some(jb));
     eprintln!("[J::{}] returned", name);
     e.map(|n| n.as_deref().map(Notify::notify)).map(|_| ())
 }
@@ -350,7 +351,7 @@ pub async fn start(port: u16) -> io::Result<()> {
     eprintln!("Socket server listening on port: {}", port);
     while let Some(stream) = incoming.next().await {
         let stream = stream?;
-        stream.set_keepalive(Some(crate::reconnect::KEEP_ALIVE))?;
+        stream.set_keepalive(Some(KEEP_ALIVE))?;
         tokio::spawn(handle(&*ROOMS, stream));
     }
 
