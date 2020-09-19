@@ -50,6 +50,7 @@ macro_rules! log {
         )
     };
 }
+
 impl Jukebox {
     async fn handle<R, W>(
         &mut self,

@@ -22,9 +22,9 @@ pub struct Room {
 
 impl Room {
     fn new(name: RoomName) -> Self {
-        let (tx, rx) = mpsc::channel(64);
+        let (requests, rx) = mpsc::channel(64);
         Self {
-            requests: tx,
+            requests,
             jukebox: Some(Jukebox::new(name, rx)),
             counter: 0,
         }
@@ -109,7 +109,7 @@ impl Rooms {
                 {
                     Ok(_) => {
                         if r.jukebox.is_none() {
-                            rx.await.ok().map(|r| CommandResult::Success(r))
+                            rx.await.map(|r| CommandResult::Success(r)).ok()
                         } else {
                             Some(CommandResult::BoxOfflineWarning)
                         }

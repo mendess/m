@@ -65,28 +65,30 @@ async fn run_cmd(
 
 pub async fn start(port: u16, rooms: &'static Rooms) -> io::Result<()> {
     println!("Serving on port: {}", port);
+
     let room_route =
         warp::path("rooms").map(move || warp::reply::json(&rooms.list()));
+
     let run = warp::path!("run" / RoomName / String)
         .and_then(move |name, s| run_cmd(rooms, name, s));
+
     let get = warp::path!("get" / RoomName / String)
         .and_then(move |name, s| get_cmd(rooms, name, s));
+
     let run_body = warp::path!("run" / RoomName)
         .and(warp::body::json())
         .and_then(move |name, req: Req| run_cmd(rooms, name, req.cmd_line));
+
     let get_body = warp::path!("get" / RoomName)
         .and(warp::body::json())
         .and_then(move |name, req: Req| get_cmd(rooms, name, req.cmd_line));
-    warp::serve(
-        room_route
-            .or(run)
-            .or(get)
-            .or(run_body)
-            .or(get_body)
-            .recover(handle_rejection),
-    )
-    .run((Ipv4Addr::UNSPECIFIED, port))
-    .await;
+
+    let get_routes = warp::get().and(room_route.or(run).or(get));
+    let post_routes = warp::post().and(run_body.or(get_body));
+
+    warp::serve(get_routes.or(post_routes).recover(handle_rejection))
+        .run((Ipv4Addr::UNSPECIFIED, port))
+        .await;
     Ok(())
 }
 
