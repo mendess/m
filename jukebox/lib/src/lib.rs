@@ -4,6 +4,7 @@ mod arg_split;
 pub mod net;
 pub mod prompt;
 pub mod relay;
+pub mod relay_clients;
 pub mod server;
 
 use serde::{Deserialize, Serialize};

@@ -1,7 +1,6 @@
-pub mod client;
-pub mod jbox;
 pub mod socket_server;
-mod web_server;
+pub mod web_server;
+pub mod rooms;
 
 use tokio::io;
 

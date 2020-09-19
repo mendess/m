@@ -4,9 +4,11 @@ use crate::{
         socket_channel::{SocketChannelReceive, SocketChannelSend},
     },
     prompt::{pretty_prompt, Prompt},
-    relay::socket_server::{Protocol, Request, Response},
-    try_prompt, Ui,
-    RoomName,
+    relay::{
+        rooms::{Request, Response},
+        socket_server::Protocol,
+    },
+    try_prompt, RoomName, Ui,
 };
 use std::{
     borrow::Borrow, cell::RefCell, convert::Infallible, fmt::Write as _, io,

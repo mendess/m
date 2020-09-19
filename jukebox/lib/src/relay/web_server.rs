@@ -1,5 +1,4 @@
-use super::socket_server::Rooms;
-use crate::RoomName;
+use crate::{relay::rooms::Rooms, RoomName};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::{convert::Infallible, net::Ipv4Addr};
@@ -52,8 +51,8 @@ async fn run_cmd(
 
 pub async fn start(port: u16, rooms: &'static Rooms) -> io::Result<()> {
     println!("Serving on port: {}", port);
-    let room_route = warp::path("rooms")
-        .map(move || format!("Rooms:\n {}\n", rooms.list().join("\n")));
+    let room_route =
+        warp::path("rooms").map(move || warp::reply::json(&rooms.list()));
     let run = warp::path!("run" / RoomName / String)
         .and_then(move |name, s| run_cmd(rooms, name, s));
     let get = warp::path!("get" / RoomName / String)

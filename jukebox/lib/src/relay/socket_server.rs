@@ -3,26 +3,18 @@ use crate::{
         reconnect::KEEP_ALIVE,
         socket_channel::{self, Receiver as SReceiver, Sender as SSender},
     },
+    relay::rooms::{Jukebox, Message, Response, Rooms},
     RoomName,
 };
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::{
-    net::Ipv4Addr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::{net::Ipv4Addr, sync::Arc};
 use tokio::{
     io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
     stream::StreamExt,
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        oneshot, Notify,
-    },
+    sync::Notify,
 };
 
 macro_rules! function_name {
@@ -58,133 +50,7 @@ macro_rules! log {
         )
     };
 }
-
-#[derive(Debug)]
-struct Room {
-    requests: Sender<Message>,
-    jukebox: Option<Jukebox>,
-    counter: usize,
-}
-
-impl Room {
-    fn new(name: RoomName) -> Self {
-        let (tx, rx) = mpsc::channel(64);
-        Self {
-            requests: tx,
-            jukebox: Some(Jukebox::new(name, rx)),
-            counter: 0,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Rooms {
-    rooms: DashMap<RoomName, Room>,
-}
-
-impl Rooms {
-    pub fn list(&self) -> Vec<String> {
-        self.rooms.iter().map(|kv| kv.key().name.clone()).collect()
-    }
-
-    pub async fn run_cmd<C>(&self, room: &RoomName, cmd_line: C) -> bool
-    where
-        C: Into<Box<[String]>>,
-    {
-        match self.rooms.get_mut(room) {
-            Some(mut r) => {
-                if r.jukebox.is_none() {
-                    if let Err(_) = r
-                        .requests
-                        .send(Message::Run(Request::new(cmd_line.into())))
-                        .await
-                    {
-                        return false;
-                    }
-                    true
-                } else {
-                    false
-                }
-            }
-            None => false,
-        }
-    }
-
-    pub async fn get_cmd<C>(
-        &self,
-        room: &RoomName,
-        cmd_line: C,
-    ) -> Option<Result<String, String>>
-    where
-        C: Into<Box<[String]>>,
-    {
-        match self.rooms.get_mut(room) {
-            Some(mut r) if r.jukebox.is_none() => {
-                let (tx, rx) = oneshot::channel();
-                r.requests
-                    .send(Message::Get(Request::new(cmd_line.into()), tx))
-                    .await
-                    .ok()?;
-                rx.await.ok()
-            }
-            _ => None,
-        }
-    }
-
-    fn create_jukebox(&self, name: RoomName) -> Jukebox {
-        let mut r = Room::new(name.clone());
-        let jb = r.jukebox.take().unwrap();
-        self.rooms.insert(name, r);
-        jb
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Request {
-    id: usize,
-    pub cmd_line: Box<[String]>,
-}
-
-impl Request {
-    fn new(cmd_line: Box<[String]>) -> Self {
-        static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        Self {
-            id: REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed),
-            cmd_line,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Response {
-    id: usize,
-    response: Result<String, String>,
-}
-
-impl Response {
-    pub fn new(r: Request, response: Result<String, String>) -> Self {
-        Self { id: r.id, response }
-    }
-}
-
-#[derive(Debug)]
-enum Message {
-    Run(Request),
-    Get(Request, oneshot::Sender<Result<String, String>>),
-    Reconnect(Arc<Notify>),
-}
-
-#[derive(Debug)]
-struct Jukebox {
-    name: RoomName,
-    channel: Receiver<Message>,
-}
-
 impl Jukebox {
-    fn new(name: RoomName, channel: Receiver<Message>) -> Self {
-        Self { name, channel }
-    }
-
     async fn handle<R, W>(
         &mut self,
         mut receiver: SReceiver<R>,
@@ -194,16 +60,16 @@ impl Jukebox {
         R: AsyncBufReadExt + Unpin,
         W: AsyncWriteExt + Unpin,
     {
-        log!(@self.name, "Handling");
+        log!(@self.name(), "Handling");
         let mut s = String::new();
         let gets = DashMap::new();
         loop {
             tokio::select! {
-                Some(req) = self.channel.recv() => {
+                Some(req) = self.recv() => {
                     match req {
                         Message::Get(req, ch) => {
                             log!(
-                                @self.name,
+                                @self.name(),
                                 "sending get request {:?} to remote",
                                 req
                             );
@@ -211,22 +77,22 @@ impl Jukebox {
                             gets.insert(req.id, ch);
                         },
                         Message::Run(req) => {
-                            log!(@self.name, "sending run request {:?} to remote", req);
+                            log!(@self.name(), "sending run request {:?} to remote", req);
                             sender.asend(&req).await?;
                         },
                         Message::Reconnect(n) => {
-                            log!(@self.name, "Terminating this intance as requested");
+                            log!(@self.name(), "Terminating this intance as requested");
                             break Ok(Some(n))
                         }
                     }
                 }
                 r = receiver.arecv_with_buf::<Response>(&mut s) => {
                     let r = r?;
-                    log!(@self.name, "got {:?} from remote", r);
+                    log!(@self.name(), "got {:?} from remote", r);
                     if let Some((_, ch)) = gets.remove(&r.id) {
                         if let Err(_) = ch.send(r.response) {
                             log!(
-                                @self.name,
+                                @self.name(),
                                 "user went away, can't send result of command",
                             );
                         }
@@ -252,9 +118,9 @@ where
     let r = loop {
         let name = receiver.arecv_with_buf::<RoomName>(&mut s).await?;
         {
-            match rooms.rooms.get_mut(&name) {
+            match rooms.get_mut(&name) {
                 Some(mut room) => {
-                    if let Some(jbox) = room.jukebox.take() {
+                    if let Some(jbox) = room.take_box() {
                         log!(@name, "Reconnecting to existing room");
                         break Ok(jbox);
                     }
@@ -281,25 +147,20 @@ where
     W: AsyncWriteExt + Unpin,
 {
     let s = receiver.arecv::<RoomName>().await?;
-    let r = match rooms.rooms.get_mut(&s) {
+    let r = match rooms.get_mut(&s) {
         Some(mut room) => {
-            if let Some(jbox) = room.jukebox.take() {
+            if let Some(jbox) = room.take_box() {
                 log!(@s, "Reconnecting to existing room and jb already returned");
                 Ok(jbox)
             } else {
                 let n = Arc::new(Notify::new());
                 log!(@s, "Terminating old task");
-                match room
-                    .requests
-                    .send(Message::Reconnect(Arc::clone(&n)))
-                    .await
-                {
+                match room.request(Message::Reconnect(Arc::clone(&n))).await {
                     Ok(_) => {
                         n.notified().await;
                         rooms
-                            .rooms
                             .get_mut(&s)
-                            .and_then(|mut r| r.jukebox.take())
+                            .and_then(|mut r| r.take_box())
                             .ok_or_else(|| {
                                 io::Error::new(
                                 io::ErrorKind::Other,
@@ -354,12 +215,12 @@ async fn handle_conn(rooms: &Rooms, mut stream: TcpStream) -> io::Result<()> {
     };
     let e = jb.handle(receiver, sender).await;
     match &e {
-        Ok(_) => log!(@jb.name, "Jukebox left"),
-        Err(e) => log!(@jb.name, "Jukebox left: {:?}", e),
+        Ok(_) => log!(@jb.name(), "Jukebox left"),
+        Err(e) => log!(@jb.name(), "Jukebox left: {:?}", e),
     }
-    let name = jb.name.clone();
+    let name = jb.name().clone();
     log!(@name, "returning jukebox to rooms");
-    rooms.rooms.get_mut(&name).map(|mut o| o.jukebox = Some(jb));
+    rooms.get_mut(&name).map(|mut o| o.set_box(jb));
     log!(@name, "returned");
     e.map(|n| n.as_deref().map(Notify::notify)).map(|_| ())
 }

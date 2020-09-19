@@ -5,6 +5,7 @@ use crate::{
 };
 use reqwest::{Client as RClient, Url};
 use tokio::io;
+use itertools::Itertools;
 
 pub struct Client {
     room_name: Option<RoomName>,
@@ -59,7 +60,16 @@ impl Client {
                 match r {
                     Ok(rooms) => prompt.inform(format!(
                         "Available rooms: {}",
-                        rooms.text().await?
+                        rooms
+                            .json::<Vec<(String, bool)>>()
+                            .await?
+                            .into_iter()
+                            .map(|(name, state)| format!(
+                                "{} {}",
+                                if state { "ONLINE " } else { "OFFLINE" },
+                                name
+                            ))
+                            .join("\n")
                     )),
                     Err(e) => {
                         prompt.inform::<&Result<&str, _>>(&Err(&e));

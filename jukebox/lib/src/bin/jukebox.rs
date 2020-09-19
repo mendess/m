@@ -1,7 +1,7 @@
 use jukebox::{
-    relay::{self, client::Client, jbox},
-    server,
-    RoomName,
+    relay,
+    relay_clients::{jbox, user::Client},
+    server, RoomName,
 };
 use std::{
     fmt::{self, Display},
