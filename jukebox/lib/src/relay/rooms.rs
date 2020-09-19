@@ -46,6 +46,12 @@ impl Room {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum CommandResult<T> {
+    Success(T),
+    BoxOfflineWarning,
+}
+
 #[derive(Debug, Default)]
 pub struct Rooms {
     rooms: DashMap<RoomName, Room>,
@@ -59,7 +65,11 @@ impl Rooms {
             .collect()
     }
 
-    pub async fn run_cmd<C>(&self, room: &RoomName, cmd_line: C) -> bool
+    pub async fn run_cmd<C>(
+        &self,
+        room: &RoomName,
+        cmd_line: C,
+    ) -> Option<CommandResult<()>>
     where
         C: Into<Box<[String]>>,
     {
@@ -70,14 +80,15 @@ impl Rooms {
                         .request(Message::Run(Request::new(cmd_line.into())))
                         .await
                     {
-                        return false;
+                        None
+                    } else {
+                        Some(CommandResult::Success(()))
                     }
-                    true
                 } else {
-                    false
+                    Some(CommandResult::BoxOfflineWarning)
                 }
             }
-            None => false,
+            None => None,
         }
     }
 
@@ -85,17 +96,26 @@ impl Rooms {
         &self,
         room: &RoomName,
         cmd_line: C,
-    ) -> Option<Result<String, String>>
+    ) -> Option<CommandResult<Result<String, String>>>
     where
         C: Into<Box<[String]>>,
     {
         match self.get_mut(room) {
-            Some(mut r) if r.jukebox.is_none() => {
+            Some(mut r) => {
                 let (tx, rx) = oneshot::channel();
-                r.request(Message::Get(Request::new(cmd_line.into()), tx))
+                match r
+                    .request(Message::Get(Request::new(cmd_line.into()), tx))
                     .await
-                    .ok()?;
-                rx.await.ok()
+                {
+                    Ok(_) => {
+                        if r.jukebox.is_none() {
+                            rx.await.ok().map(|r| CommandResult::Success(r))
+                        } else {
+                            Some(CommandResult::BoxOfflineWarning)
+                        }
+                    }
+                    Err(_) => None,
+                }
             }
             _ => None,
         }

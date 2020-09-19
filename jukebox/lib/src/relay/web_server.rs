@@ -1,7 +1,9 @@
-use crate::{relay::rooms::Rooms, RoomName};
+use crate::{
+    relay::rooms::{CommandResult, Rooms},
+    RoomName,
+};
 use serde::{Deserialize, Serialize};
-use std::error::Error;
-use std::{convert::Infallible, net::Ipv4Addr};
+use std::{convert::Infallible, error::Error, net::Ipv4Addr};
 use tokio::io;
 use warp::{
     http::StatusCode,
@@ -22,8 +24,16 @@ async fn get_cmd(
         .collect::<Vec<_>>();
     if let Some(r) = rooms.get_cmd(&name, args).await {
         match r {
-            Ok(ok) => Ok(with_status(ok, StatusCode::OK)),
-            Err(err) => Ok(with_status(err, StatusCode::BAD_REQUEST)),
+            CommandResult::Success(Ok(ok)) => {
+                Ok(with_status(ok, StatusCode::OK))
+            }
+            CommandResult::Success(Err(err)) => {
+                Ok(with_status(err, StatusCode::BAD_REQUEST))
+            }
+            CommandResult::BoxOfflineWarning => Ok(with_status(
+                "Box offline, command queued".into(),
+                StatusCode::OK,
+            )),
         }
     } else {
         Ok(with_status(
@@ -42,10 +52,14 @@ async fn run_cmd(
         .iter()
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
-    if rooms.run_cmd(&name, args).await {
-        Ok(with_status("Done", StatusCode::OK))
-    } else {
-        Ok(with_status("Jukebox not active", StatusCode::NOT_FOUND))
+    match rooms.run_cmd(&name, args).await {
+        Some(CommandResult::Success(_)) => {
+            Ok(with_status("Done", StatusCode::OK))
+        }
+        Some(CommandResult::BoxOfflineWarning) => {
+            Ok(with_status("Box offline, command queued", StatusCode::OK))
+        }
+        None => Ok(with_status("Jukebox doesn't exist", StatusCode::NOT_FOUND)),
     }
 }
 
@@ -92,18 +106,14 @@ impl From<String> for Req {
 async fn handle_rejection(
     err: Rejection,
 ) -> Result<WithStatus<&'static str>, Infallible> {
-    let code;
-    let message;
-
-    if err.is_not_found() {
-        code = StatusCode::NOT_FOUND;
-        message = "NOT_FOUND";
+    let (code, message) = if err.is_not_found() {
+        (StatusCode::NOT_FOUND, "NOT_FOUND")
     } else if let Some(e) =
         err.find::<warp::filters::body::BodyDeserializeError>()
     {
         // This error happens if the body could not be deserialized correctly
         // We can use the cause to analyze the error and customize the error message
-        message = match e.source() {
+        let message = match e.source() {
             Some(cause) => {
                 if cause.to_string().contains("denom") {
                     "FIELD_ERROR: denom"
@@ -113,18 +123,16 @@ async fn handle_rejection(
             }
             None => "BAD_REQUEST",
         };
-        code = StatusCode::BAD_REQUEST;
+        (StatusCode::BAD_REQUEST, message)
     } else if let Some(_) = err.find::<warp::reject::MethodNotAllowed>() {
         // We can handle a specific error, here METHOD_NOT_ALLOWED,
         // and render it however we want
-        code = StatusCode::METHOD_NOT_ALLOWED;
-        message = "METHOD_NOT_ALLOWED";
+        (StatusCode::METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED")
     } else {
         // We should have expected this... Just log and say its a 500
         eprintln!("unhandled rejection: {:?}", err);
-        code = StatusCode::INTERNAL_SERVER_ERROR;
-        message = "UNHANDLED_REJECTION";
-    }
+        (StatusCode::INTERNAL_SERVER_ERROR, "UNHANDLED_REJECTION")
+    };
 
     Ok(warp::reply::with_status(message, code))
 }
