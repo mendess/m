@@ -8,7 +8,7 @@ use crate::{
         rooms::{Request, Response},
         socket_server::Protocol,
     },
-    try_prompt, RoomName, Ui,
+    try_prompt, RoomName,
 };
 use std::{
     borrow::Borrow, cell::RefCell, convert::Infallible, fmt::Write as _, io,
@@ -63,8 +63,9 @@ pub fn with_room_name<A: ToSocketAddrs>(
         socket.send(&room_name)?;
         socket.recv()?
     } {
-        *ref_room_name.borrow_mut() = room_name.name;
-        execute_loop(socket, pretty_prompt()).map(|_| ())
+        *ref_room_name.borrow_mut() = room_name.name.clone();
+        execute_loop(socket, pretty_prompt().with_room_name(room_name))
+            .map(|_| ())
     } else {
         Err(io::Error::new(io::ErrorKind::Other, "room name taken"))
     }
@@ -74,7 +75,7 @@ pub fn run<A: ToSocketAddrs>(addr: A, reconnect: Duration) -> io::Result<()> {
     let (mut socket, room_name) = start_protocol(addr, reconnect)?;
     let mut prompt = pretty_prompt();
     loop {
-        let rn = try_prompt!(prompt.room_name());
+        let rn = try_prompt!(prompt.ask_room_name());
         if {
             socket.send(rn)?;
             socket.recv()?

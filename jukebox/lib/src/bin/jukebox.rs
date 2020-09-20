@@ -87,9 +87,9 @@ impl Display for Mode {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), tokio::io::Error> {
     let options = Opt::from_args();
-    let r = match options.mode {
+    match options.mode {
         Mode::Server => server::run(options.port).await,
         Mode::Relay => relay::start(options.port).await,
         Mode::Jukebox => {
@@ -109,8 +109,5 @@ async fn main() {
             .unwrap();
             cli.run().await
         }
-    };
-    if let Err(e) = r {
-        eprintln!("Terminating because: {}", e);
     }
 }

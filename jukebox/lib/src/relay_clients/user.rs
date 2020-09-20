@@ -1,14 +1,13 @@
 use crate::{
     prompt::{pretty_prompt, Prompt},
     relay::web_server::Req,
-    try_prompt, RoomName, Ui,
+    try_prompt, RoomName,
 };
+use itertools::Itertools;
 use reqwest::{Client as RClient, Url};
 use tokio::io;
-use itertools::Itertools;
 
 pub struct Client {
-    room_name: Option<RoomName>,
     base_url: Url,
     prompt: Prompt,
     requests: RClient,
@@ -24,14 +23,14 @@ impl Client {
         port: u16,
         room_name: I,
     ) -> Result<Self, url::ParseError> {
+        let room_name = room_name.into();
         Ok(Self {
-            room_name: room_name.into(),
             base_url: Url::parse(&format!(
                 "http://{}:{}/",
                 endpoint,
                 port + 1
             ))?,
-            prompt: pretty_prompt(),
+            prompt: pretty_prompt().with_room_name(room_name),
             requests: Default::default(),
         })
     }
@@ -45,56 +44,84 @@ impl Client {
         })
     }
 
-    async fn inner_run(mut self) -> Result<(), Error> {
-        let Self {
-            room_name,
-            base_url,
-            prompt,
-            requests,
-        } = &mut self;
-        let mut rn = match room_name.take() {
-            Some(n) => n,
-            None => {
-                let r =
-                    requests.get(base_url.join("rooms").unwrap()).send().await;
-                match r {
-                    Ok(rooms) => prompt.inform(format!(
-                        "Available rooms: {}",
+    async fn change_room_name(&mut self) -> Result<(), Error> {
+        match self
+            .requests
+            .get(self.base_url.join("rooms").unwrap())
+            .send()
+            .await
+        {
+            Ok(rooms) => {
+                let rooms = rooms.json::<Vec<(String, bool)>>().await?;
+                if rooms.is_empty() {
+                    self.prompt.inform("No rooms available")
+                } else {
+                    self.prompt.inform(format!(
+                        "\x1b[1mAvailable rooms:\x1b[0m\n{}",
                         rooms
-                            .json::<Vec<(String, bool)>>()
-                            .await?
                             .into_iter()
                             .map(|(name, state)| format!(
-                                "{} {}",
-                                if state { "ONLINE " } else { "OFFLINE" },
+                                "{}\x1b[0m {}",
+                                if state {
+                                    "\x1b[32mONLINE "
+                                } else {
+                                    "\x1b[31mOFFLINE"
+                                },
                                 name
                             ))
                             .join("\n")
-                    )),
-                    Err(e) => {
-                        prompt.inform::<&Result<&str, _>>(&Err(&e));
-                        return Err(e.into());
-                    }
+                    ))
                 }
-                try_prompt!(prompt.room_name())
             }
-        };
-        rn.name.push('/');
-        let gets = base_url.join("get/").unwrap().join(&rn.name).unwrap();
-        let runs = base_url.join("run/").unwrap().join(&rn.name).unwrap();
+            Err(e) => {
+                self.prompt.inform::<&Result<&str, _>>(&Err(&e));
+                return Err(e.into());
+            }
+        }
+        try_prompt!(self.prompt.ask_room_name());
+        Ok(())
+    }
+
+    async fn inner_run(mut self) -> Result<(), Error> {
+        if self.prompt.room_name().is_none() {
+            self.change_room_name().await?;
+        }
+        let gets = self
+            .base_url
+            .join("get/")
+            .unwrap()
+            .join(&self.prompt.room_name().unwrap().name)
+            .unwrap();
+        let runs = self
+            .base_url
+            .join("run/")
+            .unwrap()
+            .join(&self.prompt.room_name().unwrap().name)
+            .unwrap();
         loop {
-            let cmd = try_prompt!(prompt.command());
+            let cmd = try_prompt!(self.prompt.command());
             let url = match method_picker(&cmd) {
                 Some(Method::Get) => &gets,
                 Some(Method::Run) => &runs,
+                Some(Method::Rooms) => {
+                    self.change_room_name().await?;
+                    continue;
+                }
                 None => {
-                    prompt.inform::<Result<&str, _>>(Err("Invalid command"));
+                    self.prompt
+                        .inform::<Result<&str, _>>(Err("Invalid command"));
                     continue;
                 }
             };
-            match requests.get(url.clone()).json(&Req::from(cmd)).send().await {
-                Ok(r) => prompt.inform(r.text().await),
-                Err(e) => prompt.inform(
+            match self
+                .requests
+                .post(url.clone())
+                .json(&Req::from(cmd))
+                .send()
+                .await
+            {
+                Ok(r) => self.prompt.inform(r.text().await),
+                Err(e) => self.prompt.inform(
                     e.status()
                         .map(|s| s.as_str().to_string())
                         .ok_or_else(|| e.to_string()),
@@ -107,6 +134,7 @@ impl Client {
 enum Method {
     Get,
     Run,
+    Rooms,
 }
 
 fn method_picker(cmd: &str) -> Option<Method> {
@@ -123,6 +151,7 @@ fn method_picker(cmd: &str) -> Option<Method> {
         "l" | "next-file" => Some(Method::Run),
         "J" | "back" => Some(Method::Run),
         "K" | "frwd" => Some(Method::Run),
+        ":rooms" => Some(Method::Rooms),
         _ => None,
     }
 }

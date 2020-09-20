@@ -1,4 +1,4 @@
-use crate::{Information, RoomName, Ui, UiError, UiResult};
+use crate::RoomName;
 use std::{
     fmt::{self, Display},
     io::{self, stdin, stdout, Write},
@@ -8,6 +8,7 @@ use std::{
 pub struct Prompt {
     buf: String,
     prompt_str: String,
+    room_name: Option<RoomName>,
 }
 
 pub fn pretty_prompt() -> Prompt {
@@ -22,37 +23,78 @@ impl Prompt {
         }
     }
 
-    pub fn p(&mut self, msg: &str) -> io::Result<usize> {
-        prompt(&mut self.buf, msg)
+    pub fn with_room_name<I: Into<Option<RoomName>>>(
+        mut self,
+        name: I,
+    ) -> Self {
+        self.room_name = name.into();
+        self
+    }
+
+    fn p<'s, I: Into<Option<&'s str>>>(&mut self, msg: I) -> io::Result<usize> {
+        let msg = msg.into();
+        loop {
+            self.buf.clear();
+            match msg {
+                Some(msg) => print!("{} ", msg),
+                None => print!(
+                    "{} {} ",
+                    self.room_name
+                        .as_ref()
+                        .map(|s| s.name.as_str())
+                        .unwrap_or(""),
+                    self.prompt_str
+                ),
+            }
+            stdout().flush()?;
+            let s = stdin().read_line(&mut self.buf)?;
+            match s {
+                // Empty string, let's try again
+                1 => continue,
+                // EOF, put a new line so the shell
+                // prompt appears on a new line
+                0 => println!(),
+                _ => (),
+            }
+            self.buf.pop();
+            break Ok(s);
+        }
     }
 
     pub fn buf(&self) -> &str {
         &self.buf
     }
-}
 
-fn prompt(buf: &mut String, msg: &str) -> io::Result<usize> {
-    loop {
-        buf.clear();
-        print!("{} ", msg);
-        stdout().flush()?;
-        let s = stdin().read_line(buf)?;
-        match s {
-            1 => continue,   // Empty string, let's try again
-            0 => println!(), // EOF, put a new line so the shell
-            // prompt appears on a new line
-            _ => (),
-        }
-        buf.pop();
-        break Ok(s);
+    pub fn room_name(&self) -> Option<&RoomName> {
+        self.room_name.as_ref()
+    }
+
+    pub fn ask_room_name(&mut self) -> PromptResult<RoomName> {
+        io_to_uiresult(|| self.p("Input room name:"))?;
+        let rn = self
+            .buf
+            .parse::<RoomName>()
+            .map_err(|e| PromptError::Invalid(e.to_string()))?;
+        self.room_name = Some(rn.clone());
+        Ok(rn)
+    }
+
+    pub fn command(&mut self) -> PromptResult {
+        io_to_uiresult(|| self.p(None)).map(|_| self.buf().into())
+    }
+
+    pub fn inform<I: Information>(&mut self, r: I) {
+        r.info(|d| println!("{}", d));
     }
 }
 
-fn prompt_conv<'a>(buf: &mut String, msg: &str) -> UiResult<'a, ()> {
-    match prompt(buf, msg) {
-        Ok(0) => Err(UiError::Closed),
+fn io_to_uiresult<'a, F: FnMut() -> io::Result<usize> + 'a>(
+    mut f: F,
+) -> PromptResult<'a, ()> {
+    match f() {
+        Ok(0) => Err(PromptError::Closed),
         Ok(_) => Ok(()),
-        Err(e) => Err(UiError::Io(e)),
+        Err(e) => Err(PromptError::Io(e)),
     }
 }
 
@@ -62,26 +104,78 @@ impl Display for Prompt {
     }
 }
 
-impl Ui for Prompt {
-    fn room_name(&mut self) -> UiResult<RoomName> {
-        let e = prompt_conv(&mut self.buf, "Input room name:");
-        if e.is_ok() {
-            self.prompt_str = format!("{} 🎵>", self.buf());
-        }
-        self.buf()
-            .parse::<RoomName>()
-            .map_err(|e| UiError::Invalid(e.to_string()))
-    }
+pub enum PromptError {
+    Io(io::Error),
+    Invalid(String),
+    Closed,
+}
 
-    fn command(&mut self) -> UiResult {
-        match prompt_conv(&mut self.buf, &self.prompt_str) {
-            Ok(_) => Ok(self.buf().into()),
-            Err(e) => Err(e),
+pub type PromptResult<'s, T = String> = Result<T, PromptError>;
+
+pub trait Information {
+    fn info<F>(&self, f: F)
+    where
+        F: Fn(&dyn Display);
+}
+
+impl<T, E> Information for Result<T, E>
+where
+    T: Display,
+    E: Display,
+{
+    fn info<F>(&self, f: F)
+    where
+        F: Fn(&dyn Display),
+    {
+        match self {
+            Ok(ref s) => f(s),
+            Err(ref e) => {
+                f(&"\x1b[1;31mError:\x1b[0m" as &dyn Display);
+                f(e);
+            }
         }
     }
+}
 
-    fn inform<I: Information>(&mut self, r: I) {
-        r.info(|d| println!("{}", d));
-        // crate::print_result(r)
+impl<T, E> Information for &Result<T, E>
+where
+    T: Display,
+    E: Display,
+{
+    fn info<F>(&self, f: F)
+    where
+        F: Fn(&dyn Display),
+    {
+        (*self).info(f)
     }
+}
+
+impl Information for &str {
+    fn info<F: Fn(&dyn Display)>(&self, f: F) {
+        f(self)
+    }
+}
+
+impl Information for String {
+    fn info<F: Fn(&dyn Display)>(&self, f: F) {
+        f(self)
+    }
+}
+
+#[macro_export]
+macro_rules! try_prompt {
+    ($e:expr) => { try_prompt!($e, return) };
+    ($e:expr, $k:tt) => {
+        match $e {
+            Ok(r) => r,
+            Err($crate::prompt::PromptError::Closed) => $k Ok(()),
+            Err($crate::prompt::PromptError::Io(e)) => $k Err(e.into()),
+            Err($crate::prompt::PromptError::Invalid(e)) => $k Err(
+                ::std::io::Error::new(
+                    ::std::io::ErrorKind::Other,
+                    e,
+                ).into()
+            )
+        }
+    };
 }

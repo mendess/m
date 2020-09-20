@@ -30,10 +30,9 @@ async fn get_cmd(
             CommandResult::Success(Err(err)) => {
                 Ok(with_status(err, StatusCode::BAD_REQUEST))
             }
-            CommandResult::BoxOfflineWarning => Ok(with_status(
-                "Box offline, command queued".into(),
-                StatusCode::OK,
-            )),
+            CommandResult::BoxOfflineWarning => {
+                Ok(with_status("Jukebox offline".into(), StatusCode::OK))
+            }
         }
     } else {
         Ok(with_status(
@@ -57,7 +56,7 @@ async fn run_cmd(
             Ok(with_status("Done", StatusCode::OK))
         }
         Some(CommandResult::BoxOfflineWarning) => {
-            Ok(with_status("Box offline, command queued", StatusCode::OK))
+            Ok(with_status("Jukebox offline", StatusCode::OK))
         }
         None => Ok(with_status("Jukebox doesn't exist", StatusCode::NOT_FOUND)),
     }
@@ -108,6 +107,7 @@ impl From<String> for Req {
 async fn handle_rejection(
     err: Rejection,
 ) -> Result<WithStatus<&'static str>, Infallible> {
+    let err = dbg!(err);
     let (code, message) = if err.is_not_found() {
         (StatusCode::NOT_FOUND, "NOT_FOUND")
     } else if let Some(e) =

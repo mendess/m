@@ -35,7 +35,7 @@ macro_rules! log {
     ($msg:expr $(,$args:expr)*$(,)?) => {
         ::std::eprintln!(
             "[{}::{}] {}",
-            ::chrono::offset::Utc::now().format("%m/%d-%H:%M"),
+            ::chrono::offset::Local::now().format("%m/%d-%H:%M"),
             function_name!(),
             format!($msg, $($args,)*)
         )
@@ -43,7 +43,7 @@ macro_rules! log {
     (@$name:expr, $msg:expr $(,$args:expr)*$(,)?) => {
         ::std::eprintln!(
             "[{}::{}::{}] {}",
-            ::chrono::offset::Utc::now().format("%m/%d-%H:%M"),
+            ::chrono::offset::Local::now().format("%m/%d-%H:%M"),
             $name,
             function_name!(),
             format!($msg, $($args,)*)
@@ -89,8 +89,8 @@ impl Jukebox {
                 }
                 r = receiver.arecv_with_buf::<Response>(&mut s) => {
                     let r = r?;
-                    log!(@self.name(), "got {:?} from remote", r);
                     if let Some((_, ch)) = gets.remove(&r.id) {
+                        log!(@self.name(), "got {:?} from remote", r);
                         if let Err(_) = ch.send(r.response) {
                             log!(
                                 @self.name(),
