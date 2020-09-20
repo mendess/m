@@ -21,6 +21,8 @@ reqwest = { version = "0.10", features = ["json"] }
 url = "2"
 chrono = "0.4"
 itertools = "0.9"
+tracing = "*"
+tracing-subscriber = "0.2"
 
 [dependencies.tokio]
 version = "0.2"

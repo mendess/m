@@ -5,7 +5,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, error::Error, net::Ipv4Addr};
 use tokio::io;
+use tracing_subscriber::fmt::format::FmtSpan;
 use warp::{
+    http::Method,
     http::StatusCode,
     reply::{with_status, WithStatus},
     Filter, Rejection,
@@ -65,29 +67,57 @@ async fn run_cmd(
 pub async fn start(port: u16, rooms: &'static Rooms) -> io::Result<()> {
     println!("Serving on port: {}", port);
 
-    let room_route =
-        warp::path("rooms").map(move || warp::reply::json(&rooms.list()));
+    let filter = std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| "tracing=info,warp=debug".to_owned());
+
+    tracing_subscriber::fmt()
+        // Use the filter we built above to determine which traces to record.
+        .with_env_filter(filter)
+        // Record an event when each span closes. This can be used to time our
+        // routes' durations!
+        .with_span_events(FmtSpan::CLOSE)
+        .init();
+
+    let room_route = warp::path("rooms")
+        .map(move || warp::reply::json(&rooms.list()))
+        .with(warp::trace::named("rooms"));
 
     let run = warp::path!("run" / RoomName / String)
-        .and_then(move |name, s| run_cmd(rooms, name, s));
+        .and_then(move |name, s| run_cmd(rooms, name, s))
+        .with(warp::trace::named("run"));
 
     let get = warp::path!("get" / RoomName / String)
-        .and_then(move |name, s| get_cmd(rooms, name, s));
+        .and_then(move |name, s| get_cmd(rooms, name, s))
+        .with(warp::trace::named("get"));
 
     let run_body = warp::path!("run" / RoomName)
         .and(warp::body::json())
-        .and_then(move |name, req: Req| run_cmd(rooms, name, req.cmd_line));
+        .and_then(move |name, req: Req| run_cmd(rooms, name, req.cmd_line))
+        .with(warp::trace::named("run_body"));
 
     let get_body = warp::path!("get" / RoomName)
         .and(warp::body::json())
-        .and_then(move |name, req: Req| get_cmd(rooms, name, req.cmd_line));
+        .and_then(move |name, req: Req| get_cmd(rooms, name, req.cmd_line))
+        .with(warp::trace::named("get_body"));
 
     let get_routes = warp::get().and(room_route.or(run).or(get));
     let post_routes = warp::post().and(run_body.or(get_body));
 
-    warp::serve(get_routes.or(post_routes).recover(handle_rejection))
-        .run((Ipv4Addr::UNSPECIFIED, port))
-        .await;
+    warp::serve(
+        post_routes
+            .or(get_routes)
+            .with(
+                warp::cors()
+                    .allow_any_origin()
+                    .allow_methods(vec![Method::GET, Method::POST])
+                    .allow_headers(vec!["content-type"])
+                    .build(),
+            )
+            .with(warp::trace::request())
+            .recover(handle_rejection),
+    )
+    .run((Ipv4Addr::UNSPECIFIED, port))
+    .await;
     Ok(())
 }
 
