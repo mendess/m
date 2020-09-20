@@ -594,7 +594,7 @@ now() {
     case "$start" in
         -1 | 0) start="1" ;;
     esac
-    end="$((start + 10))"
+    end="$((start + "${1:-10}"))"
     #shellcheck disable=SC2016
     mpv_get playlist -r '.data | .[] | .filename' |
         sed -n "${start},${end}p;$((end + 1))q;" |
@@ -785,7 +785,7 @@ main() {
             ;;
         now)
             ## Shows the current playlist
-            now
+            now "${@:2}"
             ;;
         c | current)
             ## Show the current song
