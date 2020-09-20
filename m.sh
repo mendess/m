@@ -566,10 +566,9 @@ preempt_download() {
     youtube-dl "$link" \
         --format 'bestaudio[ext=m4a]' \
         --add-metadata \
-        --output ~/.cache/queue_cache/'%(id)s.%(ext)s' &
+        --output ~/.cache/queue_cache/'%(id)s.%(ext)s' || return
 
     local id="$(youtube-dl "$link" --get-id)" || return
-    wait
 
     echo "i: $id"
     local filename=~/.cache/queue_cache/"$id.m4a"
@@ -599,6 +598,7 @@ now() {
     mpv_get playlist -r '.data | .[] | .filename' |
         sed -n "${start},${end}p;$((end + 1))q;" |
         perl -ne 's|^.*/([^/]*?)(-[A-Za-z0-9\-_-]{11}=m)?\.[^./]*$|\1\n|; print' |
+        sed -r 's/^$/=== ERROR ===/g' |
         python -c 'from threading import Thread
 import fileinput
 from subprocess import check_output as popen
