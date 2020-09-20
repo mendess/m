@@ -151,6 +151,7 @@ fn method_picker(cmd: &str) -> Option<Method> {
         "l" | "next-file" => Some(Method::Run),
         "J" | "back" => Some(Method::Run),
         "K" | "frwd" => Some(Method::Run),
+        "songs" => Some(Method::Get),
         ":rooms" => Some(Method::Rooms),
         _ => None,
     }

@@ -1,0 +1,64 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.now-playing {
+  font-size: 35px;
+}
+
+body.light {
+  background-color: white;
+}
+
+body.dark {
+  background-color: black;
+}
+
+input.light {
+  color: black;
+  border: solid 10px black;
+}
+
+input.dark {
+  color: white;
+  border: solid 10px white;
+}
+
+div.light {
+  color: black;
+}
+
+div.dark {
+  color: white;
+}
+
+.prev-pause-next {
+  flex-direction: row;
+  display: flex;
+  margin: auto;
+  padding: 10px;
+  justify-content: space-between;
+}
+
+.media-button {
+  cursor: pointer;
+  padding: 10px;
+  font-size: 200px;
+}
+
+input[type="text"] {
+  font-size: 100px;
+  text-align: center;
+  padding: 10px;
+  background-color: transparent;
+}
+
+.theme {
+  position: fixed;
+  bottom: 150px;
+  font-size: 100px;
+  right: 10px;
+  cursor: pointer;
+}

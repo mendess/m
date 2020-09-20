@@ -897,6 +897,10 @@ main() {
         toggle-video)
             echo 'cycle vid' | socat - "$(mpvsocket)"
             ;;
+        songs)
+            grep --color=auto -P '.+\t.+\t[0-9]+\t.*'"$2" "$PLAYLIST" |
+                awk -F'\t' '{print $2" :: "$1}'
+            ;;
         r)
             ## Get help for interactive mode
             echo -en "\b"

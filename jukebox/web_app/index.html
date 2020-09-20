@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>jukebox</title>
+    <script src="js/main.js"></script>
+    <link rel="stylesheet" href="style/style.css">
+  </head>
+  <body class="themed light">
+    <div class="container">
+      <input
+        id="room_name"
+        class="themed light"
+        text="room_name"
+        type="text"
+        placeholder="room name"/>
+      <div class="media-button" onclick="volume_up()"><span>🔊</span></div>
+      <div class="prev-pause-next">
+        <div class="media-button" onclick="prev()"><span>⏮</span></div>
+        <div class="media-button" onclick="pause()"><span>⏯</span></div>
+        <div class="media-button" onclick="next()"><span>⏭</span></div>
+      </div>
+      <div class="media-button" onclick="volume_down()"><span>🔈</span></div>
+      <div id="now-playing" class="now-playing themed light" onclick="now_playing()">
+      </div>
+      <div id="error"></div>
+      <div class="theme themed light" onclick="next_theme()">
+        theme
+      </div>
+    </div>
+  </body>
+</html>
