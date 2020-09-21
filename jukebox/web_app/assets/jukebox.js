@@ -5,32 +5,34 @@ let PLAYLIST_LOADED = false;
 window.onload = () => {
   document.getElementById("room_name").addEventListener(
     'keyup',
-    ({key}) => { if (key === "Enter") now_playing() })
+    ({key}) => { if (key === "Enter") now_playing() }
+  );
   document.getElementById("queue_search").addEventListener(
     'keyup',
-    (event) => {
-      const filter = event
-        .target
-        .value
-        .toUpperCase()
-        .split(' ')
-        .filter(e => e.trim().length > 0);
-      const list = document.getElementsByClassName('playlist-li');
-      let hidden_count = 0;
-      for(let i = 0; i < list.length; ++i) {
-        if (filter.every(s => list[i].innerText.toUpperCase().indexOf(s) > -1)) {
-          list[i].style.display = ""
-        } else {
-          ++hidden_count;
-          list[i].style.display = 'none';
-        }
-      }
-      document
-        .getElementsByClassName('playlist-li-default')[0]
-        .style
-        .display = hidden_count == list.length ? 'inherit' : 'none';
+    event => filter_queue(event.target.value)
+  );
+}
+
+filter_queue = (value) => {
+  const filter = value
+    .toUpperCase()
+    .split(' ')
+    .filter(e => e.trim().length > 0);
+  const list = document.getElementsByClassName('playlist-li');
+  let hidden_count = 0;
+  for(let i = 0; i < list.length; ++i) {
+    if (filter.every(s => list[i].innerText.toUpperCase().indexOf(s) > -1)) {
+      list[i].style.display = ""
+    } else {
+      ++hidden_count;
+      list[i].style.display = 'none';
     }
-  )
+  }
+  document
+    .getElementsByClassName('playlist-li-default')[0]
+    .style
+    .display = hidden_count == list.length ? 'inherit' : 'none';
+
 }
 
 room_name = () => document.getElementById('room_name').value
@@ -88,6 +90,7 @@ queue = (name) => {
   run(`queue "${name}"`);
   setTimeout(now_playing, 5000);
   document.getElementById('queue_search').value = '';
+  filter_queue('')
 }
 
 search_queue = () => {
@@ -96,6 +99,7 @@ search_queue = () => {
   run(`queue -s "${query}"`);
   setTimeout(now_playing, 5000);
   document.getElementById('queue_search').value = '';
+  filter_queue('')
 }
 
 next_theme = () => {
