@@ -8,24 +8,35 @@
   </head>
   <body class="themed light">
     <div class="container">
+      <h1>Jukebox</h1>
       <input
         id="room_name"
         class="themed light"
         text="room_name"
         type="text"
         placeholder="room name"/>
-      <div class="media-button" onclick="volume_up()"><span>🔊</span></div>
+      <div class="themed light media-button" onclick="volume_up()"><span>🔊</span></div>
       <div class="prev-pause-next">
-        <div class="media-button" onclick="prev()"><span>⏮</span></div>
-        <div class="media-button" onclick="pause()"><span>⏯</span></div>
-        <div class="media-button" onclick="next()"><span>⏭</span></div>
+        <div class="themed light media-button" onclick="prev()"><span>⏮</span></div>
+        <div class="themed light media-button" onclick="pause()"><span>⏯</span></div>
+        <div class="themed light media-button" onclick="next()"><span>⏭</span></div>
       </div>
-      <div class="media-button" onclick="volume_down()"><span>🔈</span></div>
+      <div class="themed light media-button" onclick="volume_down()"><span>🔈</span></div>
       <div id="now-playing" class="now-playing themed light" onclick="now_playing()">
       </div>
-      <div id="error"></div>
-      <div class="theme themed light" onclick="next_theme()">
-        theme
+      <div id="error" class="error" onclick="clear_error()"></div>
+      <!-- <div class="theme themed light" onclick="next_theme()"> theme </div> -->
+    </div>
+    <div class="container">
+      <h1 class="themed light">Queue</h1>
+      <input
+        id="queue_search"
+        class="themed light"
+        text="search"
+        type="text"
+        placeholder="search for a song to queue" />
+      <div class="playlist">
+        <ul id="playlist" class="playlist"></ul>
       </div>
     </div>
   </body>

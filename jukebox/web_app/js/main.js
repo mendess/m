@@ -1,8 +1,43 @@
+const THEMES = ["light", "dark"];
+let CURRENT_THEME = 0;
+let PLAYLIST_LOADED = false;
+
+window.onload = () => {
+  document.getElementById("room_name").addEventListener(
+    'keyup',
+    ({key}) => { if (key === "Enter") now_playing() })
+  document.getElementById("queue_search").addEventListener(
+    'keyup',
+    (event) => {
+      const filter = event
+        .target
+        .value
+        .toUpperCase()
+        .split(' ')
+        .filter(e => e.trim().length > 0);
+      const list = document.getElementsByClassName('playlist-li');
+      let hidden_count = 0;
+      for(let i = 0; i < list.length; ++i) {
+        if (filter.every(s => list[i].innerText.toUpperCase().indexOf(s) > -1)) {
+          list[i].style.display = ""
+        } else {
+          ++hidden_count;
+          list[i].style.display = 'none';
+        }
+      }
+      document
+        .getElementsByClassName('playlist-li-default')[0]
+        .style
+        .display = hidden_count == list.length ? 'inherit' : 'none';
+    }
+  )
+}
+
 room_name = () => document.getElementById('room_name').value
 
-show_error = (error) => document
-  .getElementById('error')
-  .innerHtml = `<p>${error}</p>`
+show_error = (error) => document.getElementById('error').innerHTML = `${error}`
+
+clear_error = () => document.getElementById('error').innerHTML = '';
 
 api = (command, method) => fetch(`http://mendess.xyz:4193/${method}/${room_name()}/`,
   {
@@ -40,30 +75,57 @@ pause = () => { run('p'); now_playing(); }
 next = () => { run('l'); now_playing() }
 
 now_playing = () => {
+  load_playlist();
   get('current', data => {
+    console.log(data);
     document
       .getElementById("now-playing")
-      .innerHTML = `<p>${data.replaceAll("\n", "<br>")}</p>`
-    console.log(document.getElementById("now-playing").innerHTML)
+      .innerHTML = `<p>${data.replace(/\n/g, "<br>")}</p>`
   })
 }
 
-next_theme = () => {
-  const themes = ["light", "dark"];
-  next = (a) => themes[(themes.indexOf(a) + 1) % themes.length];
-  Array.from(document.getElementsByClassName("themed"))
-    .forEach(e => {
-      for(let i = 0; i < themes.length; ++i) {
-        if (e.className.indexOf(themes[i]) != -1) {
-          e.className = e.className.replace(themes[i], next(themes[i]));
-          break;
-        }
-      }
-    });
+queue = (name) => {
+  run(`queue "${name}"`);
+  setTimeout(now_playing, 5000);
+  document.getElementById('queue_search').value = '';
 }
 
-window.onload = () => {
-  document.getElementById("room_name").addEventListener(
-    'keyup',
-    ({key}) => { if (key === "Enter") now_playing() })
+search_queue = () => {
+  const query = document.getElementById('queue_search').value;
+  console.log('searching for', query);
+  run(`queue -s "${query}"`);
+  setTimeout(now_playing, 5000);
+  document.getElementById('queue_search').value = '';
 }
+
+next_theme = () => {
+  let next = (CURRENT_THEME + 1) % THEMES.length;
+  Array.from(document.getElementsByClassName("themed"))
+    .forEach(e => e.className = e.className.replace(THEMES[CURRENT_THEME], THEMES[next]));
+  CURRENT_THEME = next;
+}
+
+load_playlist = () => {
+  if (PLAYLIST_LOADED) { return; }
+  const list = document.getElementById("playlist")
+  list.innerHTML = '';
+  PLAYLIST_LOADED = true;
+  get('songs', data => {
+    data
+      .split("\n")
+      .map(l => l.split(' :: ')[1])
+      .filter(l => l != undefined)
+      .forEach(e => {
+        list.innerHTML +=
+          `<li class="playlist-li themed ${THEMES[CURRENT_THEME]}" onclick="queue('${e}')">${e}</li>`;
+      });
+    list.innerHTML = list.innerHTML.trim();
+    if (list.innerHTML != '') {
+      list.innerHTML +=
+        `<li class="playlist-li-default themed ${THEMES[CURRENT_THEME]}" onclick="search_queue()">search on youtube</li>`;
+    } else {
+      PLAYLIST_LOADED = false;
+    }
+  })
+}
+
