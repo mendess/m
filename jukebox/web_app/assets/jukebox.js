@@ -1,6 +1,7 @@
 const THEMES = ["light", "dark"];
 let CURRENT_THEME = 0;
 let PLAYLIST_LOADED = false;
+let ENDPOINT = "mendess.xyz";
 
 window.onload = () => {
   document.getElementById("room_name").addEventListener(
@@ -41,7 +42,7 @@ show_error = (error) => document.getElementById('error').innerHTML = `${error}`
 
 clear_error = () => document.getElementById('error').innerHTML = '';
 
-api = (command, method) => fetch(`http://mendess.xyz:4193/${method}/${room_name()}/`,
+api = (command, method) => fetch(`http://${ENDPOINT}:4193/${method}/${room_name()}/`,
   {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
