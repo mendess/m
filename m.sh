@@ -114,8 +114,8 @@ play() {
             mpv \
                 --geometry=820x466 \
                 "$LOOP_PLAYLIST" \
-                --input-ipc-server="$(mpvsocket new)"
-            "$@"
+                --input-ipc-server="$(mpvsocket new)" \
+                "$@"
             ;;
         no)
             if [ -z "$DISPLAY" ]; then
