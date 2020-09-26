@@ -100,11 +100,10 @@ notify() {
 }
 
 with_video() {
-    if [ "$1" != force ] && { [ "$(mpvsocket)" != "/dev/null" ] || [ -z "$DISPLAY" ]; }; then
+    if [ -z "$DISPLAY" ]; then
         WITH_VIDEO=no
-    else
-        WITH_VIDEO=$(echo "no
-yes" | selector -i -p "With video?")
+    elif [ "$1" = force ] || [ "$(mpvsocket)" = /dev/null ]; then
+        WITH_VIDEO=$(printf "no\nyes" | selector -i -p "With video?")
     fi
 }
 
@@ -585,11 +584,11 @@ queue() {
                 -i "$img"
             rm -f "$img"
         } &
-        [[ "$file" =~ (ytdl|http).* ]] && {
-            preempt_download "$playlist_pos" "$file" &
-            disown
-        }
-
+        [[ "$file" =~ (ytdl|http).* ]] && case "$file" in
+            *playlist*) echo "preempt download is not available for playlists" ;;
+            *) preempt_download "$playlist_pos" "$file" ;;
+        esac &
+        disown
         if [ "$(jobs -p | wc -l)" -ge "$(nproc)" ]; then
             wait -n
         fi
