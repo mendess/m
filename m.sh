@@ -33,7 +33,7 @@ case "${1,,}" in
 esac
 
 error() {
-    notify "$@" >&2
+    notify --error "$@" >&2
 }
 
 update_panel() {
@@ -61,8 +61,8 @@ selector() {
 }
 
 notify() {
-    bold() { if [ -t 1 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
-    red() { if [ -t 1 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
+    bold() { if [ -t 1 ] || [ -t 2 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
+    red() { if [ -t 1 ] || [ -t 2 ]; then echo -en "\e[1;31m$1\e[0m"; else echo -en "$1"; fi; }
     local text=()
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -85,7 +85,7 @@ notify() {
     }
     if [ "$PROMPT_PROG" = fzf ]; then
         if [[ "$err" ]]; then
-            red "Error:" >&2
+            red "Error: " >&2
             tty >&2
         else
             tty
@@ -165,7 +165,7 @@ clipboard"
                 selector -i -p "Which video?" -l "$(echo "$vidlist" | wc -l)")"
 
             if [ -z "$vidname" ]; then
-                exit 1
+                return 1
             else
                 local vids="$(echo "$vidlist" |
                     grep -F "$vidname" |
@@ -226,7 +226,7 @@ clipboard"
 
     [ -z "$clipboard" ] &&
         (
-            cd "$MUSIC_DIR" || exit 1
+            cd "$MUSIC_DIR" || return 1
             printf "%s\n" "${final_list[@]}" |
                 grep '^http' |
                 xargs \
@@ -370,7 +370,7 @@ current_song() {
         [ "$filename" = "_" ] ||
         [ "$filename" = "$videoId" ]; then
 
-        [ -z "$videoId" ] && exit 1
+        [ -z "$videoId" ] && return 1
         filename=$(grep "$videoId" "$PLAYLIST" | awk -F '\t' '{print $1}')
         [ -z "$filename" ] && filename="$videoId"
     fi
@@ -421,7 +421,7 @@ add_cat() {
         sed 's/"//g' |
         sed -E 's|.*/([^/]+)$|\1|g')
 
-    [ -z "$current_song" ] && exit 2
+    [ -z "$current_song" ] && return 2
 
     while :; do
         case "$PROMPT_PROG" in
@@ -683,15 +683,15 @@ for i in range(11):
 
 add_song() {
     url="$(echo "$1" | sed -E 's|https://.*=(.*)\&?|https://youtu.be/\1|')"
-    [ -z "$url" ] && error "'$url' is not a valid link" && exit 1
+    [ -z "$url" ] && error "'$url' is not a valid link" && return 1
     entry="$(grep "$url" "$PLAYLIST")" &&
-        error "$entry already in $PLAYLIST" &&
-        exit 1
+        error "Song already in $PLAYLIST" "$entry" &&
+        return 1
     categories=$(echo "${@:2}" | tr '[:upper:]' '[:lower:]' | tr ' ' '\t' | sed -E 's/\t$//')
     [ -n "$categories" ] && categories="	$categories"
     notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
-    [ "${PIPESTATUS[0]}" -ne 0 ] && error 'Failed to get title from output' && exit 1
+    [ "${PIPESTATUS[0]}" -ne 0 ] && error 'Failed to get title from output' && return 1
 
     notify 'getting duration'
     duration="$(youtube-dl --get-duration "$1" |
@@ -782,7 +782,7 @@ main() {
                     ;;
                 '')
                     error 'Give me something to play'
-                    exit 1
+                    return 1
                     ;;
                 *)
                     local song="$(interpret_song "$2")"
@@ -796,7 +796,7 @@ main() {
             ## Interactively asks the user what songs they want to play
             ## from their playlist
             [ -e "$PLAYLIST" ] || touch "$PLAYLIST"
-            [ ! -s "$PLAYLIST" ] && error "Playlist file emtpy" && exit 1
+            [ ! -s "$PLAYLIST" ] && error "Playlist file emtpy" && return 1
             start_playlist_interactive
             ;;
         new | add-song)
@@ -815,13 +815,16 @@ main() {
             ## Options:
             ##      -q | --queue  Queue the playlist too
             case $2 in
-                -q | --queue) m queue "$3" ;;
+                -q | --queue)
+                    m queue "$3"
+                    shift
+                    ;;
             esac
             youtube-dl --get-id "$2" |
                 sed 's|^|https://youtu.be/|' |
                 while read -r l; do
                     notify "adding $l"
-                    main add_song "$l" "${@:3}"
+                    main add-song "$l" "${@:3}"
                 done
             ;;
         cat)
@@ -855,7 +858,7 @@ main() {
             ;;
         del | delete-song)
             ## Delete a passed song
-            [ $# -gt 1 ] || exit 1
+            [ $# -gt 1 ] || return 1
             del_song "${@:2}"
             ;;
         clean-downloads)
