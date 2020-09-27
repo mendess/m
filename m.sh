@@ -5,7 +5,7 @@
 #shellcheck disable=SC1090
 [ -e ~/.config/user-dirs.dirs ] && . ~/.config/user-dirs.dirs
 
-CONFIG_DIR="${XDG_CONFIG_HOME:-~/.config/}/m"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config/}/m"
 PLAYLIST="$(realpath "$CONFIG_DIR/playlist")"
 SCRIPT_NAME="$(basename "$0")"
 if [ -z "$TMPDIR" ]; then
@@ -16,7 +16,7 @@ if [ -z "$TMPDIR" ]; then
     fi
 fi
 
-MUSIC_DIR="${XDG_MUSIC_DIR:-~/Music}"
+MUSIC_DIR="${XDG_MUSIC_DIR:-$HOME/Music}"
 LOOP_PLAYLIST="--loop-playlist"
 WITH_VIDEO=no
 
