@@ -17,6 +17,7 @@ if [ -z "$TMPDIR" ]; then
 fi
 
 MUSIC_DIR="${XDG_MUSIC_DIR:-$HOME/Music}"
+mkdir -p "$MUSIC_DIR"
 LOOP_PLAYLIST="--loop-playlist"
 WITH_VIDEO=no
 
@@ -262,7 +263,7 @@ clipboard"
             sleep 2
             update_panel
             sleep 5
-            m queue "${final_list[@]:10}" --no-move
+            m queue "${final_list[@]:10}" --no-move --no-preempt-download
         ) &
         local starting_queue=("${final_list[@]:0:10}")
         play "${starting_queue[@]}"
@@ -513,6 +514,9 @@ queue() {
                     targets+=("$(check_cache "$line")")
                 done < <(songs_in_cat "$1" | shuf)
                 ;;
+            -d | --no-preempt-download)
+                local no_preempt_download=1
+                ;;
             --category=*)
                 while read -r line; do
                     targets+=("$(check_cache "$line")")
@@ -584,7 +588,7 @@ queue() {
                 -i "$img"
             rm -f "$img"
         } &
-        [[ "$file" =~ (ytdl|http).* ]] && case "$file" in
+        [[ -z "$no_preempt_download" ]] && [[ "$file" =~ (ytdl|http).* ]] && case "$file" in
             *playlist*) echo "preempt download is not available for playlists" ;;
             *) preempt_download "$playlist_pos" "$file" ;;
         esac &
@@ -849,11 +853,12 @@ main() {
         q | queue)
             ## Queue a song
             ## Options:
-            ##     -r | --reset            Resets the queue fairness
-            ##     -s | --search STRING    Searches youtube for the STRING
-            ##     -n | --notify           Send a notification
-            ##     -m | --no-move          Don't move in the playlist, keep it at the end
-            ##     -c | --category STRING  Queue all songs in a category
+            ##     -r | --reset               Resets the queue fairness
+            ##     -s | --search STRING       Searches youtube for the STRING
+            ##     -n | --notify              Send a notification
+            ##     -m | --no-move             Don't move in the playlist, keep it at the end
+            ##     -c | --category STRING     Queue all songs in a category
+            ##     -p | --no-preempt-download Don't preemptively download songs
             queue "${@:2}"
             ;;
         del | delete-song)
