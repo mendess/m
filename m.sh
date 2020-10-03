@@ -43,6 +43,7 @@ update_panel() {
 
 check_cache() {
     local PATTERN
+    [ -z "$1" ] && error wtf && exit 1
     PATTERN=("$MUSIC_DIR"/*"$(basename "$1" | grep -Eo '.......$')"*)
     [[ -f "${PATTERN[0]}" ]] && echo "${PATTERN[0]}" || echo "$1"
 }
@@ -490,6 +491,7 @@ interpret_song() {
 }
 
 queue() {
+    local search_terms=()
     local targets=()
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -505,8 +507,11 @@ queue() {
                 no_move=1
                 ;;
             -s | --search)
-                shift
-                targets+=("ytdl://ytsearch:$1")
+                local search=1
+                ;;
+            --search=*)
+                local search=1
+                search_terms+=("${1#*=}")
                 ;;
             -c | --category)
                 shift
@@ -514,25 +519,52 @@ queue() {
                     targets+=("$(check_cache "$line")")
                 done < <(songs_in_cat "$1" | shuf)
                 ;;
-            -d | --no-preempt-download)
-                local no_preempt_download=1
-                ;;
             --category=*)
                 while read -r line; do
                     targets+=("$(check_cache "$line")")
                 done < <(songs_in_cat "${1#*=}" | shuf)
                 ;;
+            -d | --no-preempt-download)
+                local no_preempt_download=1
+                ;;
+            http*)
+                check_cache "$1"
+                ;;
+            -*)
+                error "Invalid option:" "$1"
+                return 1
+                ;;
             *)
-                local t
-                t="$(interpret_song "$1")" &&
-                    [ -n "$t" ] &&
-                    targets+=("$t") ||
-                    return 1
+                if [[ -e "$1" ]]; then
+                    targets+=("$1")
+                else
+                    search_terms+=("$1")
+                fi
                 ;;
         esac
         shift
     done
-    [ "${#targets[@]}" -lt 1 ] &&
+    if [[ "$search" ]]; then
+        targets+=("ytdl://ytsearch:${search_terms[*]}")
+    else
+        local t
+        for term in "${search_terms[@]}"; do
+            t="$(if [[ "$t" ]]; then echo "$t"; else cat "$PLAYLIST"; fi |
+                awk \
+                    -v IGNORECASE=1 \
+                    -F '\t' \
+                    '$1 ~ /'"$term"'/ {print $1"\t"$2}' |
+                while IFS=$'\t' read -r name link _; do
+                    printf "%s\t%s\n" "$name" "$link"
+                done)"
+        done
+        [[ -z "$t" ]] && error "No matches" && return 1
+        [[ "$(echo "$t" | wc -l)" -gt 1 ]] &&
+            error "Too many matches" &&
+            return 1
+        targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
+    fi
+    [[ "${#targets[@]}" -lt 1 ]] &&
         [[ ! "$reseted" ]] &&
         error "No files to queue" &&
         return 1
