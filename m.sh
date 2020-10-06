@@ -203,7 +203,7 @@ clipboard"
 
             [ -z "$catg" ] && return 1
             vidlist=$(echo "$vidlist" | shuf)
-            local vids="$(songs_in_cat "$catg" | xargs)"
+            local vids="$(songs_in_cat "$catg" | shuf | xargs)"
             ;;
 
         clipboard)
@@ -546,7 +546,7 @@ queue() {
     done
     if [[ "$search" ]]; then
         targets+=("ytdl://ytsearch:${search_terms[*]}")
-    else
+    elif [[ "${#search_terms[@]}" -gt 0 ]]; then
         local t
         for term in "${search_terms[@]}"; do
             t="$(if [[ "$t" ]]; then echo "$t"; else cat "$PLAYLIST"; fi |
@@ -558,11 +558,16 @@ queue() {
                     printf "%s\t%s\n" "$name" "$link"
                 done)"
         done
-        [[ -z "$t" ]] && error "No matches" && return 1
-        [[ "$(echo "$t" | wc -l)" -gt 1 ]] &&
-            error "Too many matches" &&
-            return 1
-        targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
+        if [[ -z "$t" ]]; then
+            [[ "${#targets[@]}" = 0 ]] &&
+                error "No matches" &&
+                return 1
+        else
+            [[ "$(echo "$t" | wc -l)" -gt 1 ]] &&
+                error "Too many matches" &&
+                return 1
+            targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
+        fi
     fi
     [[ "${#targets[@]}" -lt 1 ]] &&
         [[ ! "$reseted" ]] &&
@@ -988,6 +993,9 @@ main() {
             ;;
         socket)
             mpvsocket "${@:2}"
+            ;;
+        shuffle | shuf)
+            mpv_do '["playlist-shuffle"]' .error -r
             ;;
         r)
             ## Get help for interactive mode
