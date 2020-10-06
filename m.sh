@@ -528,7 +528,7 @@ queue() {
                 local no_preempt_download=1
                 ;;
             http*)
-                check_cache "$1"
+                targets+=(check_cache "$1")
                 ;;
             -*)
                 error "Invalid option:" "$1"
