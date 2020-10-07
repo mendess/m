@@ -799,7 +799,7 @@ loop() {
 main() {
     case $1 in
         p | pause)
-            ## Togle pause
+            ## Toggle pause
             if pgrep spotify &>/dev/null; then
                 spotify_toggle_pause
             else
@@ -912,12 +912,16 @@ main() {
             loop
             ;;
         k | vu)
-            ## Increase volume by ${2:-2}%
+            ## Increase volume
+            ## Usage: m vu [amount]
+            ##  default amount is 2
             echo "add volume ${2:-2}" | socat - "$(mpvsocket)"
             update_panel
             ;;
         j | vd)
-            ## Decrease volume by ${2:-2}%
+            ## Decrease  volume
+            ## Usage: m vd [amount]
+            ##  default amount is 2
             echo "add volume -${2:-2}" | socat - "$(mpvsocket)"
             update_panel
             ;;
@@ -963,44 +967,66 @@ main() {
                 update_panel
             } &
             ;;
-        J | back)
-            ## Seek ${2:-10}s backward
+        J | u | back)
+            ## Seek backward
+            ## Usage: m back [amount]
+            ##  default amount is 2 seconds
             echo "seek -${2:-10}" | socat - "$(mpvsocket)"
             ;;
-        K | frwd)
-            ## Seek ${2:-10}s forward
+        K | i | frwd)
+            ## Seek forward
+            ## Usage: m frwd [amount]
+            ##  default amount is 2 seconds
             echo "seek ${2:-10}" | socat - "$(mpvsocket)"
             ;;
         int | interactive)
             ## Enter interactive mode
+            main r
             while :; do
                 read -r -n 1 input
-                [ "$input" = "q" ] && break
-                [ "$input" = "c" ] && echo
+                [ "$input" = $'\004' ] || [ "$input" = "q" ] && break
+                echo -en "\b"
                 main "$input"
-                [ "$input" = "c" ] || echo -en "\b"
             done
+            echo -en "\b\b"
             ;;
         jukebox)
+            ## Start a jukebox instance
             jukebox -n "$(hostname)" jukebox
             ;;
         toggle-video)
+            ## Toggle video
             echo 'cycle vid' | socat - "$(mpvsocket)"
             ;;
         songs)
+            ## Get all songs in the playlist, optionaly filtered by category
+            ## Usage: m songs [cat]
             grep --color=auto -P '.+\t.+\t[0-9]+\t.*'"$2" "$PLAYLIST" |
                 awk -F'\t' '{print $2" :: "$1}'
             ;;
         socket)
+            ## Get the socket in use
             mpvsocket "${@:2}"
             ;;
         shuffle | shuf)
+            ## Shuffle the playlist
             mpv_do '["playlist-shuffle"]' .error -r
             ;;
         r)
             ## Get help for interactive mode
-            echo -en "\b"
-            grep -Po ' \w\|\w[^)]+\)' "$(command -v "$0")"
+            cat <<EOF
+p: pause
+c: current
+k: volume up
+j: volume down
+H: previous chapter
+L: next chapter
+h: previous file
+l: next file
+J | u: seek backwards
+K | i: seek forwards
+r: interactive mode help
+EOF
             ;;
         help)
             ## Get help
@@ -1008,7 +1034,7 @@ main() {
                 awk \ '
 BEGIN                                          { in_main=0; in_case=0; print_docs=0; inner_case=-1 }
 $0 ~ /main\(\)/                                { in_main=1 }
-in_main && !inner_case && /'"$2"'[a-zA-Z| ]*)/ { sub(/^ */, "", $0); print($0); print_docs=1 }
+in_main && !inner_case && /([| ]'"$2"'\))|[| ]'"$2"'\s*\|.*\)/ { sub(/^ */, "", $0); print($0); print_docs=1 }
 print_docs && /^\s+##.*/                       { sub(/^\s+##/, "", $0); print("\t"$0) }
 /case/                                         { inner_case++ }
 /esac/                                         { inner_case-- }
@@ -1017,10 +1043,11 @@ print_docs && !inner_case && /;;/              { print_docs=0 }
             else
                 awk \ '
 BEGIN                   {in_main=0; in_case=0;}
-$0 ~ /main\(\)/         {in_main=1}
+in_case && /^\s+##.*/   {sub(/^\s+##/, "", $0); print("\t"$0)}
+in_case && /\s+[a-zA-Z][^)]*\)$/ {sub(/)/, "", $0); sub(/^ */, "", $0); print($0)}
 in_main && /case/       {in_case=1}
-in_case && /\w[^)]*\)$/ {sub(/)/, "", $0); sub(/^ */, "", $0); print($0)}
-in_case && /^\s+##.*/   {sub(/^\s+##/, "", $0); print("\t"$0)}' \
+$0 ~ /main\(\)/         {in_main=1}
+' \
                     "$0"
             fi
             ;;
