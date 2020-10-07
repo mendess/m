@@ -530,7 +530,7 @@ queue() {
             http*)
                 targets+=(check_cache "$1")
                 ;;
-            -*)
+            -?*)
                 error "Invalid option:" "$1"
                 return 1
                 ;;
