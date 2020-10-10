@@ -446,89 +446,64 @@ last_queue() {
 }
 
 interpret_song() {
-    case "$1" in
-        --search=*)
-            echo "ytdl://ytsearch:${1#*=}"
-            ;;
-        -*)
-            error "Invalid option:" "$1"
-            return 1
-            ;;
-        http*)
-            # local n_titles="$(youtube-dl \
-            #     --max-downloads 1 \
-            #     --get-title "$1" \
-            #     --quiet |
-            #     wc -l)"
-            # [ "$n_titles" -ne 1 ] &&
-            #     error 'Invalid link:' "$1" &&
-            #     echo "[$(date)] $1" >>"/$TMPDIR/.queue_fails"
-
-            check_cache "$1"
-            ;;
-        *)
-            if [ -z "$1" ]; then
-                error 'Error queueing' 'Empty file name'
-                return 1
-            elif [ -e "$1" ]; then
-                echo "$1"
-            else
-                local matches="$(awk -F'\t' '{print($1"\t"$2)}' "$PLAYLIST" |
-                    grep -i "$1")"
-                local link="$(echo "$matches" | cut -f2)"
-                { {
-                    [ -z "$link" ] && error "No song found"
-                } || {
-                    [ "$(echo "$link" | wc -l)" -gt 1 ] &&
-                        error "Too many matches:" "$(echo "$matches" | cut -f1)"
-                }; } && return 1
-
-                check_cache "$link"
-            fi
-            ;;
-    esac
-    return 0
-}
-
-queue() {
-    local search_terms=()
-    local targets=()
+    local search search_terms=()
+    INTERPRET_targets=()
+    INTERPRET_reseted=
+    INTERPRET_no_move=
+    INTERPRET_no_preempt_download=
+    INTERPRET_notify=
     while [ $# -gt 0 ]; do
         case "$1" in
-            -n | --notify)
-                notify=1
-                ;;
             -r | --reset)
+                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Invalid option:" "$1"
+                    return 1
+                fi
                 notify "Reseting queue..."
                 rm -f "$(last_queue)"
-                local reseted=1
+                INTERPRET_reseted=1
                 ;;
             -m | --no-move)
-                no_move=1
+                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Invalid option:" "$1"
+                    return 1
+                fi
+                INTERPRET_no_move=1
+                ;;
+            -d | --no-preempt-download)
+                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Invalid option:" "$1"
+                    return 1
+                fi
+                INTERPRET_no_preempt_download=1
+                ;;
+            -n | --notify)
+                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Invalid option:" "$1"
+                    return 1
+                fi
+                INTERPRET_notify=1
                 ;;
             -s | --search)
-                local search=1
+                search=1
                 ;;
             --search=*)
-                local search=1
+                search=1
                 search_terms+=("${1#*=}")
                 ;;
             -c | --category)
                 shift
                 while read -r line; do
-                    targets+=("$(check_cache "$line")")
+                    INTERPRET_targets+=("$(check_cache "$line")")
                 done < <(songs_in_cat "$1" | shuf)
                 ;;
             --category=*)
                 while read -r line; do
-                    targets+=("$(check_cache "$line")")
+                    INTERPRET_targets+=("$(check_cache "$line")")
                 done < <(songs_in_cat "${1#*=}" | shuf)
                 ;;
-            -d | --no-preempt-download)
-                local no_preempt_download=1
-                ;;
             http*)
-                targets+=(check_cache "$1")
+                INTERPRET_targets+=("$(check_cache "$1")")
                 ;;
             -?*)
                 error "Invalid option:" "$1"
@@ -536,7 +511,7 @@ queue() {
                 ;;
             *)
                 if [[ -e "$1" ]]; then
-                    targets+=("$1")
+                    INTERPRET_targets+=("$1")
                 else
                     search_terms+=("$1")
                 fi
@@ -545,7 +520,7 @@ queue() {
         shift
     done
     if [[ "$search" ]]; then
-        targets+=("ytdl://ytsearch:${search_terms[*]}")
+        INTERPRET_targets+=("ytdl://ytsearch:${search_terms[*]}")
     elif [[ "${#search_terms[@]}" -gt 0 ]]; then
         local t
         for term in "${search_terms[@]}"; do
@@ -559,25 +534,30 @@ queue() {
                 done)"
         done
         if [[ -z "$t" ]]; then
-            [[ "${#targets[@]}" = 0 ]] &&
+            [[ "${#INTERPRET_targets[@]}" = 0 ]] &&
                 error "No matches" &&
                 return 1
         else
             [[ "$(echo "$t" | wc -l)" -gt 1 ]] &&
                 error "Too many matches" &&
                 return 1
-            targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
+            INTERPRET_targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
         fi
     fi
-    [[ "${#targets[@]}" -lt 1 ]] &&
-        [[ ! "$reseted" ]] &&
+    return 0
+}
+
+queue() {
+    INTERPRET_QUEUE_OPTIONS=1 interpret_song "$@" || return 1
+    [[ "${#INTERPRET_targets[@]}" -lt 1 ]] &&
+        [[ ! "$INTERPRET_reseted" ]] &&
         error "No files to queue" &&
         return 1
 
-    for file in "${targets[@]}"; do
+    for file in "${INTERPRET_targets[@]}"; do
         echo -n "Queueing song: '$file'... "
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
-        if [[ "$no_move" ]]; then
+        if [[ "$INTERPRET_no_move" ]]; then
             local playlist_pos=$(mpv_get playlist-count --raw-output '.data')
         else
             local count current target last_queue
@@ -594,7 +574,7 @@ queue() {
             echo "$target" >"$last_queue"
             local playlist_pos=$target
         fi
-        [ "$notify" = 1 ] && {
+        [ "$INTERPRET_notify" = 1 ] && {
             local img img_back name
             img=$(mktemp --tmpdir tmp.XXXXXXXXXXXXXXXXX.png)
             img_back="${img}_back.png"
@@ -625,17 +605,18 @@ queue() {
                 -i "$img"
             rm -f "$img"
         } &
-        [[ -z "$no_preempt_download" ]] && [[ "$file" =~ (ytdl|http).* ]] && case "$file" in
-            *playlist*) echo "preempt download is not available for playlists" ;;
-            *) preempt_download "$playlist_pos" "$file" ;;
-        esac &
+        [[ -z "$INTERPRET_no_preempt_download" ]] && [[ "$file" =~ (ytdl|http).* ]] &&
+            case "$file" in
+                *playlist*) echo "preempt download is not available for playlists" ;;
+                *) preempt_download "$playlist_pos" "$file" ;;
+            esac &
         disown
         if [ "$(jobs -p | wc -l)" -ge "$(nproc)" ]; then
             wait -n
         fi
     done
     wait
-    [ ${#targets[@]} -ge 5 ] && queue --reset
+    [ ${#INTERPRET_targets[@]} -ge 5 ] && queue --reset
     :
 }
 
@@ -804,34 +785,23 @@ main() {
                 spotify_toggle_pause
             else
                 echo 'cycle pause' | socat - "$(mpvsocket)"
-                update_panel
+                update_panel & disown
             fi
             ;;
         quit)
             ## Kill the most recent player
             echo 'quit' | socat - "$(mpvsocket)"
-            update_panel
+            update_panel & disown
             ;;
         play)
             ## Play something
             ##      Usage: m play [options] link
             ## Options:
             ##      -s | --search  Search the song on youtube
-            case "$2" in
-                -s | --search)
-                    local song="$(interpret_song "--search=$3")"
-                    ;;
-                '')
-                    error 'Give me something to play'
-                    return 1
-                    ;;
-                *)
-                    local song="$(interpret_song "$2")"
-                    ;;
-            esac
+            interpret_song "${@:2}" || exit 1
             with_video force
-            [[ "$song" != *playlist* ]] && LOOP_PLAYLIST=""
-            play "$song"
+            [[ "${#INTERPRET_targets[@]}" -eq 1 ]] && LOOP_PLAYLIST=""
+            play "${INTERPRET_targets[@]}"
             ;;
         playlist | play-interactive)
             ## Interactively asks the user what songs they want to play
@@ -916,19 +886,19 @@ main() {
             ## Usage: m vu [amount]
             ##  default amount is 2
             echo "add volume ${2:-2}" | socat - "$(mpvsocket)"
-            update_panel
+            update_panel & disown
             ;;
         j | vd)
             ## Decrease  volume
             ## Usage: m vd [amount]
             ##  default amount is 2
             echo "add volume -${2:-2}" | socat - "$(mpvsocket)"
-            update_panel
+            update_panel & disown
             ;;
         H | prev)
             ## Previous chapter in a file
             echo 'add chapter -1' | socat - "$(mpvsocket)"
-            update_panel
+            update_panel & disown
             {
                 sleep 2
                 update_panel
@@ -937,35 +907,25 @@ main() {
         L | next)
             ## Next chapter in a file
             echo 'add chapter 1' | socat - "$(mpvsocket)"
-            update_panel
-            {
-                sleep 2
-                update_panel
-            } &
+            update_panel & disown
             ;;
         h | prev-file)
             ## Go to previous file
             if pgrep spotify &>/dev/null; then
                 spotify_prev
+                update_panel & disown
             else
                 echo 'playlist-prev' | socat - "$(mpvsocket)"
             fi
-            {
-                sleep 2
-                update_panel
-            } &
             ;;
         l | next-file)
             ## Skip to the next file
             if pgrep spotify &>/dev/null; then
                 spotify_next
+                update_panel & disown
             else
                 echo 'playlist-next' | socat - "$(mpvsocket)"
             fi
-            {
-                sleep 2
-                update_panel
-            } &
             ;;
         J | u | back)
             ## Seek backward

@@ -32,11 +32,13 @@ async fn handle(mut stream: TcpStream) -> io::Result<()> {
         writer
             .write_all(serde_json::to_string(&r)?.as_bytes())
             .await?;
+        s.clear();
     }
     Ok(())
 }
 
 pub async fn run(port: u16) -> io::Result<()> {
+    println!("Serving on port: {}", port);
     let mut listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)).await?;
     let mut incoming = listener.incoming();
     while let Some(stream) = incoming.next().await {
