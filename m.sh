@@ -658,15 +658,17 @@ preempt_download() {
             local link="$2"
             ;;
     esac
+    local id="$(youtube-dl "$link" --get-id)" || return
+
     youtube-dl "$link" \
         --format 'bestaudio[ext=m4a]' \
         --add-metadata \
-        --output ~/.cache/queue_cache/'%(id)s.%(ext)s' || return
+        --output ~/.cache/queue_cache/'%(id)s.%(ext)s' \
+        &> ~/.cache/queue_cache/"$id.log" || return
 
-    local id="$(youtube-dl "$link" --get-id)" || return
 
-    echo "i: $id"
     local filename=~/.cache/queue_cache/"$id.m4a"
+    local logname=~/.cache/queue_cache/"$id.log"
     mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
     mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
     local count=$(mpv_get playlist-count --raw-output '.data')
@@ -679,6 +681,7 @@ preempt_download() {
     count=$(mpv_get playlist-count --raw-output '.data')
     mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
     rm "$filename"
+    rm "$logname"
 }
 
 now() {
