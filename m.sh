@@ -43,9 +43,18 @@ update_panel() {
 
 check_cache() {
     local PATTERN
-    [ -z "$1" ] && error wtf && exit 1
+    [[ -z "$1" ]] && error wtf && exit 1
     PATTERN=("$MUSIC_DIR"/*"$(basename "$1" | grep -Eo '.......$')"*)
-    [[ -f "${PATTERN[0]}" ]] && echo "${PATTERN[0]}" || echo "$1"
+    if [[ -f "${PATTERN[0]}" ]]; then
+        echo "${PATTERN[0]}"
+    else
+        echo "$1"
+        grep -q "$1" "$PLAYLIST" &&
+            [[ "$(pgrep -f youtube-dl | wc -l)" -lt 8 ]] &&
+            youtube-dl -o "$MUSIC_DIR/"'%(title)s-%(id)s=m.%(ext)s' \
+                --add-metadata \
+                "$1" &>"$TMPDIR/youtube-dl" &
+    fi
 }
 
 selector() {
@@ -442,47 +451,60 @@ add_cat() {
 }
 
 last_queue() {
-    echo "$(mpvsocket)_last_queue"
+    case "$1" in
+        reset)
+            rm -f "$(last_queue)"
+            ;;
+        *)
+            echo "$(mpvsocket)_last_queue"
+            ;;
+    esac
 }
 
 interpret_song() {
-    local search search_terms=()
+    local targets search search_terms=()
     INTERPRET_targets=()
     INTERPRET_reseted=
     INTERPRET_no_move=
     INTERPRET_no_preempt_download=
     INTERPRET_notify=
+    INTERPRET_clear=
     while [ $# -gt 0 ]; do
         case "$1" in
             -r | --reset)
-                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
-                    error "Invalid option:" "$1"
+                if [[ -z "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Queue only option: $1"
                     return 1
                 fi
-                notify "Reseting queue..."
-                rm -f "$(last_queue)"
                 INTERPRET_reseted=1
                 ;;
             -m | --no-move)
-                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
-                    error "Invalid option:" "$1"
+                if [[ -z "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Queue only option: $1"
                     return 1
                 fi
                 INTERPRET_no_move=1
                 ;;
             -d | --no-preempt-download)
-                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
-                    error "Invalid option:" "$1"
+                if [[ -z "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Queue only option: $1"
                     return 1
                 fi
                 INTERPRET_no_preempt_download=1
                 ;;
             -n | --notify)
-                if [[ "$INTERPRET_QUEUE_OPTIONS" ]]; then
-                    error "Invalid option:" "$1"
+                if [[ -z "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Queue only option: $1"
                     return 1
                 fi
                 INTERPRET_notify=1
+                ;;
+            -x | --clear)
+                if [[ -z "$INTERPRET_QUEUE_OPTIONS" ]]; then
+                    error "Queue only option: $1"
+                    return 1
+                fi
+                INTERPRET_clear=1
                 ;;
             -s | --search)
                 search=1
@@ -494,16 +516,16 @@ interpret_song() {
             -c | --category)
                 shift
                 while read -r line; do
-                    INTERPRET_targets+=("$(check_cache "$line")")
-                done < <(songs_in_cat "$1" | shuf)
+                    targets+=("$(check_cache "$line")")
+                done < <(songs_in_cat "$1")
                 ;;
             --category=*)
                 while read -r line; do
-                    INTERPRET_targets+=("$(check_cache "$line")")
-                done < <(songs_in_cat "${1#*=}" | shuf)
+                    targets+=("$(check_cache "$line")")
+                done < <(songs_in_cat "${1#*=}")
                 ;;
             http*)
-                INTERPRET_targets+=("$(check_cache "$1")")
+                targets+=("$(check_cache "$1")")
                 ;;
             -?*)
                 error "Invalid option:" "$1"
@@ -511,7 +533,7 @@ interpret_song() {
                 ;;
             *)
                 if [[ -e "$1" ]]; then
-                    INTERPRET_targets+=("$1")
+                    targets+=("$1")
                 else
                     search_terms+=("$1")
                 fi
@@ -520,7 +542,7 @@ interpret_song() {
         shift
     done
     if [[ "$search" ]]; then
-        INTERPRET_targets+=("ytdl://ytsearch:${search_terms[*]}")
+        targets+=("ytdl://ytsearch:${search_terms[*]}")
     elif [[ "${#search_terms[@]}" -gt 0 ]]; then
         local t
         for term in "${search_terms[@]}"; do
@@ -534,16 +556,17 @@ interpret_song() {
                 done)"
         done
         if [[ -z "$t" ]]; then
-            [[ "${#INTERPRET_targets[@]}" = 0 ]] &&
+            [[ "${#targets[@]}" = 0 ]] &&
                 error "No matches" &&
                 return 1
         else
             [[ "$(echo "$t" | wc -l)" -gt 1 ]] &&
                 error "Too many matches" &&
                 return 1
-            INTERPRET_targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
+            targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
         fi
     fi
+    mapfile -t INTERPRET_targets < <(printf "%s\n" "${targets[@]}" | sort -u | shuf)
     return 0
 }
 
@@ -553,7 +576,12 @@ queue() {
         [[ ! "$INTERPRET_reseted" ]] &&
         error "No files to queue" &&
         return 1
-
+    [[ "$INTERPRET_clear" ]] &&
+        echo -n "Clearing playlist... " &&
+        mpv_do '["playlist-clear"]' --raw-output .error
+    [[ "$INTERPRET_clear$INTERPRET_reseted" ]] &&
+        notify "Reseting queue..." &&
+        last_queue reset
     for file in "${INTERPRET_targets[@]}"; do
         echo -n "Queueing song: '$file'... "
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
@@ -616,7 +644,7 @@ queue() {
         fi
     done
     wait
-    [ ${#INTERPRET_targets[@]} -ge 5 ] && queue --reset
+    [ ${#INTERPRET_targets[@]} -ge 5 ] && last_queue reset
     :
 }
 
@@ -709,7 +737,10 @@ add_song() {
     entry="$(grep "$url" "$PLAYLIST")" &&
         error "Song already in $PLAYLIST" "$entry" &&
         return 1
-    categories=$(echo "${@:2}" | tr '[:upper:]' '[:lower:]' | tr ' ' '\t' | sed -E 's/\t$//')
+    categories=$(echo "${@:2}" |
+        tr '[:upper:]' '[:lower:]' |
+        tr ' ' '\t' |
+        sed -E 's/\t$//')
     [ -n "$categories" ] && categories="	$categories"
     notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
@@ -727,7 +758,7 @@ add_song() {
 
 del_song() {
     num_results="$(grep -c -i "$*" "$PLAYLIST")"
-    results="$(awk -F'\t' 'BEGIN {IGNORECASE = 1} $0 ~ /'"$*"'/ {print $1}' "$PLAYLIST")"
+    results="$(awk -F'\t' -v IGNORECASE=1 '/'"$*"'/ {print $1}' "$PLAYLIST")"
     case "$num_results" in
         0) error 'no results' && return 1 ;;
         1)
@@ -785,13 +816,15 @@ main() {
                 spotify_toggle_pause
             else
                 echo 'cycle pause' | socat - "$(mpvsocket)"
-                update_panel & disown
+                update_panel &
+                disown
             fi
             ;;
         quit)
             ## Kill the most recent player
             echo 'quit' | socat - "$(mpvsocket)"
-            update_panel & disown
+            update_panel &
+            disown
             ;;
         play)
             ## Play something
@@ -886,19 +919,22 @@ main() {
             ## Usage: m vu [amount]
             ##  default amount is 2
             echo "add volume ${2:-2}" | socat - "$(mpvsocket)"
-            update_panel & disown
+            update_panel &
+            disown
             ;;
         j | vd)
             ## Decrease  volume
             ## Usage: m vd [amount]
             ##  default amount is 2
             echo "add volume -${2:-2}" | socat - "$(mpvsocket)"
-            update_panel & disown
+            update_panel &
+            disown
             ;;
         H | prev)
             ## Previous chapter in a file
             echo 'add chapter -1' | socat - "$(mpvsocket)"
-            update_panel & disown
+            update_panel &
+            disown
             {
                 sleep 2
                 update_panel
@@ -907,13 +943,15 @@ main() {
         L | next)
             ## Next chapter in a file
             echo 'add chapter 1' | socat - "$(mpvsocket)"
-            update_panel & disown
+            update_panel &
+            disown
             ;;
         h | prev-file)
             ## Go to previous file
             if pgrep spotify &>/dev/null; then
                 spotify_prev
-                update_panel & disown
+                update_panel &
+                disown
             else
                 echo 'playlist-prev' | socat - "$(mpvsocket)"
             fi
@@ -922,7 +960,8 @@ main() {
             ## Skip to the next file
             if pgrep spotify &>/dev/null; then
                 spotify_next
-                update_panel & disown
+                update_panel &
+                disown
             else
                 echo 'playlist-next' | socat - "$(mpvsocket)"
             fi
