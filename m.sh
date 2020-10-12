@@ -16,7 +16,7 @@ if [ -z "$TMPDIR" ]; then
     fi
 fi
 
-MUSIC_DIR="${XDG_MUSIC_DIR:-$HOME/Music}"
+readonly MUSIC_DIR="${XDG_MUSIC_DIR:-$HOME/Music}"
 mkdir -p "$MUSIC_DIR"
 LOOP_PLAYLIST="--loop-playlist"
 WITH_VIDEO=no
@@ -664,8 +664,7 @@ preempt_download() {
         --format 'bestaudio[ext=m4a]' \
         --add-metadata \
         --output ~/.cache/queue_cache/'%(id)s.%(ext)s' \
-        &> ~/.cache/queue_cache/"$id.log" || return
-
+        &>~/.cache/queue_cache/"$id.log" || return
 
     local filename=~/.cache/queue_cache/"$id.m4a"
     local logname=~/.cache/queue_cache/"$id.log"
@@ -760,7 +759,16 @@ add_song() {
 }
 
 del_song() {
-    num_results="$(grep -c -i "$*" "$PLAYLIST")"
+    local search
+    if [[ $# -lt 1 ]]; then
+        echo "missing argument"
+        return 1
+    elif [[ "$1" =~ --current|-c ]]; then
+        search="$(current_song --link)"
+    else
+        search="$*"
+    fi
+    num_results="$(grep -c -i "$search" "$PLAYLIST")"
     results="$(awk -F'\t' -v IGNORECASE=1 '/'"$*"'/ {print $1}' "$PLAYLIST")"
     case "$num_results" in
         0) error 'no results' && return 1 ;;
@@ -906,7 +914,8 @@ main() {
             ;;
         del | delete-song)
             ## Delete a passed song
-            [ $# -gt 1 ] || return 1
+            ## Options:
+            ##      -c | --current Delete the current song
             del_song "${@:2}"
             ;;
         clean-downloads)
