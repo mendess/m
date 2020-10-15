@@ -119,6 +119,7 @@ with_video() {
 }
 
 play() {
+    "$0" pause
     case $WITH_VIDEO in
         yes)
             mpv \
