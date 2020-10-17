@@ -743,12 +743,17 @@ add_song() {
     [ -n "$categories" ] && categories="	$categories"
     notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
-    [ "${PIPESTATUS[0]}" -ne 0 ] && error 'Failed to get title from output' && return 1
+    [ "${PIPESTATUS[0]}" -ne 0 ] &&
+        error 'Failed to get title from output' &&
+        return 1
 
     notify 'getting duration'
     duration="$(youtube-dl --get-duration "$1" |
         sed -E 's/(.*):(.+):(.+)/\1*3600+\2*60+\3/;s/(.+):(.+)/\1*60+\2/' |
         bc -l)"
+    [ "${PIPESTATUS[0]}" -ne 0 ] &&
+        error 'Failed to get duration from output' &&
+        return 1
 
     notify 'adding to playlist'
     echo "$title	$url	$duration$categories"
