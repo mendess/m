@@ -681,13 +681,15 @@ preempt_download() {
 }
 
 now() {
-    local current start end
+    local current start end range back_offset
     current="$(mpv_get playlist-pos | jq .data)"
-    start="$((current - 1))"
+    local range=${1:-10}
+    back_offset=$(python -c "import math; print(math.floor($range*0.2) - 1)")
+    start="$((current - back_offset))"
     case "$start" in
-        -1 | 0) start="1" ;;
+        -* | 0) start="1" ;;
     esac
-    end="$((start + "${1:-10}"))"
+    end="$((start + range - 1))"
     #shellcheck disable=SC2016
     mpv_get playlist -r '.data | .[] | .filename' |
         sed -n "${start},${end}p;$((end + 1))q;" |
@@ -714,7 +716,7 @@ for line in fileinput.input():
     ts.append(t)
     i += 1
 
-for i in range(11):
+for i in range(len(ts)):
     if ts[i]:
         ts[i].join()
         if titles[i]:
