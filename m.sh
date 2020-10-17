@@ -661,27 +661,23 @@ preempt_download() {
     esac
     local id="$(youtube-dl "$link" --get-id)" || return
 
-    youtube-dl "$link" \
-        --format 'bestaudio[ext=m4a]' \
-        --add-metadata \
-        --output ~/.cache/queue_cache/'%(id)s.%(ext)s' \
-        &>~/.cache/queue_cache/"$id.log" || return
+    readonly local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/queue_cache"
+    mkdir -p "$cache_dir"
+    local filename="$cache_dir/$id.m4a"
 
-    local filename=~/.cache/queue_cache/"$id.m4a"
-    local logname=~/.cache/queue_cache/"$id.log"
+    [[ ! -e "$filename" ]] &&
+        youtube-dl "$link" \
+            --format 'bestaudio[ext=m4a]' \
+            --add-metadata \
+            --output "$cache_dir/"'%(id)s.%(ext)s' \
+            &>"$cache_dir/$id.log" || return
+
+    touch "$filename"
     mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
     mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
     local count=$(mpv_get playlist-count --raw-output '.data')
     mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
-    while [ "$(($(mpv_get playlist-pos --raw-output .data) - 5))" -lt "$queue_pos" ]; do
-        sleep 10m
-    done
-    mpv_do '["loadfile", "'"$2"'", "append"]' >/dev/null
-    mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
-    count=$(mpv_get playlist-count --raw-output '.data')
-    mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
-    rm "$filename"
-    rm "$logname"
+    find "$cache_dir" -type f -mtime +1 -delete
 }
 
 now() {
