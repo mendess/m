@@ -567,7 +567,8 @@ interpret_song() {
             targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
         fi
     fi
-    mapfile -t INTERPRET_targets < <(printf "%s\n" "${targets[@]}" | sort -u | shuf)
+    [[ "${#targets[@]}" -gt 0 ]] &&
+        mapfile -t INTERPRET_targets < <(printf "%s\n" "${targets[@]}" | sort -u | shuf)
     return 0
 }
 
