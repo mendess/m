@@ -157,9 +157,9 @@ songs_in_cat() {
 }
 
 start_playlist_interactive() {
-    local modes="single
+    local modes="All
+single
 random
-All
 Category
 clipboard"
 
