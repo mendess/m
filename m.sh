@@ -650,6 +650,29 @@ queue() {
     :
 }
 
+dequeue() {
+    local to_remove
+    case "$1" in
+        next)
+            dequeue +1
+            ;;
+        prev)
+            dequeue -1
+            ;;
+        +[0-9]*)
+            to_remove="$(( $(mpv_get playlist-pos -r .data) + ${1#+} ))"
+            ;;
+        -[0-9]*)
+            to_remove="$(( $(mpv_get playlist-pos -r .data) - ${1#-} ))"
+            ;;
+        [0-9]*)
+            to_remove="$1"
+            ;;
+    esac
+    [[ ! "$to_remove" ]] && return
+    mpv_do "[\"playlist-remove\", \"$to_remove\"]" .error
+}
+
 preempt_download() {
     local queue_pos="$1"
     case "$2" in
@@ -916,6 +939,9 @@ main() {
             ##     -c | --category STRING     Queue all songs in a category
             ##     -p | --no-preempt-download Don't preemptively download songs
             queue "${@:2}"
+            ;;
+        dq | dequeue)
+            dequeue "${@:2}"
             ;;
         del | delete-song)
             ## Delete a passed song
