@@ -119,7 +119,7 @@ with_video() {
 }
 
 play() {
-    "$0" pause
+    mpv_do '["set_property", "pause", true]' &>/dev/null
     case $WITH_VIDEO in
         yes)
             mpv \
@@ -136,15 +136,13 @@ play() {
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video "$@"
             else
-                command -v bspc &>/dev/null && bspc rule -a \* -o desktop=^10
-                $TERMINAL \
-                    --class m-media-player \
-                    -e mpv \
+                sedsid mpv \
                     --geometry=820x466 \
                     "$LOOP_PLAYLIST" \
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video \
-                    "$@" &
+                    "$@" &>/dev/null &
+                disown
             fi
             ;;
     esac
@@ -584,6 +582,12 @@ queue() {
     [[ "$INTERPRET_clear$INTERPRET_reseted" ]] &&
         notify "Reseting queue..." &&
         last_queue reset
+
+    if [[ "$(mpvsocket)" = /dev/null ]]; then
+        with_video force
+        play "${INTERPRET_targets[@]}"
+        return
+    fi
     for file in "${INTERPRET_targets[@]}"; do
         echo -n "Queueing song: '$file'... "
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
@@ -660,10 +664,10 @@ dequeue() {
             dequeue -1
             ;;
         +[0-9]*)
-            to_remove="$(( $(mpv_get playlist-pos -r .data) + ${1#+} ))"
+            to_remove="$(($(mpv_get playlist-pos -r .data) + ${1#+}))"
             ;;
         -[0-9]*)
-            to_remove="$(( $(mpv_get playlist-pos -r .data) - ${1#-} ))"
+            to_remove="$(($(mpv_get playlist-pos -r .data) - ${1#-}))"
             ;;
         [0-9]*)
             to_remove="$1"
