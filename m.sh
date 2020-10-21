@@ -136,7 +136,7 @@ play() {
                     --input-ipc-server="$(mpvsocket new)" \
                     --no-video "$@"
             else
-                sedsid mpv \
+                setsid mpv \
                     --geometry=820x466 \
                     "$LOOP_PLAYLIST" \
                     --input-ipc-server="$(mpvsocket new)" \
