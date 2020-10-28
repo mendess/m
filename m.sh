@@ -8,11 +8,12 @@
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config/}/m"
 PLAYLIST="$(realpath "$CONFIG_DIR/playlist")"
 SCRIPT_NAME="$(basename "$0")"
+readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/queue_cache"
 if [ -z "$TMPDIR" ]; then
     if [ -e /tmp ]; then
-        TMPDIR=/tmp
+        export TMPDIR=/tmp
     else
-        TMPDIR="$HOME/.cache"
+        export TMPDIR="$HOME/.cache"
     fi
 fi
 
@@ -72,8 +73,8 @@ selector() {
 }
 
 notify() {
-    bold() { if [ -t 1 ] || [ -t 2 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
-    red() { if [ -t 1 ] || [ -t 2 ]; then echo -en "\e[1;31m$1\e[0m"; else echo -en "$1"; fi; }
+    bold() { if [ -t 1 ] && [ -t 2 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
+    red() { if [ -t 1 ] && [ -t 2 ]; then echo -en "\e[1;31m$1\e[0m"; else echo -en "$1"; fi; }
     local text=()
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -256,10 +257,10 @@ clipboard"
             for song in "${final_list[@]}"; do
                 if [[ "$song" == *playlist* ]]; then
                     for s in $(youtube-dl "$song" --get-id); do
-                        main queue "https://youtu.be/$s" --notify
+                        queue "https://youtu.be/$s" --notify
                     done
                 else
-                    main queue "$song" --notify
+                    queue "$song" --notify
                 fi
             done
         else
@@ -272,10 +273,9 @@ clipboard"
             sleep 2
             update_panel
             sleep 5
-            m queue "${final_list[@]:10}" --no-move --no-preempt-download
+            multi_file_queue "${final_list[@]:10}"
         ) &
-        local starting_queue=("${final_list[@]:0:10}")
-        play "${starting_queue[@]}"
+        play "${final_list[@]:0:10}"
     fi
 }
 
@@ -689,23 +689,29 @@ preempt_download() {
     esac
     local id="$(youtube-dl "$link" --get-id)" || return
 
-    readonly local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/queue_cache"
-    mkdir -p "$cache_dir"
-    local filename="$cache_dir/$id.m4a"
+    mkdir -p "$CACHE_DIR"
+    local filename="$CACHE_DIR/$id.m4a"
 
     [[ ! -e "$filename" ]] &&
         youtube-dl "$link" \
             --format 'bestaudio[ext=m4a]' \
             --add-metadata \
-            --output "$cache_dir/"'%(id)s.%(ext)s' \
-            &>"$cache_dir/$id.log" || return
+            --output "$CACHE_DIR/"'%(id)s.%(ext)s' \
+            &>"$CACHE_DIR/$id.log" || return
 
     touch "$filename"
     mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
     mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
     local count=$(mpv_get playlist-count --raw-output '.data')
     mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
-    find "$cache_dir" -type f -mtime +1 -delete
+    find "$CACHE_DIR" -type f -mtime +1 -delete
+}
+
+multi_file_queue() {
+    file="$(mktemp --suffix=mpv_playlist_file)"
+    printf "%s\n" "$@" >"$file"
+    mpv_do '["loadlist", "'"$file"'", "append"]' -r .error
+    ( sleep 1m; rm "$file" ) & disown
 }
 
 now() {
