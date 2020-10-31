@@ -711,7 +711,11 @@ multi_file_queue() {
     file="$(mktemp --suffix=mpv_playlist_file)"
     printf "%s\n" "$@" >"$file"
     mpv_do '["loadlist", "'"$file"'", "append"]' -r .error
-    ( sleep 1m; rm "$file" ) & disown
+    (
+        sleep 1m
+        rm "$file"
+    ) &
+    disown
 }
 
 now() {
@@ -802,17 +806,16 @@ del_song() {
         echo "missing argument"
         return 1
     elif [[ "$1" =~ --current|-c ]]; then
-        search="$(current_song --link)"
+        search="$(current_song --link | xargs basename)"
     else
         search="$*"
     fi
-    num_results="$(grep -c -i "$search" "$PLAYLIST")"
-    results="$(awk -F'\t' -v IGNORECASE=1 '/'"$*"'/ {print $1}' "$PLAYLIST")"
-    case "$num_results" in
+    results="$(awk -F'\t' -v IGNORECASE=1 '/'"$search"'/ {print $1}' "$PLAYLIST")"
+    case "$(if [[ "$results" ]]; then wc -l <<<"$results"; else echo 0; fi)" in
         0) error 'no results' && return 1 ;;
         1)
             notify 'Deleting song' "$results"
-            sed -i '/'"$*"'/Id' "$PLAYLIST"
+            sed -i "/$search/Id" "$PLAYLIST"
             ;;
         *) error 'too many results' "$results" && return 1 ;;
     esac
