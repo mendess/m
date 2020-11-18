@@ -49,7 +49,7 @@ selector() {
         case "$1" in
             -l)
                 local listsize="$2"
-                [[ "$listsize" -gt 80 ]] && listsize=80
+                [[ "$listsize" -gt 80 ]] && listsize=30
                 ;;
             -p) local prompt="$2" ;;
         esac
@@ -970,10 +970,18 @@ main() {
             queue "${@:2}"
             ;;
         dq | dequeue)
+            ## Dequeue a song
+            ## Options:
+            ##      next    The next song
+            ##      prev    The previous song
+            ##      +X      The song X songs from current
+            ##      -X      The song X before the current
+            ##      X       The song at absolute position X
+            ##      pop     The last song that was queued
             dequeue "${@:2}"
             ;;
         del | delete-song)
-            ## Delete a passed song
+            ## Delete a song from the playlist file
             ## Options:
             ##      -c | --current Delete the current song
             del_song "${@:2}"
