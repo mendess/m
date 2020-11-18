@@ -3,14 +3,14 @@
 #shellcheck disable=SC2155
 
 #shellcheck disable=SC1090
-[ -e ~/.config/user-dirs.dirs ] && . ~/.config/user-dirs.dirs
+[[ -e ~/.config/user-dirs.dirs ]] && . ~/.config/user-dirs.dirs
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config/}/m"
 PLAYLIST="$(realpath "$CONFIG_DIR/playlist")"
 SCRIPT_NAME="$(basename "$0")"
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/queue_cache"
-if [ -z "$TMPDIR" ]; then
-    if [ -e /tmp ]; then
+if [[ -z "$TMPDIR" ]]; then
+    if [[ -e /tmp ]]; then
         export TMPDIR=/tmp
     else
         export TMPDIR="$HOME/.cache"
@@ -34,34 +34,23 @@ case "${1,,}" in
         ;;
 esac
 
+# ========== USER INTERACTION ===========
+
 error() {
     notify --error "$@" >&2
 }
 
 update_panel() {
-    [ ! -e "$CONFIG_DIR/update_panel.sh" ] || sh "$CONFIG_DIR/update_panel.sh"
-}
-
-check_cache() {
-    local PATTERN
-    [[ -z "$1" ]] && error wtf && exit 1
-    PATTERN=("$MUSIC_DIR"/*"$(basename "$1" | grep -Eo '.......$')"*)
-    if [[ -f "${PATTERN[0]}" ]]; then
-        echo "${PATTERN[0]}"
-    else
-        echo "$1"
-        grep -q "$1" "$PLAYLIST" &&
-            [[ "$(pgrep -f youtube-dl | wc -l)" -lt 8 ]] &&
-            youtube-dl -o "$MUSIC_DIR/"'%(title)s-%(id)s=m.%(ext)s' \
-                --add-metadata \
-                "$1" &>"$TMPDIR/youtube-dl" &
-    fi
+    [[ ! -e "$CONFIG_DIR/update_panel.sh" ]] || sh "$CONFIG_DIR/update_panel.sh"
 }
 
 selector() {
-    while [ "$#" -gt 0 ]; do
+    while [[ "$#" -gt 0 ]]; do
         case "$1" in
-            -l) local listsize="$2" ;;
+            -l)
+                local listsize="$2"
+                [[ "$listsize" -gt 80 ]] && listsize=80
+                ;;
             -p) local prompt="$2" ;;
         esac
         shift
@@ -73,10 +62,10 @@ selector() {
 }
 
 notify() {
-    bold() { if [ -t 1 ] && [ -t 2 ]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
-    red() { if [ -t 1 ] && [ -t 2 ]; then echo -en "\e[1;31m$1\e[0m"; else echo -en "$1"; fi; }
+    bold() { if [[ -t 1 ]] && [[ -t 2 ]]; then echo -en "\e[1m$1\e[0m"; else echo -en "$1"; fi; }
+    red() { if [[ -t 1 ]] && [[ -t 2 ]]; then echo -en "\e[1;31m$1\e[0m"; else echo -en "$1"; fi; }
     local text=()
-    while [ $# -gt 0 ]; do
+    while [[ $# -gt 0 ]]; do
         case "$1" in
             -i)
                 shift
@@ -95,7 +84,7 @@ notify() {
         bold "${text[0]}\n"
         if [ -n "${text[1]}" ]; then echo -e "${text[1]}"; fi # don't change to short form
     }
-    if [ "$PROMPT_PROG" = fzf ]; then
+    if [[ "$PROMPT_PROG" = fzf ]]; then
         if [[ "$err" ]]; then
             red "Error: " >&2
             tty >&2
@@ -105,54 +94,18 @@ notify() {
     else
         local args=("${text[@]}")
         args+=(-a "$SCRIPT_NAME")
-        [ -n "$img" ] && args+=(-i "$img")
-        [ -n "$err" ] && args+=(--urgency critical)
+        [[ -n "$img" ]] && args+=(-i "$img")
+        [[ -n "$err" ]] && args+=(--urgency critical)
         notify-send "${args[@]}"
     fi
 }
 
 with_video() {
-    if [ -z "$DISPLAY" ]; then
+    if [[ -z "$DISPLAY" ]]; then
         WITH_VIDEO=no
-    elif [ "$1" = force ] || [ "$(mpvsocket)" = /dev/null ]; then
+    elif [[ "$1" = force ]] || [[ "$(mpvsocket)" = /dev/null ]]; then
         WITH_VIDEO=$(printf "no\nyes" | selector -i -p "With video?")
     fi
-}
-
-play() {
-    mpv_do '["set_property", "pause", true]' &>/dev/null
-    case $WITH_VIDEO in
-        yes)
-            mpv \
-                --geometry=820x466 \
-                "$LOOP_PLAYLIST" \
-                --input-ipc-server="$(mpvsocket new)" \
-                "$@"
-            ;;
-        no)
-            if [ -z "$DISPLAY" ]; then
-                mpv \
-                    --geometry=820x466 \
-                    "$LOOP_PLAYLIST" \
-                    --input-ipc-server="$(mpvsocket new)" \
-                    --no-video "$@"
-            else
-                setsid mpv \
-                    --geometry=820x466 \
-                    "$LOOP_PLAYLIST" \
-                    --input-ipc-server="$(mpvsocket new)" \
-                    --no-video \
-                    "$@" &>/dev/null &
-                disown
-            fi
-            ;;
-    esac
-}
-
-songs_in_cat() {
-    sed '/^$/ d' "$PLAYLIST" |
-        grep -P ".*\t.*\t.*\t.*$1" |
-        awk -F'\t' '{print $2}'
 }
 
 start_playlist_interactive() {
@@ -175,7 +128,7 @@ clipboard"
                 tac |
                 selector -i -p "Which video?" -l "$(echo "$vidlist" | wc -l)")"
 
-            if [ -z "$vidname" ]; then
+            if [[ -z "$vidname" ]]; then
                 return 1
             else
                 local vids="$(echo "$vidlist" |
@@ -210,7 +163,7 @@ clipboard"
                 selector -i -p "Which category?" -l 30 |
                 sed -E 's/^[ ]*[0-9]*[ ]*//')
 
-            [ -z "$catg" ] && return 1
+            [[ -z "$catg" ]] && return 1
             vidlist=$(echo "$vidlist" | shuf)
             local vids="$(songs_in_cat "$catg" | shuf | xargs)"
             ;;
@@ -218,7 +171,7 @@ clipboard"
         clipboard)
             local clipboard=1
             local vids="$(xclip -sel clip -o)"
-            [ -n "$vids" ] || return 1
+            [[ -n "$vids" ]] || return 1
             LOOP_PLAYLIST=""
             ;;
         *)
@@ -226,16 +179,20 @@ clipboard"
             ;;
     esac
 
-    [ -z "$vids" ] && return 1
+    [[ -z "$vids" ]] && return 1
 
     with_video
 
     local final_list=()
-    for v in $(echo "$vids" | shuf); do
-        final_list+=("$(check_cache "$v")")
-    done
+    while read -r v; do
+        if [[ "$v" = http* ]]; then
+            final_list+=("$(check_cache "$v")")
+        else
+            final_list+=("$v")
+        fi
+    done < <(echo "$vids" | shuf)
 
-    [ -z "$clipboard" ] &&
+    [[ -z "$clipboard" ]] &&
         (
             cd "$MUSIC_DIR" || return 1
             printf "%s\n" "${final_list[@]}" |
@@ -247,13 +204,13 @@ clipboard"
                     --add-metadata &>"$TMPDIR/youtube-dl"
         ) &
 
-    if [ "$(mpvsocket)" != "/dev/null" ]; then
+    if [[ "$(mpvsocket)" != "/dev/null" ]]; then
         for song in "${final_list[@]}"; do
             [[ "$song" == *playlist* ]] &&
                 local playlist=1 &&
                 break
         done
-        if [ "$playlist" ]; then
+        if [[ "$playlist" ]]; then
             for song in "${final_list[@]}"; do
                 if [[ "$song" == *playlist* ]]; then
                     for s in $(youtube-dl "$song" --get-id); do
@@ -265,7 +222,7 @@ clipboard"
             done
         else
             local cmd=(queue "${final_list[@]}" --notify)
-            [ "$mode" = All ] && cmd+=(--no-move)
+            [[ "$mode" = All ]] && cmd+=(--no-move)
             "${cmd[@]}"
         fi
     else
@@ -279,14 +236,34 @@ clipboard"
     fi
 }
 
+# ========== GENERAL UTILS ===========
+
+check_cache() {
+    local PATTERN
+    [[ ! "$1" ]] && error wtf && exit 1
+    PATTERN=("$MUSIC_DIR"/*"$(basename "$1" | grep -Eo '.......$')"*)
+    if [[ -f "${PATTERN[0]}" ]]; then
+        echo "${PATTERN[0]}"
+    else
+        echo "$1"
+        grep -q "$1" "$PLAYLIST" &&
+            [[ "$(pgrep -f youtube-dl | wc -l)" -lt 8 ]] &&
+            youtube-dl -o "$MUSIC_DIR/"'%(title)s-%(id)s=m.%(ext)s' \
+                --add-metadata \
+                "$1" &>"$TMPDIR/youtube-dl" &
+    fi
+}
+
 mpv_do() {
     echo '{ "command": '"$1"' }' | socat - "$(mpvsocket)" |
-        if [ "$2" ]; then jq "${@:2}"; else cat; fi
+        if [[ "$2" ]]; then jq "${@:2}"; else cat; fi
 }
 
 mpv_get() {
     mpv_do '["get_property", "'"$1"'"]' "${@:2}"
 }
+
+# ========== SPOTIFY INTERACTION ===========
 
 spotify_toggle_pause() {
     dbus-send --print-reply \
@@ -304,6 +281,42 @@ spotify_prev() {
     dbus-send --print-reply \
         --dest=org.mpris.MediaPlayer2.spotify \
         /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Previous
+}
+
+play() {
+    mpv_do '["set_property", "pause", true]' &>/dev/null
+    case $WITH_VIDEO in
+        yes)
+            mpv \
+                --geometry=820x466 \
+                "$LOOP_PLAYLIST" \
+                --input-ipc-server="$(mpvsocket new)" \
+                "$@"
+            ;;
+        no)
+            if [[ -z "$DISPLAY" ]]; then
+                mpv \
+                    --geometry=820x466 \
+                    "$LOOP_PLAYLIST" \
+                    --input-ipc-server="$(mpvsocket new)" \
+                    --no-video "$@"
+            else
+                setsid mpv \
+                    --geometry=820x466 \
+                    "$LOOP_PLAYLIST" \
+                    --input-ipc-server="$(mpvsocket new)" \
+                    --no-video \
+                    "$@" &>/dev/null &
+                disown
+            fi
+            ;;
+    esac
+}
+
+songs_in_cat() {
+    sed '/^$/ d' "$PLAYLIST" |
+        grep -P ".*\t.*\t.*\t.*$1" |
+        awk -F'\t' '{print $2}'
 }
 
 mpvsocket() {
@@ -327,7 +340,7 @@ mpvsocket() {
     case "$1" in
         new)
             last="$(last num)"
-            if [ "$last" ]; then
+            if [[ "$last" ]]; then
                 echo "$TMPDIR/.mpvsocket$((++last))"
             else
                 echo "$TMPDIR/.mpvsocket0"
@@ -353,15 +366,15 @@ up_next() {
     if [[ "$videoId" = *youtu* ]]; then
         id="$(echo "$videoId" | sed -r 's|.*/([^/]+)/?$|\1|g')"
         filename=$(awk -F '\t' '$2 ~ /'"$id"'/ {print $1}' "$PLAYLIST")
-        [ -z "$filename" ] && filename=$(youtube-dl --get-title "$videoId")
+        [[ -z "$filename" ]] && filename=$(youtube-dl --get-title "$videoId")
     else
         filename=$(basename "$videoId" |
             sed -r 's/\.[^.]+$//' |
             sed -r 's/-[a-zA-Z\-_0-9]{11}$//')
     fi
     width=40
-    [ "${#filename}" -gt $width ] && width="${#filename}"
-    [ -n "$filename" ] && [ "$filename" != null ] &&
+    [[ "${#filename}" -gt $width ]] && width="${#filename}"
+    [[ -n "$filename" ]] && [[ "$filename" != null ]] &&
         echo "=== UP NEXT ===" &&
         echo "$filename"
 }
@@ -376,13 +389,13 @@ current_song() {
 
     chapter=$(mpv_get chapter-metadata '.data.title' -r)
 
-    if [ -z "$filename" ] ||
-        [ "$filename" = "_" ] ||
-        [ "$filename" = "$videoId" ]; then
+    if [[ -z "$filename" ]] ||
+        [[ "$filename" = "_" ]] ||
+        [[ "$filename" = "$videoId" ]]; then
 
-        [ -z "$videoId" ] && return 1
+        [[ -z "$videoId" ]] && return 1
         filename=$(grep "$videoId" "$PLAYLIST" | awk -F '\t' '{print $1}')
-        [ -z "$filename" ] && filename="$videoId"
+        [[ -z "$filename" ]] && filename="$videoId"
     fi
     local status
     case "$(mpv_get pause --raw-output .data)" in
@@ -391,7 +404,7 @@ current_song() {
     esac
     local volume="$(mpv_get volume --raw-output .data)"
     [[ "$1" =~ (-s|--short) ]] && {
-        if [ -n "$chapter" ] && [ "$chapter" != "null" ]; then
+        if [[ -n "$chapter" ]] && [[ "$chapter" != "null" ]]; then
             notify "Video: $filename Song: $chapter $status ${volume}%"
         else
             notify "$filename $status ${volume}%"
@@ -399,7 +412,7 @@ current_song() {
         return
     }
     width=40
-    [ "${#filename}" -gt $width ] && width="${#filename}"
+    [[ "${#filename}" -gt $width ]] && width="${#filename}"
     categories=$(awk -F'\t' '/'"$videoId"'/ {
             for(i = 4; i <= NF; i++) {
                 acc = acc " | " $i
@@ -410,12 +423,12 @@ current_song() {
     [[ ! "$1" =~ (-n|--notify) ]] && filename="$filename
 $status 🔉${volume}%"
 
-    if [ "$categories" != 'Categories: |' ]; then
+    if [[ "$categories" != 'Categories: |' ]]; then
         filename="$filename
 $categories"
     fi
     up_next="$(up_next)"
-    [ -n "$up_next" ] && filename="$filename
+    [[ -n "$up_next" ]] && filename="$filename
 
 $up_next"
     local pprog="$PROMPT_PROG"
@@ -431,7 +444,7 @@ add_cat() {
         sed 's/"//g' |
         sed -E 's|.*/([^/]+)$|\1|g')
 
-    [ -z "$current_song" ] && return 2
+    [[ -z "$current_song" ]] && return 2
 
     while :; do
         case "$PROMPT_PROG" in
@@ -442,7 +455,7 @@ add_cat() {
                 read -r -p "Category name [Empty to quit]? " cat || echo
                 ;;
         esac
-        if [ -z "$cat" ]; then
+        if [[ -z "$cat" ]]; then
             break
         fi
         sed -i -E "/$current_song/ s|$|	$cat|" "$PLAYLIST"
@@ -468,7 +481,7 @@ interpret_song() {
     INTERPRET_no_preempt_download=
     INTERPRET_notify=
     INTERPRET_clear=
-    while [ $# -gt 0 ]; do
+    while [[ $# -gt 0 ]]; do
         case "$1" in
             -r | --reset)
                 if [[ -z "$INTERPRET_QUEUE_OPTIONS" ]]; then
@@ -600,15 +613,15 @@ queue() {
 
             target=$((current + 1))
             last_queue="$(last_queue)"
-            [ -e "$last_queue" ] &&
-                [ "$target" -le "$(cat "$last_queue")" ] &&
+            [[ -e "$last_queue" ]] &&
+                [[ "$target" -le "$(cat "$last_queue")" ]] &&
                 target=$(($(cat "$last_queue") + 1))
             echo -n "Moving from $count -> $target ... "
             mpv_do '["playlist-move", '$((count - 1))', '$target']' --raw-output .error
             echo "$target" >"$last_queue"
             local playlist_pos=$target
         fi
-        [ "$INTERPRET_notify" = 1 ] && {
+        [[ "$INTERPRET_notify" = 1 ]] && {
             local img img_back name
             img=$(mktemp --tmpdir tmp.XXXXXXXXXXXXXXXXX.png)
             img_back="${img}_back.png"
@@ -617,7 +630,7 @@ queue() {
                 data=$(youtube-dl --get-title "$file" --get-thumbnail)
                 name=$(echo "$data" | head -1)
                 echo "$data" | tail -1 | xargs -r wget --quiet -O "$img"
-                [ -z "$name" ] && name="$file"
+                [[ -z "$name" ]] && name="$file"
             else
                 name="$(ffprobe "$file" 2>&1 |
                     grep title |
@@ -645,7 +658,7 @@ queue() {
                 *) preempt_download "$playlist_pos" "$file" ;;
             esac &
         disown
-        if [ "$(jobs -p | wc -l)" -ge "$(nproc)" ]; then
+        if [[ "$(jobs -p | wc -l)" -ge "$(nproc)" ]]; then
             wait -n
         fi
     done
@@ -671,6 +684,9 @@ dequeue() {
             ;;
         [0-9]*)
             to_remove="$1"
+            ;;
+        pop)
+            echo "soon tm"
             ;;
     esac
     [[ ! "$to_remove" ]] && return
@@ -772,7 +788,7 @@ for i in range(len(ts)):
 
 add_song() {
     url="$(echo "$1" | sed -E 's|https://.*=(.*)\&?|https://youtu.be/\1|')"
-    [ -z "$url" ] && error "'$url' is not a valid link" && return 1
+    [[ -z "$url" ]] && error "'$url' is not a valid link" && return 1
     entry="$(grep "$url" "$PLAYLIST")" &&
         error "Song already in $PLAYLIST" "$entry" &&
         return 1
@@ -780,7 +796,7 @@ add_song() {
         tr '[:upper:]' '[:lower:]' |
         tr ' ' '\t' |
         sed -E 's/\t$//')
-    [ -n "$categories" ] && categories="	$categories"
+    [[ -n "$categories" ]] && categories="	$categories"
     notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
     [ "${PIPESTATUS[0]}" -ne 0 ] &&
@@ -830,11 +846,11 @@ clean_dl_songs() {
                 grep -F -e "$id" "$PLAYLIST" &>/dev/null && continue
                 PATTERN=("$MUSIC_DIR"/*"$id"*)
                 [ -e "${PATTERN[0]}" ] && {
-                    [ -z "$b" ] && echo "cleaning downloads" && b='done'
+                    [[ -z "$b" ]] && echo "cleaning downloads" && b='done'
                     rm -v "${PATTERN[0]}"
                 }
             done
-            [ "$b" ] && echo "Done"
+            [[ "$b" ]] && echo "Done"
         )
 }
 
@@ -891,8 +907,8 @@ main() {
         playlist | play-interactive)
             ## Interactively asks the user what songs they want to play
             ## from their playlist
-            [ -e "$PLAYLIST" ] || touch "$PLAYLIST"
-            [ ! -s "$PLAYLIST" ] && error "Playlist file emtpy" && return 1
+            [[ -e "$PLAYLIST" ]] || touch "$PLAYLIST"
+            [[ ! -s "$PLAYLIST" ]] && error "Playlist file emtpy" && return 1
             start_playlist_interactive
             ;;
         new | add-song)
@@ -1039,7 +1055,7 @@ main() {
             main r
             while :; do
                 read -r -n 1 input
-                [ "$input" = $'\004' ] || [ "$input" = "q" ] && break
+                [[ "$input" = $'\004' ]] || [[ "$input" = "q" ]] && break
                 echo -en "\b"
                 main "$input"
             done
@@ -1085,7 +1101,7 @@ EOF
             ;;
         help)
             ## Get help
-            if [ $# -gt 1 ]; then
+            if [[ $# -gt 1 ]]; then
                 awk \ '
 BEGIN                                          { in_main=0; in_case=0; print_docs=0; inner_case=-1 }
 $0 ~ /main\(\)/                                { in_main=1 }
