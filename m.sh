@@ -149,8 +149,7 @@ clipboard"
         All)
             local vids="$(echo "$vidlist" |
                 shuf |
-                awk -F'\t' '{print $2}' |
-                xargs)"
+                awk -F'\t' '{print $2}')"
             ;;
 
         Category)
@@ -165,7 +164,7 @@ clipboard"
 
             [[ -z "$catg" ]] && return 1
             vidlist=$(echo "$vidlist" | shuf)
-            local vids="$(songs_in_cat "$catg" | shuf | xargs)"
+            local vids="$(songs_in_cat "$catg" | shuf)"
             ;;
 
         clipboard)
