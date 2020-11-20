@@ -135,7 +135,7 @@ clipboard"
                     grep -F "$vidname" |
                     awk -F'\t' '{print $2}')"
             fi
-            LOOP_PLAYLIST=""
+            LOOP_PLAYLIST="--loop-playlist=no"
             ;;
 
         random)
@@ -143,7 +143,7 @@ clipboard"
                 shuf |
                 sed '1q' |
                 awk -F'\t' '{print $2}')"
-            LOOP_PLAYLIST=""
+            LOOP_PLAYLIST="--loop-playlist=no"
             ;;
 
         All)
@@ -171,7 +171,7 @@ clipboard"
             local clipboard=1
             local vids="$(xclip -sel clip -o)"
             [[ -n "$vids" ]] || return 1
-            LOOP_PLAYLIST=""
+            LOOP_PLAYLIST="--loop-playlist=no"
             ;;
         *)
             return 1
@@ -685,7 +685,7 @@ dequeue() {
             to_remove="$1"
             ;;
         pop)
-            echo "soon tm"
+            dequeue "$(cat "$(last_queue)")"
             ;;
     esac
     [[ ! "$to_remove" ]] && return
@@ -746,6 +746,8 @@ now() {
     #shellcheck disable=SC2016
     mpv_get playlist -r '.data | .[] | .filename' |
         sed -n "${start},${end}p;$((end + 1))q;" |
+        sed -E "/${CACHE_DIR//\//\\\/}/ s|\\.[^.]+$||;
+                s|$CACHE_DIR|https://youtu.be|g" |
         perl -ne 's|^.*/([^/]*?)(-[A-Za-z0-9\-_-]{11}=m)?\.[^./]*$|\1\n|; print' |
         sed -r 's/^$/=== ERROR ===/g' |
         python -c 'from threading import Thread
@@ -774,15 +776,10 @@ for i in range(len(ts)):
         ts[i].join()
         if titles[i]:
             print(titles[i])' |
-        awk -v current="$current" -v pos="$((--start))" \
-            '{
-            if (pos != current) {
-                printf("%3d     %s\n", pos, $0)
-            } else {
-                printf("%3d ==> %s\n", pos, $0);
-            }
-            pos++
-        }'
+        awk -v c="$current" -v NR="$((start - 2))" '
+            function arrow() { return NR == c ? "==>" : "   "; }
+            {printf("%3d %s %s\n", NR, arrow() , $0)}
+        '
 }
 
 add_song() {
@@ -900,7 +897,7 @@ main() {
             ##      -s | --search  Search the song on youtube
             interpret_song "${@:2}" || exit 1
             with_video force
-            [[ "${#INTERPRET_targets[@]}" -eq 1 ]] && LOOP_PLAYLIST=""
+            [[ "${#INTERPRET_targets[@]}" -eq 1 ]] && LOOP_PLAYLIST="--loop-playlist=no"
             play "${INTERPRET_targets[@]}"
             ;;
         playlist | play-interactive)
