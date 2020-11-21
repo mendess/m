@@ -685,7 +685,7 @@ dequeue() {
             to_remove="$1"
             ;;
         pop)
-            dequeue "$(cat "$(last_queue)")"
+            to_remove="$(cat "$(last_queue)")"
             ;;
     esac
     [[ ! "$to_remove" ]] && return
