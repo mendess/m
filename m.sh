@@ -521,6 +521,9 @@ interpret_song() {
             -s | --search)
                 search=1
                 ;;
+            -p | --playlist)
+                playlist=1
+                ;;
             --search=*)
                 search=1
                 search_terms+=("${1#*=}")
@@ -544,11 +547,7 @@ interpret_song() {
                 return 1
                 ;;
             *)
-                if [[ -e "$1" ]]; then
-                    targets+=("$1")
-                else
-                    search_terms+=("$1")
-                fi
+                search_terms+=("$1")
                 ;;
         esac
         shift
@@ -558,14 +557,18 @@ interpret_song() {
     elif [[ "${#search_terms[@]}" -gt 0 ]]; then
         local t
         for term in "${search_terms[@]}"; do
-            t="$(if [[ "$t" ]]; then echo "$t"; else cat "$PLAYLIST"; fi |
-                awk \
-                    -v IGNORECASE=1 \
-                    -F '\t' \
-                    '$1 ~ /'"$term"'/ {print $1"\t"$2}' |
-                while IFS=$'\t' read -r name link _; do
-                    printf "%s\t%s\n" "$name" "$link"
-                done)"
+            if [[ ! "$playlist" ]] && [[ -e "$term" ]]; then
+                targets+=("$term")
+            else
+                t="$(if [[ "$t" ]]; then echo "$t"; else cat "$PLAYLIST"; fi |
+                    awk \
+                        -v IGNORECASE=1 \
+                        -F '\t' \
+                        '$1 ~ /'"$term"'/ {print $1"\t"$2}' |
+                    while IFS=$'\t' read -r name link _; do
+                        printf "%s\t%s\n" "$name" "$link"
+                    done)"
+            fi
         done
         if [[ -z "$t" ]]; then
             [[ "${#targets[@]}" = 0 ]] &&
