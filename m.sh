@@ -245,11 +245,12 @@ check_cache() {
         echo "${PATTERN[0]}"
     else
         echo "$1"
-        grep -q "$1" "$PLAYLIST" &&
-            [[ "$(pgrep -f youtube-dl | wc -l)" -lt 8 ]] &&
+        if grep -q "$1" "$PLAYLIST" &&
+            [[ "$(pgrep -f youtube-dl | wc -l)" -lt 8 ]]; then
             youtube-dl -o "$MUSIC_DIR/"'%(title)s-%(id)s=m.%(ext)s' \
                 --add-metadata \
                 "$1" &>"$TMPDIR/youtube-dl" &
+        fi
     fi
 }
 
