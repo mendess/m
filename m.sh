@@ -383,7 +383,7 @@ current_song() {
     local filename videoId chapter categories up_next
     videoId="$(mpv_get filename --raw-output '.data' |
         sed -E 's/.*-([a-zA-Z0-9\-_-]{11})(=m)?.*/\1/g')"
-    [[ "$1" =~ (-i|--link) ]] && notify "https://youtu.be/$videoId" && return
+    [[ "$1" =~ (-i|--link) ]] && notify "https://youtu.be/${videoId/.m4a/}" && return
 
     filename=$(mpv_get media-title --raw-output '.data')
 
