@@ -878,22 +878,21 @@ loop() {
 
 lyrics() {
 
-    filename=$(mpv_get media-title --raw-output '.data')
-    filename=$(echo "$filename" | cut -d '(' -f 1 | sed 'y/āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaeeeeiiiioooouuuuüüüüAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/' | sed "s/'//g")
+    filename=$(mpv_get media-title --raw-output '.data' | cut -d '(' -f 1 |
+        sed 'y/āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaeeeeiiiioooouuuuüüüüAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/' |
+        sed "s/'//g")
 
-    artist=$(echo "$filename" | cut -d '-' -f1 | xargs)
-    song=$(echo "$filename" | cut -d '-' -f2 | xargs)
-
-    artist=$(echo "$artist" | tr '[:upper:]' '[:lower:]' )
+    artist=$(echo "$filename" | cut -d '-' -f1 | xargs | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g' )
+    song=$(echo "$filename" | cut -d '-' -f2 | xargs | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g')
     artist="$(tr '[:lower:]' '[:upper:]' <<< "${artist:0:1}")${artist:1}"
-    artist_with_dash=${artist// /-}
-    song_with_dash=$(echo "$song" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g')
-    link="https://genius.com/$artist_with_dash-$song_with_dash-lyrics"
+    artist=${artist// /-}
+    link="https://genius.com/$artist-$song-lyrics"
 
         while [ -z "$output" ]
     do
-        output=$(curl -s "$link" | sed -n  '/<div class="song_body-lyrics">/,/<\/div>/p' | sed -E 's/>([[a-zA-Z])/>\n\1/g' | sed -E 's/(.)<a/\1\n<a/g' | sed '/<a/,/>/d' | sed 's/<br>//g' | sed 's/<.*>//g')
-        output=$(echo "$output" | awk '!NF {if (++n <= 2) print; next}; {n=0;print}')
+        output=$(curl -s "$link" | sed -n  '/<div class="song_body-lyrics">/,/<\/div>/p' | sed -E 's/>([[a-zA-Z])/>\n\1/g' |
+            sed -E 's/(.)<a/\1\n<a/g' | sed '/<a/,/>/d' | sed 's/<br>//g' | sed 's/<.*>//g'|
+            awk '!NF {if (++n <= 2) print; next}; {n=0;print}')
     done
 
     echo "$output" | less
