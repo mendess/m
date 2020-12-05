@@ -1,5 +1,4 @@
 #!/bin/bash
-            awk '!NF {if (++n <= 2) print; next}; {n=0;print}')
 #shellcheck disable=SC2119
 #shellcheck disable=SC2155
 
@@ -880,7 +879,7 @@ loop() {
 lyrics() {
 
 	filename=$(mpv_get media-title --raw-output '.data' | cut -d '(' -f 1 |
-		sed 'y/āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaeeeeiiiioooouuuuüüüüAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/' |
+		sed 'y/ãāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜÃĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaaeeeeiiiioooouuuuüüüüAAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/' |
 		sed "s/'//g" | tr '[:upper:]' '[:lower:]')
 
 	artist=$(echo "$filename" | cut -d '-' -f1 | xargs | sed 's/ /-/g')
@@ -891,10 +890,11 @@ lyrics() {
 	while [ -z "$output" ]; do
 		output=$(curl -s "$link" | sed -n '/<div class="song_body-lyrics">/,/<\/div>/p' | sed -E 's/>([[a-zA-Z])/>\n\1/g' |
 			sed -E 's/(.)<a/\1\n<a/g' | sed '/<a/,/>/d' | sed 's/<br>//g' | sed 's/<.*>//g' |
-			awk '!NF {if (++n <= 2) print; next}; {n=0;print}' | grep --color=always -e "^" -e "\[.*]")
+			awk '!NF {if (++n <= 2) print; next}; {n=0;print}' | GREP_COLORS='ms=01;31' grep --color=always -e "^" -e "\[.*]" |
+            GREP_COLORS='ms=01;34' grep --color=always -e "^" -e ".*Lyrics$")
 	done
 
-	echo "$output" | less
+	echo "$output" | less -R
 
 }
 
