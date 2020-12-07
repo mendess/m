@@ -56,7 +56,7 @@ selector() {
         shift
     done
     case "$PROMPT_PROG" in
-        fzf) fzf -i --prompt "$prompt " ;;
+        fzf) fzf -i --prompt "$prompt " --print-query | tail -1 ;;
         dmenu) dmenu -i -p "$prompt" -l "$listsize" ;;
     esac
 }
@@ -437,7 +437,7 @@ $up_next"
     PROMPT_PROG="$pprog"
 }
 
-add_cat() {
+ch_cat() {
     local cat
     local current_song=$(PROMPT_PROG=fzf current_song --link |
         tail -1 |
@@ -447,18 +447,16 @@ add_cat() {
     [[ -z "$current_song" ]] && return 2
 
     while :; do
-        case "$PROMPT_PROG" in
-            dmenu)
-                cat=$(echo | dmenu -p "Category name? (Esq to quit)")
-                ;;
-            fzf)
-                read -r -p "Category name [Empty to quit]? " cat || echo
-                ;;
-        esac
-        if [[ -z "$cat" ]]; then
-            break
+        cat="$(grep "$current_song" "$PLAYLIST" |
+            cut -d' ' -f4- |
+            xargs -L1 printf "%s\n"
+            selector -p "Category name? (Esq to quit)")"
+        [[ -z "$cat" ]] && break
+        if grep -q "$current_song.*$cat" "$PLAYLIST"; then
+            sed -i -E "/$current_song/ s|\\s$cat||" "$PLAYLIST"
+        else
+            sed -i -E "/$current_song/ s|$| $cat|" "$PLAYLIST"
         fi
-        sed -i -E "/$current_song/ s|$| $cat|" "$PLAYLIST"
     done
 }
 
@@ -982,9 +980,9 @@ main() {
             ## Shows lyrics for the current song
             lyrics "${@:2}"
             ;;
-        add-cat-to-current | new-cat)
+        change-cats-to-current | ch-cat)
             ## Add a category to the current song
-            add_cat "${@:2}"
+            ch_cat "${@:2}"
             ;;
         q | queue)
             ## Queue a song
