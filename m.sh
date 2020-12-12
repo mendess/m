@@ -796,7 +796,6 @@ add_song() {
         tr '[:upper:]' '[:lower:]' |
         tr ' ' '\t' |
         sed -E 's/\t$//')
-    [[ -n "$categories" ]] && categories="  $categories"
     notify 'getting title'
     title="$(youtube-dl --get-title "$1" | sed -e 's/(/{/g; s/)/}/g' -e "s/'//g")"
     [ "${PIPESTATUS[0]}" -ne 0 ] &&
@@ -812,8 +811,11 @@ add_song() {
         return 1
 
     notify 'adding to playlist'
-    echo "$title    $url    $duration$categories"
-    echo "$title    $url    $duration$categories" >>"$PLAYLIST"
+    if [[ "$categories" ]]; then
+        printf "%s\t%s\t%s\t%s\n" "$title" "$url" "$duration" "$categories"
+    else
+        printf "%s\t%s\t%s\n" "$title" "$url" "$duration"
+    fi | tee -a "$PLAYLIST"
 }
 
 del_song() {
