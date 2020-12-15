@@ -26,13 +26,19 @@ mkdir -p "$CONFIG_DIR"
 
 case "${1,,}" in
     gui)
-        PROMPT_PROG=dmenu
+        SESSION_KIND=gui
         shift
         ;;
     *)
-        PROMPT_PROG=fzf
+        SESSION_KIND=cli
         ;;
 esac
+
+[[ "$TERMINAL" ]] &&
+    [[ ! "$SESSION_KIND" == gui ]] &&
+    command -V pstree &>/dev/null &&
+    pstree -s $$ | tr '\n' ' ' | grep -vE "login|$TERMINAL" &&
+    SESSION_KIND=gui
 
 # ========== USER INTERACTION ===========
 
@@ -51,14 +57,17 @@ selector() {
                 local listsize="$2"
                 [[ "$listsize" -gt 80 ]] && listsize=30
                 ;;
-            -p) local prompt="$2" ;;
+            -p)
+                local prompt="$2"
+                shift
+                ;;
         esac
         shift
     done
     listsize="${listsize:-30}"
-    case "$PROMPT_PROG" in
-        fzf) fzf -i --prompt "$prompt " --print-query | tail -1 ;;
-        dmenu) dmenu -i -p "$prompt" -l "$listsize" ;;
+    case "$SESSION_KIND" in
+        cli) fzf -i --prompt "$prompt " --print-query | tail -1 ;;
+        gui) dmenu -i -p "$prompt" -l "$listsize" ;;
     esac
 }
 
@@ -85,7 +94,7 @@ notify() {
         bold "${text[0]}\n"
         if [ -n "${text[1]}" ]; then echo -e "${text[1]}"; fi # don't change to short form
     }
-    if [[ "$PROMPT_PROG" = fzf ]]; then
+    if [[ "$SESSION_KIND" = cli ]]; then
         if [[ "$err" ]]; then
             red "Error: " >&2
             tty >&2
@@ -432,15 +441,15 @@ $categories"
     [[ -n "$up_next" ]] && filename="$filename
 
 $up_next"
-    local pprog="$PROMPT_PROG"
-    [[ "$1" =~ (-n|--notify) ]] && PROMPT_PROG=dmenu
+    local skind="$SESSION_KIND"
+    [[ "$1" =~ (-n|--notify) ]] && SESSION_KIND=gui
     notify "Now Playing" "$filename"
-    PROMPT_PROG="$pprog"
+    SESSION_KIND="$skind"
 }
 
 ch_cat() {
     local cat
-    local current_song=$(PROMPT_PROG=fzf current_song --link |
+    local current_song=$(SESSION_KIND=cli current_song --link |
         tail -1 |
         sed 's/"//g' |
         sed -E 's|.*/([^/]+)$|\1|g')
@@ -650,7 +659,7 @@ queue() {
                     "$img" >/dev/null
             fi
             convert -scale x64 -- "$img" "$img_back" && mv "$img_back" "$img"
-            PROMPT_PROG=dmenu notify "Queued '$name'" \
+            SESSION_KIND=gui notify "Queued '$name'" \
                 "$([ "$current" ] &&
                     printf "Current: %s\nQueue pos: %s" "$current" "$target")" \
                 -i "$img"
