@@ -37,7 +37,7 @@ esac
 [[ "$TERMINAL" ]] &&
     [[ ! "$SESSION_KIND" == gui ]] &&
     command -V pstree &>/dev/null &&
-    pstree -s $$ | tr '\n' ' ' | grep -vE "login|lemon|$TERMINAL" &&
+    pstree -s $$ | tr '\n' ' ' | grep -vEq "login|lemon|$TERMINAL" &&
     SESSION_KIND=gui
 
 # ========== USER INTERACTION ===========
