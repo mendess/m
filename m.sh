@@ -483,6 +483,25 @@ last_queue() {
     esac
 }
 
+# This function interprets queue and play arguments and returns them through
+# INTERPRET_* variables.
+#
+# These variables are reset every time the function is called.
+#
+# Some of these variables only make sense when queuing a song, to enable these
+# set the INTERPRET_QUEUE_OPTIONS variables before calling
+#
+# Variables set:
+# Always set:
+# INTERPRET_targets             : [string] # the list of parsed targets to play
+#
+# Queue only options;
+# INTERPRET_reseted             : bool     # whether or not the -r|--reset flag was passed
+# INTERPRET_no_move             : bool     # whether or not the -m|--no-move flag was passed
+# INTERPRET_no_preempt_download : bool     # whether or not the -d|--no-preempt-download flag was passed
+# INTERPRET_notify              : bool     # whether or not the -n|--notify flag was passed
+# INTERPRET_clear               : bool     # whether or not the -x|--clear flag was passed
+#
 interpret_song() {
     local targets search search_terms=()
     INTERPRET_targets=()
@@ -599,7 +618,7 @@ interpret_song() {
 queue() {
     INTERPRET_QUEUE_OPTIONS=1 interpret_song "$@" || return 1
     [[ "${#INTERPRET_targets[@]}" -lt 1 ]] &&
-        [[ ! "$INTERPRET_reseted" ]] &&
+        [[ ! "$INTERPRET_reseted$INTERPRET_clear" ]] &&
         error "No files to queue" &&
         return 1
     [[ "$INTERPRET_clear" ]] &&
@@ -608,7 +627,6 @@ queue() {
     [[ "$INTERPRET_clear$INTERPRET_reseted" ]] &&
         notify "Reseting queue..." &&
         last_queue reset
-
     if [[ "$(mpvsocket)" = /dev/null ]]; then
         with_video force
         play "${INTERPRET_targets[@]}"
