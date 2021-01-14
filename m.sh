@@ -270,7 +270,7 @@ mpv_do() {
 }
 
 mpv_get() {
-    mpv_do '["get_property", "'"$1"'"]' "${@:2}"
+    mpv_do '["get_property", "'"$1"'"]' "${2:-.}" "${@:3}"
 }
 
 # ========== SPOTIFY INTERACTION ===========
@@ -483,6 +483,10 @@ last_queue() {
     esac
 }
 
+remove_accented_chars() {
+    sed 'y/ãāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜÃĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaaeeeeiiiioooouuuuüüüüAAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/'
+}
+
 # This function interprets queue and play arguments and returns them through
 # INTERPRET_* variables.
 #
@@ -549,9 +553,11 @@ interpret_song() {
                 ;;
             -s | --search)
                 search=1
+                playlist=
                 ;;
             -p | --playlist)
                 playlist=1
+                search=
                 ;;
             --search=*)
                 search=1
@@ -584,12 +590,13 @@ interpret_song() {
     if [[ "$search" ]]; then
         targets+=("ytdl://ytsearch:${search_terms[*]}")
     elif [[ "${#search_terms[@]}" -gt 0 ]]; then
-        local t
+        local t term
         for term in "${search_terms[@]}"; do
             if [[ ! "$playlist" ]] && [[ -e "$term" ]]; then
                 targets+=("$term")
             else
                 t="$(if [[ "$t" ]]; then echo "$t"; else cat "$PLAYLIST"; fi |
+                    remove_accented_chars |
                     awk \
                         -v IGNORECASE=1 \
                         -F '\t' \
@@ -699,7 +706,7 @@ queue() {
 }
 
 dequeue() {
-    local to_remove
+    local to_remove=()
     case "$1" in
         next)
             dequeue +1
@@ -708,20 +715,45 @@ dequeue() {
             dequeue -1
             ;;
         +[0-9]*)
-            to_remove="$(($(mpv_get playlist-pos -r .data) + ${1#+}))"
+            to_remove=("$(($(mpv_get playlist-pos -r .data) + ${1#+}))")
             ;;
         -[0-9]*)
-            to_remove="$(($(mpv_get playlist-pos -r .data) - ${1#-}))"
+            to_remove=("$(($(mpv_get playlist-pos -r .data) - ${1#-}))")
             ;;
         [0-9]*)
-            to_remove="$1"
+            to_remove=("$1")
+            ;;
+        -c | --category)
+            if [[ ! "$2" ]]; then
+                error "please provide a category"
+                return 1
+            fi
+            num_removed=0
+            while read -r index file; do
+                case "$file" in
+                    *=m*)
+                        #shellcheck disable=2001
+                        file="$(sed -E 's/.*-([a-zA-Z0-9_-]{11})=m.*/\1/g' <<<"$file")"
+                        ;;
+                    *)
+                        file="$(basename "$file")"
+                        ;;
+                esac
+                if grep -q -e "$file.*$2" "$PLAYLIST"; then
+                    to_remove+=("$((index - num_removed))")
+                    ((num_removed++))
+                fi
+            done < <(mpv_get playlist -r '.data[].filename' | nl --starting-line-number=0)
             ;;
         pop)
-            to_remove="$(cat "$(last_queue)")"
+            to_remove=("$(cat "$(last_queue)")")
             ;;
     esac
-    [[ ! "$to_remove" ]] && return
-    mpv_do "[\"playlist-remove\", \"$to_remove\"]" .error
+    [[ "${#to_remove[@]}" -lt 1 ]] && return
+    for r in "${to_remove[@]}"; do
+        echo -n "removing $r"
+        mpv_do "[\"playlist-remove\", \"$r\"]" .error
+    done
 }
 
 preempt_download() {
@@ -908,9 +940,11 @@ loop() {
 
 lyrics() {
 
-    filename=$(mpv_get media-title --raw-output '.data' | cut -d '(' -f 1 |
-        sed 'y/ãāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜÃĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaaeeeeiiiioooouuuuüüüüAAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/' |
-        sed "s/'//g" | tr '[:upper:]' '[:lower:]')
+    filename=$(
+        mpv_get media-title --raw-output '.data' | cut -d '(' -f 1 |
+            remove_accented_chars
+        sed "s/'//g" | tr '[:upper:]' '[:lower:]'
+    )
 
     artist=$(echo "$filename" | cut -d '-' -f1 | xargs | sed 's/ /-/g')
     song=$(echo "$filename" | cut -d '-' -f2 | xargs | sed 's/ /-/g')
@@ -1028,12 +1062,13 @@ main() {
         dq | dequeue)
             ## Dequeue a song
             ## Options:
-            ##      next    The next song
-            ##      prev    The previous song
-            ##      +X      The song X songs from current
-            ##      -X      The song X before the current
-            ##      X       The song at absolute position X
-            ##      pop     The last song that was queued
+            ##      next                The next song
+            ##      prev                The previous song
+            ##      +X                  The song X songs from current
+            ##      -X                  The song X songs before the current
+            ##      X                   The song at absolute position X
+            ##      -c | --category CAT All songs belonging to the category CAT
+            ##      pop                 The last song that was queued
             dequeue "${@:2}"
             ;;
         del | delete-song)
