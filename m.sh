@@ -21,6 +21,7 @@ readonly MUSIC_DIR="${XDG_MUSIC_DIR:-$HOME/Music}"
 mkdir -p "$MUSIC_DIR"
 LOOP_PLAYLIST="--loop-playlist"
 WITH_VIDEO=no
+exec {PLAYLIST_LOCK}>>"$PLAYLIST"
 
 mkdir -p "$CONFIG_DIR"
 
@@ -264,6 +265,10 @@ check_cache() {
     fi
 }
 
+remove_accented_chars() {
+    sed 'y/ãāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜÃĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaaeeeeiiiioooouuuuüüüüAAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/'
+}
+
 mpv_do() {
     echo '{ "command": '"$1"' }' | socat - "$(mpvsocket)" |
         if [[ "$2" ]]; then jq "${@:2}"; else cat; fi
@@ -272,6 +277,8 @@ mpv_do() {
 mpv_get() {
     mpv_do '["get_property", "'"$1"'"]' "${2:-.}" "${@:3}"
 }
+export -f mpv_get
+export -f mpv_do
 
 # ========== SPOTIFY INTERACTION ===========
 
@@ -483,10 +490,6 @@ last_queue() {
     esac
 }
 
-remove_accented_chars() {
-    sed 'y/ãāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜÃĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaaeeeeiiiioooouuuuüüüüAAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/'
-}
-
 # This function interprets queue and play arguments and returns them through
 # INTERPRET_* variables.
 #
@@ -610,10 +613,10 @@ interpret_song() {
             [[ "${#targets[@]}" = 0 ]] &&
                 error "No matches" &&
                 return 1
+        elif [[ "$(echo "$t" | wc -l)" -gt 1 ]]; then
+            error "Too many matches" "$(echo "$t" | rev | cut -f2- | rev)"
+            return 1
         else
-            [[ "$(echo "$t" | wc -l)" -gt 1 ]] &&
-                error "Too many matches" &&
-                return 1
             targets+=("$(check_cache "$(echo "$t" | cut -f2)")")
         fi
     fi
@@ -630,7 +633,11 @@ queue() {
         return 1
     [[ "$INTERPRET_clear" ]] &&
         echo -n "Clearing playlist... " &&
-        mpv_do '["playlist-clear"]' --raw-output .error
+        {
+            flock "$PLAYLIST_LOCK"
+            mpv_do '["playlist-clear"]' --raw-output .error
+            flock -u
+        }
     [[ "$INTERPRET_clear$INTERPRET_reseted" ]] &&
         notify "Reseting queue..." &&
         last_queue reset
@@ -641,6 +648,7 @@ queue() {
     fi
     for file in "${INTERPRET_targets[@]}"; do
         echo -n "Queueing song: '$file'... "
+        flock $PLAYLIST_LOCK
         mpv_do '["loadfile", "'"$file"'", "append"]' --raw-output .error
         if [[ "$INTERPRET_no_move" ]]; then
             local playlist_pos=$(mpv_get playlist-count --raw-output '.data')
@@ -659,6 +667,7 @@ queue() {
             echo "$target" >"$last_queue"
             local playlist_pos=$target
         fi
+        flock -u $PLAYLIST_LOCK
         [[ "$INTERPRET_notify" = 1 ]] && {
             local img img_back name
             img=$(mktemp --tmpdir tmp.XXXXXXXXXXXXXXXXX.png)
@@ -729,6 +738,7 @@ dequeue() {
                 return 1
             fi
             num_removed=0
+            flock "$PLAYLIST_LOCK"
             while read -r index file; do
                 case "$file" in
                     *=m*)
@@ -750,10 +760,12 @@ dequeue() {
             ;;
     esac
     [[ "${#to_remove[@]}" -lt 1 ]] && return
+    flock "$PLAYLIST_LOCK"
     for r in "${to_remove[@]}"; do
         echo -n "removing $r"
         mpv_do "[\"playlist-remove\", \"$r\"]" .error
     done
+    flock -u "$PLAYLIST_LOCK"
 }
 
 preempt_download() {
@@ -779,10 +791,15 @@ preempt_download() {
             &>"$CACHE_DIR/$id.log" || return
 
     touch "$filename"
+    flock "$PLAYLIST_LOCK"
     mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
-    mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
-    local count=$(mpv_get playlist-count --raw-output '.data')
-    mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
+    queue_pos="$(mpv_get playlist -r .data[].filename | nl -v 0 | grep -e "$id" | cut -f1)"
+    if [[ "$(mpv_get playlist_pos -r .data)" != "$queue_pos" ]]; then
+        mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
+        local count=$(mpv_get playlist-count --raw-output .data)
+        mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
+    fi
+    flock -u "$PLAYLIST_LOCK"
     find "$CACHE_DIR" -type f -mtime +1 -delete
 }
 
