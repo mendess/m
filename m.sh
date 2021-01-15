@@ -636,7 +636,7 @@ queue() {
         {
             flock "$PLAYLIST_LOCK"
             mpv_do '["playlist-clear"]' --raw-output .error
-            flock -u
+            flock -u "$PLAYLIST_LOCK"
         }
     [[ "$INTERPRET_clear$INTERPRET_reseted" ]] &&
         notify "Reseting queue..." &&
