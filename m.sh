@@ -781,20 +781,25 @@ preempt_download() {
     local id="$(youtube-dl "$link" --get-id)" || return
 
     mkdir -p "$CACHE_DIR"
-    local filename="$CACHE_DIR/$id.m4a"
+    local filename="$CACHE_DIR/$id.mp4"
 
-    [[ ! -e "$filename" ]] &&
+    if [[ ! -e "$filename" ]]; then
         youtube-dl "$link" \
-            --format 'bestaudio[ext=m4a]' \
+            --format 'best[ext=mp4]' \
             --add-metadata \
             --output "$CACHE_DIR/"'%(id)s.%(ext)s' \
             &>"$CACHE_DIR/$id.log" || return
+    fi
 
     touch "$filename"
     flock "$PLAYLIST_LOCK"
     mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
-    queue_pos="$(mpv_get playlist -r .data[].filename | nl -v 0 | grep -e "$id" | cut -f1)"
-    if [[ "$(mpv_get playlist_pos -r .data)" != "$queue_pos" ]]; then
+    queue_pos="$(mpv_get playlist -r .data[].filename |
+        nl -v 0 |
+        grep -e "$id$" |
+        cut -f1 |
+        tr -d ' ')"
+    if [[ "$(mpv_get playlist-pos -r .data)" != "$queue_pos" ]]; then
         mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
         local count=$(mpv_get playlist-count --raw-output .data)
         mpv_do '["playlist-move", '$((count - 2))', '"$queue_pos"']' >/dev/null
