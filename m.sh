@@ -781,13 +781,12 @@ preempt_download() {
     local id="$(youtube-dl "$link" --get-id)" || return
 
     mkdir -p "$CACHE_DIR"
-    local filename="$CACHE_DIR/$id.mp4"
+    local filename="$CACHE_DIR/$id"
 
     if [[ ! -e "$filename" ]]; then
         youtube-dl "$link" \
-            --format 'best[ext=mp4]' \
             --add-metadata \
-            --output "$CACHE_DIR/"'%(id)s.%(ext)s' \
+            --output "$CACHE_DIR/"'%(id)s' \
             &>"$CACHE_DIR/$id.log" || return
     fi
 
