@@ -797,7 +797,7 @@ preempt_download() {
     if [[ "$(mpv_get playlist_pos -r .data)" != "$queue_pos" ]]; then
         mpv_do '["playlist-remove", '"$queue_pos"']' >/dev/null
         local count=$(mpv_get playlist-count --raw-output .data)
-        mpv_do '["playlist-move", '$((count - 1))', '"$queue_pos"']' >/dev/null
+        mpv_do '["playlist-move", '$((count - 2))', '"$queue_pos"']' >/dev/null
     fi
     flock -u "$PLAYLIST_LOCK"
     find "$CACHE_DIR" -type f -mtime +1 -delete
