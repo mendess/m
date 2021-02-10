@@ -603,7 +603,7 @@ interpret_song() {
                     awk \
                         -v IGNORECASE=1 \
                         -F '\t' \
-                        '$1 ~ /'"$term"'/ {print $1"\t"$2}' |
+                        '$1 ~ /'"${term//\//\\\/}"'/ {print $1"\t"$2}' |
                     while IFS=$'\t' read -r name link _; do
                         printf "%s\t%s\n" "$name" "$link"
                     done)"
