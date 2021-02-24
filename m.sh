@@ -38,7 +38,7 @@ esac
 [[ "$TERMINAL" ]] &&
     [[ ! "$SESSION_KIND" == gui ]] &&
     command -V pstree &>/dev/null &&
-    pstree -s $$ | tr '\n' ' ' | grep -vEq "\\?|login|lemon|$TERMINAL" &&
+    pstree -s $$ | tr '\n' ' ' | grep -vEq "\\?|login|lemon|tmux|$TERMINAL" &&
     SESSION_KIND=gui
 
 # ========== USER INTERACTION ===========
@@ -762,8 +762,8 @@ dequeue() {
     [[ "${#to_remove[@]}" -lt 1 ]] && return
     flock "$PLAYLIST_LOCK"
     for r in "${to_remove[@]}"; do
-        echo -n "removing $r"
-        mpv_do "[\"playlist-remove\", \"$r\"]" .error
+        echo -n "removing $r... "
+        mpv_do "[\"playlist-remove\", \"$r\"]" -r .error
     done
     flock -u "$PLAYLIST_LOCK"
 }
@@ -794,7 +794,7 @@ preempt_download() {
     flock "$PLAYLIST_LOCK"
     mpv_do '["loadfile", "'"$filename"'", "append"]' >/dev/null
     queue_pos="$(mpv_get playlist -r .data[].filename |
-        nl -v 0 |
+        nl --starting-line-number=0 |
         grep -e "$id$" |
         cut -f1 |
         tr -d ' ')"
