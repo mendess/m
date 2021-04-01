@@ -838,10 +838,10 @@ now() {
         sed -r 's/^$/=== ERROR ===/g' |
         python -c 'from threading import Thread
 import fileinput
-from subprocess import check_output as popen
+from subprocess import DEVNULL, check_output as popen
 
 def get_title(i, x):
-    fetch = lambda: popen(["youtube-dl", "--get-title", x]).decode("utf-8").strip()
+    fetch = lambda: popen(["youtube-dl", "--get-title", x], stderr=DEVNULL).decode("utf-8").strip()
     try:
         titles[i] = fetch() if x.startswith("http") else x
     except:
