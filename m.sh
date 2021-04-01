@@ -769,6 +769,7 @@ dequeue() {
 }
 
 preempt_download() {
+    return
     local queue_pos="$1"
     case "$2" in
         ytdl://ytsearch:*)
