@@ -443,7 +443,7 @@ current_song() {
     [[ ! "$1" =~ (-n|--notify) ]] && filename="$filename
 $status 🔉${volume}% | <${pluses}${minus}> $progress%"
 
-    if [[ "$categories" != 'Categories: |' ]]; then
+    if [[ "$categories" ]] && [[ "$categories" != 'Categories: |' ]]; then
         filename="$filename
 
 $categories"
