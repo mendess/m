@@ -437,11 +437,10 @@ current_song() {
             print("Categories:"acc" |")
         }' "$PLAYLIST" |
         fold -s -w "$width")
-    progress="$(mpv_get percent-pos -r .data | sed 's/\..*//')"
-    pluses=$(awk -v c=+ '{for (i = 0; i < $1 / 10; i++) { printf c }}' <<<"$progress")
-    minus=$(awk -v c=- '{for (i = $i / 10; i < 10; i++) { printf c }}' <<<"$progress")
+    progress="$(mpv_get percent-pos -r .data | cut -d. -f1)"
+    bar=$(awk '{while(i < 10){printf i++ < $1 ? "+" : "-"}}' <<<$((progress / 10)))
     [[ ! "$1" =~ (-n|--notify) ]] && filename="$filename
-$status 🔉${volume}% | <${pluses}${minus}> $progress%"
+$status 🔉${volume}% | <${bar}> ${progress}%"
 
     if [[ "$categories" ]] && [[ "$categories" != 'Categories: |' ]]; then
         filename="$filename
