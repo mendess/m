@@ -397,6 +397,10 @@ up_next() {
 }
 
 current_song() {
+    if pgrep spotify >/dev/null; then
+        notify "Now Playing" "$(python ~/.config/lemonbar/spotify_status.py)"
+        return
+    fi
     local filename videoId chapter categories up_next
     videoId="$(mpv_get filename --raw-output '.data' |
         sed -E 's/.*-([a-zA-Z0-9\-_-]{11})(=m)?.*/\1/g')"
