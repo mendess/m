@@ -398,7 +398,11 @@ up_next() {
 
 current_song() {
     if pgrep spotify >/dev/null; then
-        notify "Now Playing" "$(python ~/.config/lemonbar/spotify_status.py)"
+        if [[ "$1" =~ (-s|--short) ]]; then
+            notify "$(python ~/.config/lemonbar/spotify_status.py)"
+        else
+            notify "Now Playing" "$(python ~/.config/lemonbar/spotify_status.py)"
+        fi
         return
     fi
     local filename videoId chapter categories up_next
