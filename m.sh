@@ -266,7 +266,8 @@ check_cache() {
 }
 
 remove_accented_chars() {
-    sed 'y/ãāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜÃĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaaeeeeiiiioooouuuuüüüüAAAAAEEEEIIIIOOOOUUUUÜÜÜÜ/'
+    cat
+    #sed 'y/ãāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜÃĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛ/aaaaaeeeeiiiioooouuuuuuuuAAAAAEEEEIIIIOOOOUUUUUUUU/'
 }
 
 mpv_do() {
@@ -922,13 +923,19 @@ del_song() {
         search="$*"
     fi
     results="$(awk -F'\t' -v IGNORECASE=1 '/'"$search"'/ {print $1}' "$PLAYLIST")"
+    #bug shellcheck
+    #shellcheck disable=2030
     case "$(if [[ "$results" ]]; then wc -l <<<"$results"; else echo 0; fi)" in
         0) error 'no results' && return 1 ;;
         1)
+            #shellcheck disable=2031
             notify 'Deleting song' "$results"
             sed -i "/$search/Id" "$PLAYLIST"
             ;;
-        *) error 'too many results' "$results" && return 1 ;;
+        *)
+            #shellcheck disable=2031
+            error 'too many results' "$results" && return 1
+            ;;
     esac
 }
 
