@@ -4,6 +4,14 @@ let PLAYLIST_LOADED = false;
 let ENDPOINT = "mendess.xyz";
 
 window.onload = () => {
+  const question_mark = window.location.href.indexOf('?');
+  if(question_mark > 0) {
+    document.getElementById('room_name').value = window
+      .location
+      .href
+      .slice(question_mark + 1);
+    now_playing();
+  }
   document.getElementById("room_name").addEventListener(
     'keyup',
     ({key}) => { if (key === "Enter") now_playing() }
