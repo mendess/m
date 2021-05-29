@@ -1214,6 +1214,21 @@ main() {
             grep --color=auto -P '.+\t.+\t[0-9]+\t.*'"$2" "$PLAYLIST" |
                 awk -F'\t' '{print $2" :: "$1}'
             ;;
+        dump)
+            ## Save the playlist to a file to be restored later
+            ## Usage: m dump file
+            out="${2:--}"
+            [[ "$out" = - ]] && out=/dev/stdout
+            mpv_get playlist -r .data[].filename > "$out"
+            ;;
+
+        load)
+            ## Load a file of songs to play
+            ## Usage: m load file
+            out="${2:--}"
+            [[ "$out" = - ]] && out=/dev/stdin
+            xargs -L 1 "$0" q < "$out"
+            ;;
         socket)
             ## Get the socket in use
             mpvsocket "${@:2}"
