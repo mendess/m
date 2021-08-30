@@ -398,14 +398,20 @@ up_next() {
 }
 
 current_song() {
-    if pgrep spotify >/dev/null; then
-        if [[ "$1" =~ (-s|--short) ]]; then
-            notify "$(python ~/.config/lemonbar/spotify_status.py)"
-        else
-            notify "Now Playing" "$(python ~/.config/lemonbar/spotify_status.py)"
+    local spt_string
+    if pgrep spotify >/dev/null ; then
+        spt_string="$(python ~/.config/lemonbar/spotify_status.py)"
+    elif pgrep spt >/dev/null ; then
+        spt_string="$(spt pb)"
+    fi
+    if [[ "$spt_string" ]]; then
+        if [[ ! "$1" =~ (-s|--short) ]]; then
+            spt_string="Now playing: $spt_string"
         fi
+        notify "$spt_string"
         return
     fi
+
     local filename videoId chapter categories up_next
     videoId="$(mpv_get filename --raw-output '.data' |
         sed -E 's/.*-([a-zA-Z0-9\-_-]{11})(=m)?.*/\1/g')"
@@ -1008,6 +1014,9 @@ main() {
             ## Toggle pause
             if pgrep spotify &>/dev/null; then
                 spotify_toggle_pause
+            elif pgrep spt &>/dev/null; then
+                spt pb -t
+                update_panel &
             else
                 echo 'cycle pause' | socat - "$(mpvsocket)"
                 update_panel &
@@ -1129,7 +1138,13 @@ main() {
             ## Increase volume
             ## Usage: m vu [amount]
             ##  default amount is 2
-            echo "add volume ${2:-2}" | socat - "$(mpvsocket)"
+            delta="${2:-2}"
+            if pgrep spt >/dev/null; then
+                current=$(spt pb --format '%v')
+                spt pb --volume "$(( current + delta ))"
+            else
+                echo "add volume $delta" | socat - "$(mpvsocket)"
+            fi
             update_panel &
             disown
             ;;
@@ -1137,7 +1152,13 @@ main() {
             ## Decrease  volume
             ## Usage: m vd [amount]
             ##  default amount is 2
-            echo "add volume -${2:-2}" | socat - "$(mpvsocket)"
+            delta="${2:-2}"
+            if pgrep spt >/dev/null; then
+                current=$(spt pb --format '%v')
+                spt pb --volume "$(( current - delta ))"
+            else
+                echo "add volume -$delta" | socat - "$(mpvsocket)"
+            fi
             update_panel &
             disown
             ;;
@@ -1163,6 +1184,10 @@ main() {
                 spotify_prev
                 update_panel &
                 disown
+            elif pgrep spt &>/dev/null; then
+                spt pb --previous
+                update_panel &
+                disown
             else
                 echo 'playlist-prev' | socat - "$(mpvsocket)"
             fi
@@ -1171,6 +1196,10 @@ main() {
             ## Skip to the next file
             if pgrep spotify &>/dev/null; then
                 spotify_next
+                update_panel &
+                disown
+            elif pgrep spt &>/dev/null; then
+                spt pb --next
                 update_panel &
                 disown
             else
