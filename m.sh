@@ -305,11 +305,12 @@ play() {
     mpv_do '["set_property", "pause", true]' &>/dev/null
     case $WITH_VIDEO in
         yes)
-            mpv \
+            setsid mpv \
                 --geometry=820x466 \
                 "$LOOP_PLAYLIST" \
                 --input-ipc-server="$(mpvsocket new)" \
-                "$@"
+                "$@" &>/dev/null &
+            disown
             ;;
         no)
             if [[ -z "$DISPLAY" ]]; then
