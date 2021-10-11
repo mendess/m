@@ -339,6 +339,10 @@ songs_in_cat() {
 }
 
 mpvsocket() {
+    if [[ "$M_SOCKET" ]]; then
+        echo "$M_SOCKET"
+        return;
+    fi
     CACHE_SOCKET="$HOME/.cache/mpvsocket_cache"
 
     last() {
@@ -681,7 +685,7 @@ queue() {
             [[ -e "$last_queue" ]] &&
                 [[ "$target" -le "$(cat "$last_queue")" ]] &&
                 target=$(($(cat "$last_queue") + 1))
-            echo -n "Moving from $count -> $target ... "
+            echo -n "Moving from $count -> $target ... [now playing: $current]"
             mpv_do '["playlist-move", '$((count - 1))', '$target']' --raw-output .error
             echo "$target" >"$last_queue"
             local playlist_pos=$target
