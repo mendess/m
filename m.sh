@@ -41,6 +41,11 @@ esac
     pstree -s $$ | tr '\n' ' ' | grep -vEq "\\?|login|lemon|tmux|$TERMINAL" &&
     SESSION_KIND=gui
 
+# =========== LYRICS HELPERS ============
+MA_spotify_song_info="https://raw.githubusercontent.com/matildeopbravo/dotfiles/master/scripts/spotify_song_info"
+MA_lyrics="https://raw.githubusercontent.com/matildeopbravo/dotfiles/master/scripts/lyrics"
+MA_spotify_lyrics="https://raw.githubusercontent.com/matildeopbravo/dotfiles/master/scripts/spotify_lyrics"
+
 # ========== USER INTERACTION ===========
 
 error() {
@@ -990,27 +995,34 @@ loop() {
 }
 
 lyrics() {
+    lpath="$TMPDIR/m-lyrics-extra"
+    mkdir -p "$lpath"
+    if [ ! -e "$lpath/$(basename "$MA_spotify_song_info")" ] ||
+        [ ! -e "$lpath/$(basename "$MA_lyrics")" ] ||
+        [ ! -e "$lpath/$(basename "$MA_spotify_lyrics")" ]; then
 
-    filename=$(
-        mpv_get media-title --raw-output '.data' | cut -d '(' -f 1 |
-            remove_accented_chars
-        sed "s/'//g" | tr '[:upper:]' '[:lower:]'
-    )
+        wget -q "$MA_spotify_song_info" -O "$lpath/$(basename "$MA_spotify_song_info")"
+        wget -q "$MA_spotify_lyrics" -O "$lpath/$(basename "$MA_spotify_lyrics")"
+        wget -q "$MA_lyrics" -O "$lpath/$(basename "$MA_lyrics")"
+        chmod -R +x "$lpath"
+    fi
+    export PATH="$PATH:$lpath"
 
-    artist=$(echo "$filename" | cut -d '-' -f1 | xargs | sed 's/ /-/g')
-    song=$(echo "$filename" | cut -d '-' -f2 | xargs | sed 's/ /-/g')
-    artist="$(tr '[:lower:]' '[:upper:]' <<<"${artist:0:1}")${artist:1}"
-    link="https://genius.com/$artist-$song-lyrics"
+    if pgrep spotify &>/dev/null; then
+        spotify_lyrics
+    else
+        filename=$(
+            mpv_get media-title --raw-output '.data' | cut -d '(' -f 1 |
+                remove_accented_chars |
+                sed "s/'//g" |
+                tr '[:upper:]' '[:lower:]'
+        )
 
-    while [ -z "$output" ]; do
-        output=$(curl -s "$link" | sed -n '/<div class="song_body-lyrics">/,/<\/div>/p' | sed -E 's/>([[a-zA-Z])/>\n\1/g' |
-            sed -E 's/(.)<a/\1\n<a/g' | sed '/<a/,/>/d' | sed 's/<br>//g' | sed 's/<.*>//g' |
-            awk '!NF {if (++n <= 2) print; next}; {n=0;print}' | GREP_COLORS='ms=01;31' grep --color=always -e "^" -e "\[.*]" |
-            GREP_COLORS='ms=01;34' grep --color=always -e "^" -e ".*Lyrics$")
-    done
+        artist=$(echo "$filename" | cut -d '-' -f1 | xargs | sed 's/ /-/g')
+        song=$(echo "$filename" | cut -d '-' -f2 | xargs | sed 's/ /-/g')
 
-    echo "$output" | less -R
-
+        "$lpath/lyrics" "$artist" "$song"
+    fi
 }
 
 main() {
