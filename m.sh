@@ -11,7 +11,8 @@ SCRIPT_NAME="$(basename "$0")"
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/queue_cache"
 if [[ -z "$TMPDIR" ]]; then
     if [[ -e /tmp ]]; then
-        export TMPDIR=/tmp
+        export TMPDIR="/tmp/$LOGNAME"
+        mkdir -p "$TMPDIR"
     else
         export TMPDIR="$HOME/.cache"
     fi
