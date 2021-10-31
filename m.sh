@@ -357,7 +357,7 @@ mpvsocket() {
             *) r='[0-9]+|_cache' ;;
         esac
         #shellcheck disable=SC2009
-        ps -ef |
+        ps -fu "$LOGNAME" |
             grep -v grep |
             grep -oP 'mpvsocket('"$r"')' |
             sed -E 's/mpvsocket('"$r"')/\1/' |
