@@ -410,9 +410,9 @@ up_next() {
 
 current_song() {
     local spt_string
-    if pgrep spotify >/dev/null ; then
+    if pgrep -u "$(whoami)" spotify >/dev/null ; then
         spt_string="$(python ~/.config/lemonbar/spotify_status.py)"
-    elif pgrep spt >/dev/null ; then
+    elif pgrep -u "$(whoami)" spt >/dev/null ; then
         spt_string="$(spt pb)"
     fi
     if [[ "$spt_string" ]]; then
@@ -1010,7 +1010,7 @@ lyrics() {
     fi
     export PATH="$PATH:$lpath"
 
-    if pgrep spotify &>/dev/null; then
+    if pgrep -u "$(whoami)" spotify &>/dev/null; then
         spotify_lyrics
     else
         filename=$(
@@ -1031,7 +1031,7 @@ main() {
     case $1 in
         p | pause)
             ## Toggle pause
-            if pgrep spotify &>/dev/null; then
+            if pgrep -u "$(whoami)" spotify &>/dev/null; then
                 spotify_toggle_pause
             elif pgrep spt &>/dev/null; then
                 spt pb -t
@@ -1199,7 +1199,7 @@ main() {
             ;;
         h | prev-file)
             ## Go to previous file
-            if pgrep spotify &>/dev/null; then
+            if pgrep -u "$(whoami)" spotify &>/dev/null; then
                 spotify_prev
                 update_panel &
                 disown
@@ -1213,7 +1213,7 @@ main() {
             ;;
         l | next-file)
             ## Skip to the next file
-            if pgrep spotify &>/dev/null; then
+            if pgrep -u "$(whoami)" spotify &>/dev/null; then
                 spotify_next
                 update_panel &
                 disown
