@@ -7,13 +7,22 @@ use std::{
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
+use thiserror::Error;
 use tokio::net::UnixStream;
 
 static SOCKET_GLOB: Lazy<String> = Lazy::new(|| format!("/tmp/{}/.mpvsocket*", whoami::username()));
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
 
-pub async fn most_recent_cached() -> io::Result<UnixStream> {
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("io: {0}")]
+    Io(#[from] io::Error),
+    #[error("invalid socket path: {0}")]
+    InvalidPath(&'static str),
+}
+
+pub async fn most_recent_cached() -> Result<UnixStream, Error> {
     const INVALID_THREASHOLD: Duration = Duration::from_secs(30);
 
     static CURRENT: Lazy<Mutex<(PathBuf, Instant)>> = Lazy::new(|| {
@@ -46,11 +55,7 @@ pub async fn most_recent_cached() -> io::Result<UnixStream> {
     }
 }
 
-pub async fn new() -> io::Result<PathBuf> {
-    fn err(s: &'static str) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, s)
-    }
-
+pub async fn new() -> Result<PathBuf, Error> {
     fn new_path(end: &str) -> PathBuf {
         let mut new_path = SOCKET_GLOB.clone();
         new_path.pop(); // remove '*'
@@ -63,13 +68,17 @@ pub async fn new() -> io::Result<PathBuf> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             return Ok(new_path("0"));
         }
-        Err(e) => return Err(e),
+        Err(e) => return Err(e.into()),
     };
+
     let path = path.into_os_string();
-    let path = path.to_str().ok_or_else(|| err("path is not valid utf8"))?;
+    let path = path
+        .to_str()
+        .ok_or(Error::InvalidPath("path is not valid utf8"))?;
+
     let i = SOCKET_REGEX
         .find(path)
-        .ok_or_else(|| err("path didn't contain a number"))?
+        .ok_or(Error::InvalidPath("path didn't contain a number"))?
         .as_str();
 
     Ok(new_path(i))
