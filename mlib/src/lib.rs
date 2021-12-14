@@ -1,3 +1,5 @@
+#![warn(clippy::dbg_macro)]
+
 #[cfg(feature = "playlist")]
 pub mod playlist;
 #[cfg(feature = "socket")]

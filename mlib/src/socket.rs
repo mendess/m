@@ -1,14 +1,19 @@
+pub mod cmds;
+
 use std::{
-    io,
-    path::PathBuf,
+    fmt::Debug,
+    io::{self, IoSlice},
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
+use cmds::command::Command;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
-use tokio::net::UnixStream;
+use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 static SOCKET_GLOB: Lazy<String> = Lazy::new(|| format!("/tmp/{}/.mpvsocket*", whoami::username()));
 
@@ -20,81 +25,189 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("invalid socket path: {0}")]
     InvalidPath(&'static str),
+    #[error("ipc error: {0}")]
+    IpcError(String),
 }
 
-pub async fn most_recent_cached() -> Result<UnixStream, Error> {
-    const INVALID_THREASHOLD: Duration = Duration::from_secs(30);
+pub struct MpvSocket {
+    path: PathBuf,
+    socket: UnixStream,
+}
 
-    static CURRENT: Lazy<Mutex<(PathBuf, Instant)>> = Lazy::new(|| {
-        Mutex::new((
-            PathBuf::new(),
-            Instant::now()
-                .checked_sub(INVALID_THREASHOLD)
-                .unwrap_or_else(Instant::now),
-        ))
-    });
+impl MpvSocket {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 
-    let mut current = CURRENT.lock();
-    if current.1.elapsed() >= INVALID_THREASHOLD {
-        let (path, sock) = most_recent().await?;
-        tracing::trace!("Cache hit {}", path.display());
-        current.0 = path;
-        current.1 = Instant::now();
-        Ok(sock)
-    } else {
-        current.1 = Instant::now();
-        match UnixStream::connect(&current.0).await {
-            Ok(sock) => Ok(sock),
-            Err(_) => {
-                let (path, sock) = most_recent().await?;
-                tracing::trace!("Cache miss. Opening {} instead", path.display());
-                current.0 = path;
-                Ok(sock)
+    pub async fn most_recent_cached() -> Result<Self, Error> {
+        const INVALID_THREASHOLD: Duration = Duration::from_secs(30);
+
+        static CURRENT: Lazy<Mutex<(PathBuf, Instant)>> = Lazy::new(|| {
+            Mutex::new((
+                PathBuf::new(),
+                Instant::now()
+                    .checked_sub(INVALID_THREASHOLD)
+                    .unwrap_or_else(Instant::now),
+            ))
+        });
+
+        let mut current = CURRENT.lock();
+        if current.1.elapsed() >= INVALID_THREASHOLD {
+            let Self { path, socket } = Self::most_recent().await?;
+            tracing::trace!("Cache hit {}", path.display());
+            current.0 = path;
+            current.1 = Instant::now();
+            Ok(Self {
+                socket,
+                path: current.0.clone(),
+            })
+        } else {
+            current.1 = Instant::now();
+            match UnixStream::connect(&current.0).await {
+                Ok(sock) => Ok(Self {
+                    socket: sock,
+                    path: current.0.clone(),
+                }),
+                Err(_) => {
+                    let Self { path, socket } = Self::most_recent().await?;
+                    tracing::trace!("Cache miss. Opening {} instead", path.display());
+                    current.0 = path.clone();
+                    Ok(Self { socket, path })
+                }
             }
         }
     }
-}
 
-pub async fn new() -> Result<PathBuf, Error> {
-    fn new_path(end: &str) -> PathBuf {
-        let mut new_path = SOCKET_GLOB.clone();
-        new_path.pop(); // remove '*'
-        new_path.push_str(end);
-        PathBuf::from(new_path)
+    pub async fn new_path() -> Result<PathBuf, Error> {
+        fn new_path(end: &str) -> PathBuf {
+            let mut new_path = SOCKET_GLOB.clone();
+            new_path.pop(); // remove '*'
+            new_path.push_str(end);
+            PathBuf::from(new_path)
+        }
+
+        let path = match Self::most_recent().await {
+            Ok(Self { path, .. }) => path,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(new_path("0"));
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        let path = path.into_os_string();
+        let path = path
+            .to_str()
+            .ok_or(Error::InvalidPath("path is not valid utf8"))?;
+
+        let i = SOCKET_REGEX
+            .find(path)
+            .ok_or(Error::InvalidPath("path didn't contain a number"))?
+            .as_str();
+
+        Ok(new_path(i))
     }
 
-    let path = match most_recent().await {
-        Ok((p, _)) => p,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Ok(new_path("0"));
+    pub async fn new() -> Result<Self, Error> {
+        let path = Self::new_path().await?;
+        Ok(Self {
+            socket: UnixStream::connect(&path).await?,
+            path,
+        })
+    }
+
+    pub async fn most_recent() -> io::Result<Self> {
+        let mut available_sockets: Vec<_> = glob::glob(&*SOCKET_GLOB)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|x| x.to_str().map(|x| SOCKET_REGEX.is_match(x)) == Some(true))
+            .collect();
+        available_sockets.sort();
+        for s in available_sockets.into_iter().rev() {
+            if let Ok(sock) = UnixStream::connect(&s).await {
+                return Ok(Self {
+                    socket: sock,
+                    path: s,
+                });
+            }
         }
-        Err(e) => return Err(e.into()),
-    };
+        Err(io::ErrorKind::NotFound.into())
+    }
 
-    let path = path.into_os_string();
-    let path = path
-        .to_str()
-        .ok_or(Error::InvalidPath("path is not valid utf8"))?;
+    #[allow(dead_code)]
+    pub(crate) async fn mpv_do<S: Serialize + Debug, O: DeserializeOwned>(
+        &mut self,
+        cmd: S,
+    ) -> Result<O, Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Payload<'e, O> {
+            Data { data: O },
+            Error { error: &'e str },
+        }
 
-    let i = SOCKET_REGEX
-        .find(path)
-        .ok_or(Error::InvalidPath("path didn't contain a number"))?
-        .as_str();
+        tracing::trace!("Checking if socket is writable");
+        self.socket.writable().await?;
+        tracing::trace!("Writing to the socket '{:?}'", cmd);
+        let v = serde_json::to_vec(&serde_json::json!({ "command": cmd }))
+            .expect("serialization to never fail");
+        // TODO: check return of 0?
+        self.writeln(&v).await?;
 
-    Ok(new_path(i))
-}
+        let mut buf = Vec::with_capacity(1024);
+        'readloop: loop {
+            tracing::trace!("Waiting for the socket to become readable");
+            self.socket.readable().await?;
+            loop {
+                tracing::trace!("Trying to read from socket");
+                match self.socket.try_read_buf(&mut buf) {
+                    Ok(_) => break 'readloop,
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        tracing::warn!("false positive read");
+                    }
+                    Err(e) => return Err(e.into()),
+                };
+            }
+        }
 
-pub async fn most_recent() -> io::Result<(PathBuf, UnixStream)> {
-    let mut available_sockets: Vec<_> = glob::glob(&*SOCKET_GLOB)
-        .unwrap()
-        .filter_map(Result::ok)
-        .filter(|x| x.to_str().map(|x| SOCKET_REGEX.is_match(x)) == Some(true))
-        .collect();
-    available_sockets.sort();
-    for s in available_sockets.into_iter().rev() {
-        if let Ok(sock) = UnixStream::connect(&s).await {
-            return Ok((s, sock));
+        let start_i = match buf.iter().position(|b| *b != b'\0') {
+            Some(i) => i,
+            None => return Err(Error::Io(io::ErrorKind::UnexpectedEof.into())),
+        };
+
+        match buf[start_i..]
+            .split(|&b| b == b'\n')
+            .find_map(|b| serde_json::from_slice::<Payload<O>>(b).ok())
+        {
+            Some(Payload::Data { data }) => Ok(data),
+            Some(Payload::Error { error }) => Err(Error::IpcError(error.to_string())),
+            None => Err(Error::Io(io::ErrorKind::InvalidData.into())),
         }
     }
-    Err(io::ErrorKind::NotFound.into())
+
+    #[allow(dead_code)]
+    pub(crate) async fn fire(&mut self, msg: &str) -> io::Result<()> {
+        self.writeln(msg.as_bytes()).await?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn mpv_get<D: DeserializeOwned>(
+        &mut self,
+        p: &str,
+    ) -> Result<Option<D>, Error> {
+        self.mpv_do(&["get_property", p]).await
+    }
+
+    async fn writeln(&mut self, b: &[u8]) -> io::Result<usize> {
+        let io_slices = [IoSlice::new(b), IoSlice::new(b"\n")];
+        self.socket.write_vectored(&io_slices).await
+    }
+
+    pub async fn run<C, const N: usize>(&mut self, cmd: C) -> Result<C::Output, Error>
+    where
+        C: Command<N>,
+        C::Output: DeserializeOwned,
+    {
+        self.mpv_do(cmd.cmd().as_slice()).await
+    }
 }

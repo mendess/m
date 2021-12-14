@@ -12,9 +12,12 @@
 ## Playlist management
 
  - [x] new                Add a new song to the playlist
+     - [ ] queue, depends on queue
  - [ ] delete-song        Delete a song from the playlist file
+     - [ ] current, depends on current
  - [ ] add-playlist       Append a playlist to the personal playlist
  - [ ] ch-cat             Add a category to the current song
+     - depends on current
 
 ## Simple player interaction
 
@@ -28,7 +31,7 @@
  - [ ] pause              Toggle pause
  - [ ] vd                 Volume up
  - [ ] vu                 Volume up
- - [ ] shuffle            Shuffle
+ - [x] shuffle            Shuffle
  - [ ] quit               Kill the most recent player
  - [ ] toggle-video       Toggle video
 

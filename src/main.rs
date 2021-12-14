@@ -4,8 +4,11 @@ use anyhow::Context;
 use arg_parse::{Command, New};
 use mlib::{
     playlist::{self, Playlist, Song},
-    socket,
-    ytdl::{YtdlBuilder, util::extract_id},
+    socket::{
+        cmds::{Filename, QueueShuffle},
+        MpvSocket,
+    },
+    ytdl::{util::extract_id, YtdlBuilder},
 };
 use regex::Regex;
 use std::io::ErrorKind;
@@ -17,10 +20,10 @@ async fn main() -> anyhow::Result<()> {
     match cmd {
         Command::Socket { new } => {
             if new.is_some() {
-                println!("{}", socket::new().await?.display());
+                println!("{}", MpvSocket::new_path().await?.display());
             } else {
-                match socket::most_recent().await {
-                    Ok((p, _)) => println!("{}", p.display()),
+                match MpvSocket::most_recent().await {
+                    Ok(s) => println!("{}", s.path().display()),
                     Err(e) if e.kind() == ErrorKind::NotFound => println!("/dev/null"),
                     Err(e) => return Err(e.into()),
                 }
@@ -78,6 +81,10 @@ async fn main() -> anyhow::Result<()> {
                 todo!()
             }
         }
+        Command::Current { .. } => {
+            println!("{:?}", MpvSocket::most_recent().await?.run(Filename).await?);
+        }
+        Command::Shuffle => MpvSocket::most_recent().await?.run(QueueShuffle).await?,
         _ => todo!(),
     }
 
