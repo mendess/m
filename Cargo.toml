@@ -11,6 +11,14 @@ mlib = { path = "./mlib", default-features = true }
 tokio = { version = "1.14.0", features = ["macros", "rt-multi-thread", "rt"] }
 anyhow = "1.0.51"
 regex = "1.5.4"
+atty = "0.2.14"
+term = "0.7.0"
+tracing-subscriber = { version = "0.3", features = ["registry", "env-filter", "fmt"] }
+tracing-log = "0.1.2"
+tracing = "0.1.29"
+async_once = "0.2.1"
 
 [workspace]
 members = ["mlib"]
+
+[features]

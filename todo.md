@@ -21,19 +21,19 @@
 
 ## Simple player interaction
 
- - [ ] frwd               Seek forward
- - [ ] back               Seek backward
- - [ ] next               Next chapter in a file
- - [ ] next-file          Skip to the next file
- - [ ] prev               Previous chapter in a file
- - [ ] prev-file          Previous file
- - [ ] loop               Toggles playlist looping
- - [ ] pause              Toggle pause
- - [ ] vd                 Volume up
- - [ ] vu                 Volume up
+ - [x] frwd               Seek forward
+ - [x] back               Seek backward
+ - [x] next               Next chapter in a file
+ - [x] next-file          Skip to the next file
+ - [x] prev               Previous chapter in a file
+ - [x] prev-file          Previous file
+ - [x] loop               Toggles playlist looping
+ - [x] pause              Toggle pause
+ - [x] vd                 Volume up
+ - [x] vu                 Volume up
  - [x] shuffle            Shuffle
- - [ ] quit               Kill the most recent player
- - [ ] toggle-video       Toggle video
+ - [x] quit               Kill the most recent player
+ - [x] toggle-video       Toggle video
 
 ## Complex player interaction
 
