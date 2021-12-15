@@ -55,3 +55,8 @@
 
  - [ ] lyrics             Shows lyrics for the current song
  - [ ] playlist           Interactively asks the user what songs they want to play from their playlist
+
+## After
+
+- update lemons to use mlib
+- implement events instead of using update_bar script
