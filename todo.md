@@ -15,7 +15,8 @@
      - [ ] queue, depends on queue
  - [ ] delete-song        Delete a song from the playlist file
      - [ ] current, depends on current
- - [ ] add-playlist       Append a playlist to the personal playlist
+ - [x] add-playlist       Append a playlist to the personal playlist
+     - [ ] queue, depends on queue
  - [ ] ch-cat             Add a category to the current song
      - depends on current
 
@@ -43,6 +44,7 @@
 ## Idk, it just depends on stuff before it
 
  - [ ] interactive        Enter interactive mode
+     depends on current
 
 ## Queue management
  - [ ] play               Play something
@@ -54,6 +56,7 @@
 ## Other
 
  - [ ] lyrics             Shows lyrics for the current song
+     - depends on current
  - [ ] playlist           Interactively asks the user what songs they want to play from their playlist
 
 ## After

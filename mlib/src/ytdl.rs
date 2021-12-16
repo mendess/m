@@ -1,8 +1,8 @@
 pub mod util;
 
-use std::process::ExitStatus;
+use std::{process::{ExitStatus, Stdio}, ops::{Deref, DerefMut}};
 
-use tokio::{io, process::Command};
+use tokio::{io::{self, BufReader}, process::{Command, Child, ChildStdout}};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -13,6 +13,8 @@ pub enum Error {
         status_code: ExitStatus,
         stderr: String,
     },
+    #[error("invalid utf8 {0}")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
 }
 
 mod sealed {
@@ -229,4 +231,37 @@ impl Response for VidId {
     fn id(&self) -> &str {
         &self.0
     }
+}
+
+pub struct StreamingChild {
+    _child: Child,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl Deref for StreamingChild {
+    type Target = BufReader<ChildStdout>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.stdout
+    }
+}
+
+impl DerefMut for StreamingChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stdout
+    }
+}
+
+pub async fn get_playlist_video_ids(link: &str) -> Result<StreamingChild, Error> {
+    let mut child = Command::new("youtube-dl")
+        .arg("--get-id")
+        .arg(link)
+        .kill_on_drop(true)
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    Ok(StreamingChild {
+        stdout: BufReader::new(child.stdout.take().unwrap()),
+        _child: child,
+    })
 }

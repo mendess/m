@@ -4,12 +4,13 @@ mod notify;
 use anyhow::Context;
 use arg_parse::{Amount, Command, New};
 use mlib::{
-    playlist::{self, Playlist, Song},
+    playlist::{self, Playlist, PlaylistIds, Song},
     socket::{cmds as sock_cmds, Error as SockErr, MpvSocket},
-    ytdl::{util::extract_id, YtdlBuilder},
+    ytdl::{get_playlist_video_ids, util::extract_id, YtdlBuilder},
 };
 use regex::Regex;
 use structopt::StructOpt;
+use tokio::io::AsyncBufReadExt;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
@@ -105,7 +106,7 @@ async fn run() -> anyhow::Result<()> {
         }
         Command::New(New {
             queue,
-            link,
+            mut link,
             categories,
         }) => {
             let id = extract_id(&link).ok_or_else(|| anyhow::anyhow!("invalid link"))?;
@@ -113,25 +114,40 @@ async fn run() -> anyhow::Result<()> {
                 return Err(anyhow::anyhow!("Song already in playlist"));
             }
             notify!("Fetching song info");
-            let b = YtdlBuilder::new(&link)
-                .get_title()
-                .get_duration()
-                .request()
-                .await?;
-
-            let song = Song {
-                time: b.duration().as_secs(),
-                link: format!("https://youtu.be/{}", b.id()),
-                name: b.title(),
-                categories,
-            };
-            Playlist::add_song(&song).await?;
-            notify!("Song added"; content: "{}", song);
+            add_song(&mut link, categories).await?;
             if queue {
                 todo!()
             }
         }
-        Command::Current { .. } => {
+        Command::AddPlaylist(New {
+            queue,
+            link,
+            categories,
+        }) => {
+            if !link.contains("playlist") {
+                return Err(anyhow::anyhow!("Not a playlist link"));
+            }
+            tracing::trace!("loading playlist ids");
+            let playlist = PlaylistIds::load().await?;
+            let mut id_stream = get_playlist_video_ids(&link).await?;
+            let mut id = String::new();
+            while {
+                id.clear();
+                id_stream.read_line(&mut id).await? != 0
+            } {
+                let id = id.trim();
+                if playlist.contains(id) {
+                    notify!("song already in playlist"; content: "{}", id);
+                    continue;
+                }
+                let mut link = format!("https://youtu.be/{}", id);
+                add_song(&mut link, categories.clone()).await?;
+            }
+            if queue {
+                todo!()
+            }
+        }
+        Command::Current { link, notify } => {
             println!(
                 "{:?}",
                 MpvSocket::lattest()
@@ -189,4 +205,30 @@ async fn main() -> anyhow::Result<()> {
         error!("{}", e);
     }
     Ok(())
+}
+
+async fn add_song(link: &mut String, categories: Vec<String>) -> anyhow::Result<()> {
+    let b = YtdlBuilder::new(link)
+        .get_title()
+        .get_duration()
+        .request()
+        .await?;
+
+    let song = Song {
+        time: b.duration().as_secs(),
+        link: if is_short_link(link) {
+            std::mem::take(link)
+        } else {
+            format!("https://youtu.be/{}", b.id())
+        },
+        name: b.title(),
+        categories,
+    };
+    Playlist::add_song(&song).await?;
+    notify!("Song added"; content: "{}", song);
+    Ok(())
+}
+
+fn is_short_link(s: &str) -> bool {
+    s.starts_with("https://youtu.be/")
 }

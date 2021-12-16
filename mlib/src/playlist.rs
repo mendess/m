@@ -1,11 +1,11 @@
-use csv_async::{AsyncReaderBuilder, AsyncWriterBuilder};
+use csv_async::{AsyncReaderBuilder, AsyncWriterBuilder, StringRecord};
 use dirs::config_dir;
 use futures_util::stream::TryStreamExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     fmt::{self, Display},
     io,
@@ -130,5 +130,27 @@ impl Playlist {
             .await
             .map_err(io::Error::from)?;
         Ok(())
+    }
+}
+
+pub struct PlaylistIds(HashSet<String>);
+
+impl PlaylistIds {
+    pub async fn load() -> io::Result<Self> {
+        let playlist_path = Playlist::path()?;
+        let file = File::open(playlist_path).await?;
+        let mut reader = READER_BUILDER.create_deserializer(file);
+        let mut record = StringRecord::new();
+        let mut set = HashSet::new();
+        while reader.read_record(&mut record).await? {
+            //TODO: unwrap
+            let id = record.get(1).unwrap().split('/').last().unwrap();
+            set.insert(id.to_string());
+        }
+        Ok(Self(set))
+    }
+
+    pub fn contains(&self, l: &str) -> bool {
+        self.0.contains(l)
     }
 }
