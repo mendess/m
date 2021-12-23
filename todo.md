@@ -5,7 +5,8 @@
 
  - [x] notify
  - [x] mpv_do
- - [ ] selector
+ - [x] selector
+ - [ ] with_video
 
 ## Simple file io
 

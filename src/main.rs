@@ -252,6 +252,10 @@ async fn run() -> anyhow::Result<()> {
             }
             file.flush().await?;
         }
+        Command::Play { .. } => {
+            let options = ["yes", "no"];
+            dbg!(selector::selector(options.iter(), "with video?", 2).await)?;
+        }
         _ => todo!(),
     }
 
