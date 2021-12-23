@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use self::command::Execute;
+use self::command::{Compute, Execute};
 
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
@@ -134,26 +134,31 @@ macro_rules! get_prop_impl {
 }
 
 get_prop_impl!(
-    QueuePos, "playlist-pos" => usize;
-    Queue, "playlist" => Vec<QueueItem>;
-    Filename, "filename" => String;
-    MediaTitle, "media-title" => String;
     ChapterMetadata, "chapter-metadata" => String;
+    Filename, "filename" => String;
     IsPaused, "pause" => bool;
-    Volume, "volume" => f64;
+    MediaTitle, "media-title" => String;
     PercentPosition, "percent-pos" => f64;
-    QueueSize, "playlist-count" => usize;
+    Queue, "playlist" => Vec<QueueItem>;
+    QueueFilename, "filename" => String;
     QueueIsLooping, "loop-playlist" => LoopStatus;
+    QueuePos, "playlist-pos" => usize;
+    QueueSize, "playlist-count" => usize;
+    Volume, "volume" => f64;
 );
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct QueueItem {
     pub filename: String,
-    #[serde(default)]
-    pub current: bool,
-    #[serde(default)]
-    pub playing: bool,
+    #[serde(default, flatten)]
+    pub status: Option<QueueItemStatus>,
     pub id: usize,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct QueueItemStatus {
+    pub current: bool,
+    pub playing: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
@@ -162,6 +167,36 @@ pub enum LoopStatus {
     Force,
     No,
     N(u64),
+}
+
+pub struct QueueNFilename(pub usize);
+
+impl Execute<2> for QueueNFilename {
+    fn cmd(&self) -> [Value<'_>; 2] {
+        [
+            Value::Str("get_property"),
+            Value::String(format!("playlist/{}/filename", self.0)),
+        ]
+    }
+}
+
+impl Compute<2> for QueueNFilename {
+    type Output = String;
+}
+
+pub struct QueueN(pub usize);
+
+impl Execute<2> for QueueN {
+    fn cmd(&self) -> [Value<'_>; 2] {
+        [
+            Value::Str("get_property"),
+            Value::String(format!("playlist/{}", self.0))
+        ]
+    }
+}
+
+impl Compute<2> for QueueN {
+    type Output = QueueItem;
 }
 
 mod loop_status {

@@ -12,26 +12,14 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use thiserror::Error;
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use self::cmds::command::{Compute, Execute};
+use crate::Error;
 
 static SOCKET_GLOB: Lazy<String> = Lazy::new(|| format!("/tmp/{}/.mpvsocket*", whoami::username()));
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("io: {0}")]
-    Io(#[from] io::Error),
-    #[error("no mpv instance running")]
-    NoMpvInstance,
-    #[error("invalid socket path: {0}")]
-    InvalidPath(&'static str),
-    #[error("ipc error: {0}")]
-    IpcError(String),
-}
 
 pub struct MpvSocket {
     path: PathBuf,

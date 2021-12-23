@@ -6,8 +6,8 @@
  - [x] socket             Get the socket in use
  - [x] songs              Get all songs in the playlist, optionaly filtered by category
  - [x] cat                List all current categories
- - [ ] clean-downloads    Deletes downloaded songs that are not in the playlist anymore
-     - [ ] decide on the file name format
+ - [?] clean-downloads    Deletes downloaded songs that are not in the playlist anymore
+     - [x] decide on the file name format
 
 ## Playlist management
 
@@ -38,7 +38,7 @@
 
 ## Complex player interaction
 
- - [ ] current            Show the current song
+ - [x] current            Show the current song
  - [ ] now                Shows the current playlist
 
 ## Idk, it just depends on stuff before it
@@ -51,7 +51,9 @@
  - [ ] queue              Queue a song
  - [ ] dequeue            Dequeue a song
  - [ ] dump               Save the playlist to a file to be restored later
+     depends on now
  - [ ] load               Load a file of songs to play
+     depends on now
 
 ## Other
 

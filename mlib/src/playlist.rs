@@ -16,6 +16,8 @@ use tokio::{
     io::AsyncReadExt,
 };
 
+use crate::Error;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
     pub name: String,
@@ -42,14 +44,6 @@ impl Display for Song {
 
 pub struct Playlist(pub Vec<Song>);
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("{0}")]
-    Io(#[from] io::Error),
-    #[error("repeated song")]
-    RepeatedSong,
-}
-
 static WRITER_BUILDER: Lazy<AsyncWriterBuilder> = Lazy::new(|| {
     let mut builder = AsyncWriterBuilder::new();
     builder.delimiter(b'\t').has_headers(false);
@@ -67,7 +61,7 @@ static READER_BUILDER: Lazy<AsyncReaderBuilder> = Lazy::new(|| {
 });
 
 impl Playlist {
-    fn path() -> io::Result<PathBuf> {
+    pub(crate) fn path() -> io::Result<PathBuf> {
         thread_local! {
             static PATH: RefCell<io::Result<PathBuf>> = RefCell::new(Err(io::ErrorKind::NotFound.into()));
         };
@@ -130,6 +124,35 @@ impl Playlist {
             .await
             .map_err(io::Error::from)?;
         Ok(())
+    }
+
+    pub async fn find_song(id: &str) -> Result<Option<Song>, Error> {
+        let path = Playlist::path()?;
+        let mut buf = Vec::new();
+        File::open(&path).await?.read_to_end(&mut buf).await?;
+        match memchr::memmem::find(&buf, id.as_bytes()) {
+            Some(i) => {
+                let end = memchr::memmem::find(&buf[i..], b"\n").unwrap_or(buf.len());
+                let start = memchr::memmem::rfind(&buf[..i], b"\n")
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                println!("{}", std::str::from_utf8(&buf[start..end]).unwrap());
+                let mut i = buf[start..end]
+                    .split(|c| *c == b'\t')
+                    .map(<[u8]>::to_vec)
+                    .map(String::from_utf8)
+                    .map(Result::unwrap);
+                Ok((|| {
+                    Some(Song {
+                        name: i.next()?,
+                        link: i.next()?,
+                        time: i.next()?.parse().unwrap(), // TODO: fix this shit
+                        categories: i.collect(),
+                    })
+                })())
+            }
+            None => Ok(None),
+        }
     }
 }
 

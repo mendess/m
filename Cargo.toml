@@ -17,6 +17,7 @@ tracing-subscriber = { version = "0.3", features = ["registry", "env-filter", "f
 tracing-log = "0.1.2"
 tracing = "0.1.29"
 async_once = "0.2.1"
+futures-util = "0.3.18"
 
 [workspace]
 members = ["mlib"]

@@ -3,10 +3,14 @@ mod notify;
 
 use anyhow::Context;
 use arg_parse::{Amount, Command, New};
+use futures_util::StreamExt;
 use mlib::{
+    downloaded::clean_downloads,
     playlist::{self, Playlist, PlaylistIds, Song},
-    socket::{cmds as sock_cmds, Error as SockErr, MpvSocket},
+    queue::Queue,
+    socket::{cmds as sock_cmds, MpvSocket},
     ytdl::{get_playlist_video_ids, util::extract_id, YtdlBuilder},
+    Error as SockErr,
 };
 use regex::Regex;
 use structopt::StructOpt;
@@ -148,12 +152,37 @@ async fn run() -> anyhow::Result<()> {
             }
         }
         Command::Current { link, notify } => {
-            println!(
-                "{:?}",
-                MpvSocket::lattest()
-                    .await?
-                    .compute(sock_cmds::Filename)
-                    .await?
+            let mut socket = MpvSocket::lattest().await?;
+            if link {
+                match Queue::link(&mut socket).await? {
+                    Some(link) => {
+                        notify!("{}", link);
+                        return Ok(());
+                    }
+                    None => return Err(anyhow::anyhow!("failed to get link of current song")),
+                }
+            }
+            let current = Queue::current(&mut socket).await?;
+            let plus = "+".repeat(current.progress as usize / 10);
+            let minus = "-".repeat(10usize.saturating_sub(plus.len()));
+            notify!("Now Playing";
+                content: "{}\n{}🔉{:.0}% | <{}{}> {:.0}%\n\nCategories: {}{}",
+                current.title,
+                if current.playing { ">" } else { "||" },
+                current.volume,
+                plus,
+                minus,
+                current.progress,
+                if current.categories.is_empty() {
+                    String::new()
+                } else {
+                    format!("| {} |", current.categories.join(" | "))
+                },
+                if let Some(next) = current.next {
+                    format!("\n\n=== UP NEXT ===\n{}", next)
+                } else {
+                    String::new()
+                }
             );
         }
         Command::Shuffle => {
@@ -174,6 +203,23 @@ async fn run() -> anyhow::Result<()> {
                 notify!("now looping");
             } else {
                 notify!("not looping");
+            }
+        }
+        Command::CleanDownloads => {
+            let ids = PlaylistIds::load().await?;
+            let to_delete = clean_downloads(&ids).await?;
+            tokio::pin!(to_delete);
+            while let Some(f) = to_delete.next().await {
+                match f {
+                    Ok(f) => {
+                        if let Err(e) = tokio::fs::remove_file(&f).await {
+                            error!("Failed to delete {}", f.display(); content: "{}", e)
+                        }
+                    }
+                    Err(e) => {
+                        error!("something went wrong when inspecting a file"; content: "{}", e)
+                    }
+                }
             }
         }
         _ => todo!(),
