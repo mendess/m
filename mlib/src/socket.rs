@@ -152,8 +152,12 @@ impl MpvSocket {
             loop {
                 tracing::trace!("Trying to read from socket");
                 match self.socket.try_read_buf(&mut buf) {
-                    Ok(_) => break 'readloop,
+                    Ok(0) => break 'readloop,
+                    Ok(_) => (),
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        if !buf.is_empty() {
+                            break 'readloop;
+                        }
                         tracing::warn!("false positive read");
                     }
                     Err(e) => return Err(e.into()),

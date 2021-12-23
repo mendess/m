@@ -33,7 +33,7 @@ pub enum Command {
     Cat,
 
     /// Shows the current playlist
-    Now,
+    Now(Amount),
 
     /// Show the current song
     #[structopt(alias = "c")]

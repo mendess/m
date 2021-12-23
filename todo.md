@@ -1,6 +1,12 @@
 
 # Tasks
 
+## Internal
+
+ - [x] notify
+ - [x] mpv_do
+ - [ ] selector
+
 ## Simple file io
 
  - [x] socket             Get the socket in use
@@ -39,7 +45,7 @@
 ## Complex player interaction
 
  - [x] current            Show the current song
- - [ ] now                Shows the current playlist
+ - [x] now                Shows the current playlist
 
 ## Idk, it just depends on stuff before it
 
@@ -50,7 +56,7 @@
  - [ ] play               Play something
  - [ ] queue              Queue a song
  - [ ] dequeue            Dequeue a song
- - [ ] dump               Save the playlist to a file to be restored later
+ - [x] dump               Save the playlist to a file to be restored later
      depends on now
  - [ ] load               Load a file of songs to play
      depends on now

@@ -1,29 +1,30 @@
 use crate::{
-    id_from_path,
+    id_from_path, id_range,
     playlist::Playlist,
     socket::{self, cmds::QueueItemStatus, MpvSocket},
     Error, Link,
 };
 
-use std::{
-    collections::VecDeque,
-    fmt::Display,
-    io,
-    path::{Path, PathBuf},
-};
+use std::{collections::VecDeque, os::unix::ffi::OsStrExt, fmt::Display, io, path::PathBuf};
 
 use futures_util::future::OptionFuture;
 
 pub struct Queue {
-    before: VecDeque<Item>,
-    current: Item,
-    playing: bool,
-    after: Vec<Item>,
-    last_queue: Option<usize>,
+    pub before: VecDeque<SongIdent>,
+    pub current: SongIdent,
+    pub playing: bool,
+    pub after: Vec<SongIdent>,
+    pub last_queue: Option<usize>,
 }
 
 #[derive(Debug)]
-enum Item {
+pub struct SongIdent {
+    pub index: usize,
+    pub item: Item,
+}
+
+#[derive(Debug)]
+pub enum Item {
     Link(Link),
     File(PathBuf),
 }
@@ -35,19 +36,31 @@ impl Item {
             Item::File(p) => id_from_path(p),
         }
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Item::Link(l) => l.as_str().as_bytes(),
+            Item::File(f) => f.as_os_str().as_bytes(),
+        }
+    }
 }
 
 impl Display for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Item::Link(l) => write!(f, "{}", l.as_str()),
-            Item::File(p) => write!(
-                f,
-                "{}",
-                p.file_stem()
+            Item::File(p) => {
+                let file = p
+                    .file_stem()
                     .map(|s| s.to_string_lossy())
-                    .unwrap_or_default()
-            ),
+                    .unwrap_or_default();
+                write!(f, "{}", {
+                    match id_range(&file) {
+                        Some(range) => &file[..range.start],
+                        None => &file,
+                    }
+                })
+            }
         }
     }
 }
@@ -63,7 +76,7 @@ impl From<String> for Item {
 }
 
 impl Queue {
-    async fn load(
+    pub async fn load(
         socket: &mut MpvSocket,
         before_len: Option<usize>,
         after_len: Option<usize>,
@@ -75,9 +88,18 @@ impl Queue {
             Some(cap) => VecDeque::with_capacity(cap),
             None => VecDeque::new(),
         };
+        let mut index = 0;
+        let mut index = || {
+            let i = index;
+            index += 1;
+            i
+        };
         let mut current = None;
         for i in iter.by_ref() {
-            let item = Item::from(i.filename);
+            let item = SongIdent {
+                index: index(),
+                item: Item::from(i.filename),
+            };
             match i.status {
                 Some(QueueItemStatus {
                     current: _,
@@ -100,7 +122,10 @@ impl Queue {
             .unwrap_or(usize::MAX);
         let after = iter
             .take(after_len)
-            .map(|i| Item::from(i.filename))
+            .map(|i| SongIdent {
+                index: index(),
+                item: Item::from(i.filename),
+            })
             .collect();
         Ok(Self {
             before,
@@ -163,6 +188,13 @@ impl Queue {
             next: Some(up_next),
         })
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &SongIdent> {
+        self.before
+            .iter()
+            .chain(Some(&self.current))
+            .chain(self.after.iter())
+    }
 }
 
 pub struct Current {
@@ -193,35 +225,5 @@ async fn fetch_last_queue() -> Result<Option<usize>, Error> {
         },
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::id_from_path;
-
-    #[test]
-    fn trivial() {
-        assert_eq!(
-            Some("AAA"),
-            id_from_path(&PathBuf::from("Song Name 😎=AAA=m.mkv"))
-        )
-    }
-
-    #[test]
-    fn no_id() {
-        assert_eq!(
-            None,
-            id_from_path(&PathBuf::from("Some-song-title-AAA.mkv"))
-        )
-    }
-
-    #[test]
-    fn no_id_2() {
-        assert_eq!(
-            None,
-            id_from_path(&PathBuf::from("Some-song-title-AAA=m.mkv"))
-        )
     }
 }

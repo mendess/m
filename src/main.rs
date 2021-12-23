@@ -1,5 +1,7 @@
 mod arg_parse;
 mod notify;
+mod selector;
+mod session_kind;
 
 use anyhow::Context;
 use arg_parse::{Amount, Command, New};
@@ -14,7 +16,10 @@ use mlib::{
 };
 use regex::Regex;
 use structopt::StructOpt;
-use tokio::io::AsyncBufReadExt;
+use tokio::{
+    fs::File,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufWriter},
+};
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
@@ -185,6 +190,21 @@ async fn run() -> anyhow::Result<()> {
                 }
             );
         }
+        Command::Now(Amount { amount }) => {
+            let mut socket = MpvSocket::lattest()
+                .await
+                .context("failed getting socket")?;
+            let queue = Queue::now(&mut socket, amount.unwrap_or(10).abs() as _)
+                .await
+                .context("failed getting queue")?;
+            for i in queue.before {
+                println!("{:2}     {}", i.index, i.item);
+            }
+            println!("{:2} ==> {}", queue.current.index, queue.current.item);
+            for i in queue.after {
+                println!("{:2}     {}", i.index, i.item);
+            }
+        }
         Command::Shuffle => {
             MpvSocket::lattest()
                 .await?
@@ -222,6 +242,16 @@ async fn run() -> anyhow::Result<()> {
                 }
             }
         }
+        Command::Dump { file } => {
+            let mut socket = MpvSocket::lattest().await?;
+            let q = Queue::load(&mut socket, None, None).await?;
+            let mut file = BufWriter::new(File::create(file).await?);
+            for s in q.iter() {
+                file.write_all(s.item.as_bytes()).await?;
+                file.write_all(b"\n").await?;
+            }
+            file.flush().await?;
+        }
         _ => todo!(),
     }
 
@@ -248,7 +278,7 @@ pub fn init_logger() {
 async fn main() -> anyhow::Result<()> {
     init_logger();
     if let Err(e) = run().await {
-        error!("{}", e);
+        error!("{:?}", e);
     }
     Ok(())
 }

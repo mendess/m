@@ -364,6 +364,7 @@ dependencies = [
  "structopt",
  "term",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-log",
  "tracing-subscriber",

@@ -1,6 +1,6 @@
 #![warn(clippy::dbg_macro)]
 
-use std::{io, path::Path};
+use std::{io, ops::Range, path::Path};
 
 pub mod downloaded;
 #[cfg(feature = "playlist")]
@@ -53,15 +53,20 @@ impl Link {
     }
 }
 
-pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&str> {
-    // format: [name]=[id]=m.ext
-    let name = p.as_ref().file_stem()?.to_str()?;
-    let front_striped = name.trim_end_matches("=m");
+pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
+    let front_striped = s.trim_end_matches("=m");
     let start_idx = front_striped.char_indices().rfind(|(_, c)| *c == '=')?.0;
     if front_striped.len() == start_idx {
         return None;
     }
-    Some(&front_striped[(start_idx + 1)..])
+    Some((start_idx + 1)..(front_striped.len()))
+}
+
+pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&str> {
+    // format: [name]=[id]=m.ext
+    let name = p.as_ref().file_stem()?.to_str()?;
+    let range = id_range(name)?;
+    Some(&name[range])
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -76,4 +81,34 @@ pub enum Error {
     IpcError(String),
     #[error("can't find music directory")]
     MusicDirNotFound,
+}
+
+#[cfg(test)]
+mod test {
+    use crate::id_from_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn trivial() {
+        assert_eq!(
+            Some("AAA"),
+            id_from_path(&PathBuf::from("Song Name 😎=AAA=m.mkv"))
+        )
+    }
+
+    #[test]
+    fn no_id() {
+        assert_eq!(
+            None,
+            id_from_path(&PathBuf::from("Some-song-title-AAA.mkv"))
+        )
+    }
+
+    #[test]
+    fn no_id_2() {
+        assert_eq!(
+            None,
+            id_from_path(&PathBuf::from("Some-song-title-AAA=m.mkv"))
+        )
+    }
 }
