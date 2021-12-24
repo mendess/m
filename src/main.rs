@@ -4,15 +4,15 @@ mod selector;
 mod session_kind;
 
 use anyhow::Context;
-use arg_parse::{Amount, Command, New};
+use arg_parse::{Amount, Command, New, Play};
 use futures_util::StreamExt;
 use mlib::{
-    downloaded::clean_downloads,
+    downloaded::{check_cache, clean_downloads},
     playlist::{self, Playlist, PlaylistIds, Song},
     queue::Queue,
     socket::{cmds as sock_cmds, MpvSocket},
     ytdl::{get_playlist_video_ids, util::extract_id, YtdlBuilder},
-    Error as SockErr,
+    Error as SockErr, Link,
 };
 use regex::Regex;
 use structopt::StructOpt;
@@ -252,10 +252,10 @@ async fn run() -> anyhow::Result<()> {
             }
             file.flush().await?;
         }
-        Command::Play { .. } => {
-            let options = ["yes", "no"];
-            dbg!(selector::selector(options.iter(), "with video?", 2).await)?;
-        }
+        Command::Play(Play { search, what }) => match Link::from_url(what) {
+            Ok(link) => println!("{:?}", check_cache(link).await),
+            Err(what) => todo!("not a link: {}", what),
+        },
         _ => todo!(),
     }
 

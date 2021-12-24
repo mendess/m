@@ -5,7 +5,7 @@ use crate::{
     Error, Link,
 };
 
-use std::{collections::VecDeque, os::unix::ffi::OsStrExt, fmt::Display, io, path::PathBuf};
+use std::{collections::VecDeque, fmt::Display, io, os::unix::ffi::OsStrExt, path::PathBuf};
 
 use futures_util::future::OptionFuture;
 
@@ -67,10 +67,9 @@ impl Display for Item {
 
 impl From<String> for Item {
     fn from(s: String) -> Self {
-        if s.starts_with("http") {
-            Item::Link(Link::from_url(s))
-        } else {
-            Item::File(PathBuf::from(s))
+        match Link::from_url(s) {
+            Ok(l) => Item::Link(l),
+            Err(s) => Item::File(PathBuf::from(s)),
         }
     }
 }

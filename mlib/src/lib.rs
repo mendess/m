@@ -12,7 +12,7 @@ pub mod socket;
 #[cfg(feature = "ytdl")]
 pub mod ytdl;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Link(String);
 
 impl Link {
@@ -22,8 +22,12 @@ impl Link {
         Self(format!("https://youtu.be/{}", s))
     }
 
-    pub fn from_url(s: String) -> Self {
-        Self(s)
+    pub fn from_url(s: String) -> Result<Self, String> {
+        if s.starts_with("http") {
+            Ok(Self(s))
+        } else {
+            Err(s)
+        }
     }
 
     pub fn id(&self) -> &str {

@@ -145,6 +145,7 @@ pub struct Play {
     /// Search the song on youtube
     #[structopt(short, long)]
     pub search: bool,
+    pub what: String,
 }
 
 #[derive(StructOpt)]

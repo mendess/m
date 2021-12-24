@@ -7,6 +7,7 @@
  - [x] mpv_do
  - [x] selector
  - [ ] with_video
+ - [x] check_cache
 
 ## Simple file io
 
