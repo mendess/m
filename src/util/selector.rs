@@ -1,4 +1,4 @@
-use crate::session_kind::SessionKind;
+use super::session_kind::SessionKind;
 use std::process::Stdio;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},

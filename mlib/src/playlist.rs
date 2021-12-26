@@ -1,6 +1,6 @@
 use csv_async::{AsyncReaderBuilder, AsyncWriterBuilder, StringRecord};
 use dirs::config_dir;
-use futures_util::stream::TryStreamExt;
+use futures_util::{stream::TryStreamExt, Stream};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -90,8 +90,15 @@ impl Playlist {
     pub async fn load() -> io::Result<Self> {
         let playlist_path = Self::path()?;
         let file = File::open(playlist_path).await?;
-        let mut reader = READER_BUILDER.create_deserializer(file);
-        Ok(Self(reader.deserialize().try_collect().await?))
+        let reader = READER_BUILDER.create_deserializer(file);
+        Ok(Self(reader.into_deserialize().try_collect().await?))
+    }
+
+    pub async fn stream() -> io::Result<impl Stream<Item = Result<Song, csv_async::Error>>> {
+        let playlist_path = Self::path()?;
+        let file = File::open(playlist_path).await?;
+        let reader = READER_BUILDER.create_deserializer(file);
+        Ok(reader.into_deserialize())
     }
 
     pub fn categories(&self) -> impl Iterator<Item = (&str, usize)> {

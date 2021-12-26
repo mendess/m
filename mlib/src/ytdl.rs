@@ -10,7 +10,7 @@ use tokio::{
     process::{Child, ChildStdout, Command},
 };
 
-use crate::LinkId;
+use crate::{Link, LinkId};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -49,7 +49,7 @@ pub struct Duration<T> {
     tail: T,
 }
 
-pub struct LinkRequest<'a>(&'a str);
+pub struct LinkRequest<'a>(&'a Link);
 pub struct VidId(String);
 
 pub struct ThumbnailRequest<T>(T);
@@ -61,7 +61,7 @@ pub struct Thumbnail<T> {
 pub struct YtdlBuilder<T>(T);
 
 impl<'l> YtdlBuilder<LinkRequest<'l>> {
-    pub fn new(link: &'l str) -> Self {
+    pub fn new(link: &'l Link) -> Self {
         Self(LinkRequest(link))
     }
 }
@@ -86,7 +86,7 @@ impl<'l, Y, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T> {
     pub async fn request(self) -> Result<Ytdl<Y>, Error> {
         let mut v = Vec::new();
         let link = self.0.link();
-        v.push(link);
+        v.push(link.as_str());
         T::collect(&mut v);
         let output = Command::new("youtube-dl").args(v).output().await?;
         if output.status.success() {
@@ -280,7 +280,7 @@ impl<R: Response> Ytdl<R> {
 
 pub trait YtdlParam<'l>: sealed::Sealed {
     fn collect(buf: &mut Vec<&str>);
-    fn link(&self) -> &'l str;
+    fn link(&self) -> &'l Link;
 }
 
 impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for TitleRequest<T> {
@@ -288,7 +288,7 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for TitleRequest<T> {
         buf.push("--get-title");
         T::collect(buf);
     }
-    fn link(&self) -> &'l str {
+    fn link(&self) -> &'l Link {
         self.0.link()
     }
 }
@@ -298,7 +298,7 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for DurationRequest<T> {
         buf.push("--get-duration");
         T::collect(buf);
     }
-    fn link(&self) -> &'l str {
+    fn link(&self) -> &'l Link {
         self.0.link()
     }
 }
@@ -308,7 +308,7 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for ThumbnailRequest<T> {
         buf.push("--get-thumbnail");
         T::collect(buf);
     }
-    fn link(&self) -> &'l str {
+    fn link(&self) -> &'l Link {
         self.0.link()
     }
 }
@@ -317,7 +317,7 @@ impl<'l> YtdlParam<'l> for LinkRequest<'l> {
     fn collect(buf: &mut Vec<&str>) {
         buf.push("--get-id")
     }
-    fn link(&self) -> &'l str {
+    fn link(&self) -> &'l Link {
         self.0
     }
 }
@@ -413,7 +413,7 @@ impl Response for VidId {
 
 pub struct StreamingChild {
     _child: Child,
-    stdout: BufReader<ChildStdout>,
+    pub stdout: BufReader<ChildStdout>,
 }
 
 impl Deref for StreamingChild {

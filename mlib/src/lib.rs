@@ -2,10 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     fmt::Display,
     io,
     ops::{Deref, Range},
-    path::Path,
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
 };
 
 pub mod downloaded;
@@ -65,7 +67,7 @@ impl Link {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct LinkId(str);
 
@@ -73,13 +75,21 @@ impl LinkId {
     fn new(s: &str) -> &Self {
         unsafe { std::mem::transmute(s) }
     }
+
+    pub fn new_unchecked(s: &str) -> &Self {
+        Self::new(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl Deref for LinkId {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.as_str()
     }
 }
 
@@ -125,8 +135,9 @@ pub enum Error {
 pub struct Search(String);
 
 impl Search {
+    const PREFIX: &'static str = "ytdl://ytsearch:";
     pub fn new(mut s: String) -> Self {
-        s.insert_str(0, "ytdl://ytsearch:");
+        s.insert_str(0, Self::PREFIX);
         Self(s)
     }
 
@@ -135,15 +146,84 @@ impl Search {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Item {
+    Link(Link),
+    File(PathBuf),
+    Search(Search),
+}
+
+impl Item {
+    pub fn id(&self) -> Option<&LinkId> {
+        match self {
+            Item::Link(l) => Some(l.id()),
+            Item::File(p) => id_from_path(p),
+            Item::Search(_) => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Item::Link(l) => l.as_str().as_bytes(),
+            Item::File(f) => f.as_os_str().as_bytes(),
+            Item::Search(s) => s.as_str().as_bytes(),
+        }
+    }
+}
+
+impl AsRef<OsStr> for Item {
+    fn as_ref(&self) -> &OsStr {
+        match self {
+            Item::Link(l) => l.as_str().as_ref(),
+            Item::File(p) => p.as_ref(),
+            Item::Search(s) => s.as_str().as_ref(),
+        }
+    }
+}
+
+impl Display for Item {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Item::Link(l) => write!(f, "{}", l.as_str()),
+            Item::File(p) => {
+                let file = p
+                    .file_stem()
+                    .map(|s| s.to_string_lossy())
+                    .unwrap_or_default();
+                write!(f, "{}", {
+                    match id_range(&file) {
+                        Some(range) => &file[..range.start],
+                        None => &file,
+                    }
+                })
+            }
+            Item::Search(s) => f.write_str(s.as_str()),
+        }
+    }
+}
+
+impl From<String> for Item {
+    fn from(s: String) -> Self {
+        if s.starts_with(Search::PREFIX) {
+            Item::Search(Search(s))
+        } else {
+            match Link::from_url(s) {
+                Ok(l) => Item::Link(l),
+                Err(s) => Item::File(PathBuf::from(s)),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::id_from_path;
+    use super::*;
     use std::path::PathBuf;
 
     #[test]
     fn trivial() {
         assert_eq!(
-            Some("AAA"),
+            Some(LinkId::new("AAA")),
             id_from_path(&PathBuf::from("Song Name 😎=AAA=m.mkv"))
         )
     }

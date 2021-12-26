@@ -581,6 +581,7 @@ dependencies = [
  "itertools",
  "memchr",
  "mlib",
+ "rand",
  "regex",
  "reqwest",
  "structopt",

@@ -1,16 +1,10 @@
 use crate::{
-    id_from_path, id_range, playlist,
+    id_from_path, playlist,
     socket::{self, cmds::QueueItemStatus, MpvSocket},
-    Error, Link, LinkId, Search,
+    Error, Link,
 };
 
-use std::{
-    collections::{HashSet, VecDeque},
-    ffi::OsStr,
-    fmt::Display,
-    os::unix::ffi::OsStrExt,
-    path::PathBuf,
-};
+use std::collections::{HashSet, VecDeque};
 
 use futures_util::future::OptionFuture;
 
@@ -28,70 +22,7 @@ pub struct SongIdent {
     pub item: Item,
 }
 
-#[derive(Debug, Clone)]
-pub enum Item {
-    Link(Link),
-    File(PathBuf),
-    Search(Search),
-}
-
-impl Item {
-    pub fn id(&self) -> Option<&LinkId> {
-        match self {
-            Item::Link(l) => Some(l.id()),
-            Item::File(p) => id_from_path(p),
-            Item::Search(_) => None,
-        }
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            Item::Link(l) => l.as_str().as_bytes(),
-            Item::File(f) => f.as_os_str().as_bytes(),
-            Item::Search(s) => s.as_str().as_bytes(),
-        }
-    }
-}
-
-impl AsRef<OsStr> for Item {
-    fn as_ref(&self) -> &OsStr {
-        match self {
-            Item::Link(l) => l.as_str().as_ref(),
-            Item::File(p) => p.as_ref(),
-            Item::Search(s) => s.as_str().as_ref(),
-        }
-    }
-}
-
-impl Display for Item {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Item::Link(l) => write!(f, "{}", l.as_str()),
-            Item::File(p) => {
-                let file = p
-                    .file_stem()
-                    .map(|s| s.to_string_lossy())
-                    .unwrap_or_default();
-                write!(f, "{}", {
-                    match id_range(&file) {
-                        Some(range) => &file[..range.start],
-                        None => &file,
-                    }
-                })
-            }
-            Item::Search(s) => f.write_str(s.as_str()),
-        }
-    }
-}
-
-impl From<String> for Item {
-    fn from(s: String) -> Self {
-        match Link::from_url(s) {
-            Ok(l) => Item::Link(l),
-            Err(s) => Item::File(PathBuf::from(s)),
-        }
-    }
-}
+pub use crate::Item;
 
 impl Queue {
     pub async fn load(
@@ -211,7 +142,7 @@ impl Queue {
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &SongIdent> {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &SongIdent> {
         self.before
             .iter()
             .chain(Some(&self.current))

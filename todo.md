@@ -22,12 +22,12 @@
 ## Playlist management
 
  - [x] new                Add a new song to the playlist
-     - [ ] queue, depends on queue
+     - [x] queue, depends on queue
  - [?] delete-song        Delete a song from the playlist file
-     - [ ] current, depends on current
+     - [?] current, depends on current
      - needs new id format to test
  - [x] add-playlist       Append a playlist to the personal playlist
-     - [ ] queue, depends on queue
+     - [x] queue, depends on queue
  - [?] ch-cat             Add a category to the current song
      - depends on current
      - needs new id format to test
@@ -61,10 +61,16 @@
 ## Queue management
  - [x] play               Play something
  - [x] queue              Queue a song
- - [ ] dequeue            Dequeue a song
+     - [x] reset
+     - [x] notify
+     - [x] no_move
+     - [x] clear
+     - [x] category
+     - [ ] preemptive download
+ - [x] dequeue            Dequeue a song
  - [x] dump               Save the playlist to a file to be restored later
      depends on now
- - [ ] load               Load a file of songs to play
+ - [x] load               Load a file of songs to play
      depends on now
 
 ## Other

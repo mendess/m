@@ -1,6 +1,6 @@
 use std::{io, path::Path};
 
-use crate::session_kind::SessionKind;
+use crate::util::session_kind::SessionKind;
 use tokio::process::Command;
 
 #[macro_export]
@@ -11,7 +11,7 @@ macro_rules! notify {
         $(; img: $img:expr)?
         $(; force_notify: $force_notify:expr)?
     ) => {{
-        $crate::notify::Notify::new(::std::format!($($fmt),*))
+        $crate::util::notify::Notify::new(::std::format!($($fmt),*))
         $(
             .content(::std::format!($($content),*))
         )*
@@ -21,7 +21,8 @@ macro_rules! notify {
         $(
             .force_notify($force_notify)
         )*
-            .notify().await?
+            .notify().await
+            .unwrap()
     }}
 }
 
@@ -33,7 +34,7 @@ macro_rules! error {
         $(; img: $img:expr)?
         $(; force_notify: $force_notify:expr)?
     ) => {{
-        $crate::notify::Notify::new(::std::format!($($fmt),*))
+        $crate::util::notify::Notify::new(::std::format!($($fmt),*))
             .error()
         $(
             .content(::std::format!($($content),*))
@@ -44,7 +45,8 @@ macro_rules! error {
         $(
             .force_notify($force_notify)
         )*
-            .notify().await?
+            .notify().await
+            .unwrap()
     }}
 }
 

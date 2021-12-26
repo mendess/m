@@ -163,6 +163,16 @@ pub struct New {
 #[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct Queue {
+    #[structopt(flatten)]
+    pub queue_opts: QueueOpts,
+
+    #[structopt(flatten)]
+    pub play_opts: Play,
+}
+
+#[derive(Debug, StructOpt, Default)]
+#[structopt(global_settings = &[DisableVersion])]
+pub struct QueueOpts {
     /// Resets the queue fairness
     #[structopt(short, long)]
     pub reset: bool,
@@ -186,9 +196,6 @@ pub struct Queue {
     /// Don't preemptively download songs
     #[structopt(short = "p", long = "no-preempt-download")]
     pub preemptive_download: bool,
-
-    #[structopt(flatten)]
-    pub play_opts: Play,
 }
 
 impl Deref for Queue {
@@ -224,13 +231,14 @@ pub enum DeQueue {
 }
 
 #[derive(Debug)]
-enum DeQueueIndexKind {
-    Relative,
+pub enum DeQueueIndexKind {
+    Minus,
+    Plus,
     Exact,
 }
 
 #[derive(Debug)]
-pub struct DeQueueIndex(DeQueueIndexKind, isize);
+pub struct DeQueueIndex(pub DeQueueIndexKind, pub usize);
 
 impl FromStr for DeQueueIndex {
     type Err = &'static str;
@@ -239,9 +247,13 @@ impl FromStr for DeQueueIndex {
         let mut iter = s.chars();
         let fst = iter.next().ok_or("Empty string")?;
         let kind = match fst {
-            '-' | '+' => {
+            '-' => {
                 s = iter.as_str();
-                DeQueueIndexKind::Relative
+                DeQueueIndexKind::Minus
+            }
+            '+' => {
+                s = iter.as_str();
+                DeQueueIndexKind::Plus
             }
             _ => DeQueueIndexKind::Exact,
         };
@@ -262,4 +274,3 @@ pub struct DeleteSong {
 pub struct Amount {
     pub amount: Option<isize>,
 }
-
