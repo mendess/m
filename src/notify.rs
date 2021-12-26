@@ -1,4 +1,4 @@
-use std::{fmt, io, path::Path};
+use std::{io, path::Path};
 
 use crate::session_kind::SessionKind;
 use tokio::process::Command;
@@ -9,13 +9,17 @@ macro_rules! notify {
         $($fmt:expr),*$(,)?
         $(; content: $($content:expr),*$(,)?)?
         $(; img: $img:expr)?
+        $(; force_notify: $force_notify:expr)?
     ) => {{
-        $crate::notify::Notify::new(::std::format_args!($($fmt),*))
+        $crate::notify::Notify::new(::std::format!($($fmt),*))
         $(
-            .content(::std::format_args!($($content),*))
+            .content(::std::format!($($content),*))
         )*
         $(
             .img($img)
+        )*
+        $(
+            .force_notify($force_notify)
         )*
             .notify().await?
     }}
@@ -27,33 +31,39 @@ macro_rules! error {
         $($fmt:expr),*
         $(; content: $($content:expr),*$(,)?)?
         $(; img: $img:expr)?
+        $(; force_notify: $force_notify:expr)?
     ) => {{
-        $crate::notify::Notify::new(::std::format_args!($($fmt),*))
+        $crate::notify::Notify::new(::std::format!($($fmt),*))
             .error()
         $(
-            .content(::std::format_args!($($content),*))
+            .content(::std::format!($($content),*))
         )*
         $(
             .img($img)
+        )*
+        $(
+            .force_notify($force_notify)
         )*
             .notify().await?
     }}
 }
 
-pub struct Notify<'title, 'content, 'path> {
-    title: fmt::Arguments<'title>,
+pub struct Notify<'path> {
+    title: String,
     error: bool,
-    content: Option<fmt::Arguments<'content>>,
+    content: Option<String>,
     img: Option<&'path Path>,
+    force_notify: bool,
 }
 
-impl<'title, 'content, 'path> Notify<'title, 'content, 'path> {
-    pub fn new(title: fmt::Arguments<'title>) -> Self {
+impl<'path> Notify<'path> {
+    pub fn new(title: String) -> Self {
         Self {
             title,
             error: false,
             content: None,
             img: None,
+            force_notify: false,
         }
     }
 
@@ -62,7 +72,7 @@ impl<'title, 'content, 'path> Notify<'title, 'content, 'path> {
         self
     }
 
-    pub fn content(&mut self, content: fmt::Arguments<'content>) -> &mut Self {
+    pub fn content(&mut self, content: String) -> &mut Self {
         self.content = Some(content);
         self
     }
@@ -72,9 +82,29 @@ impl<'title, 'content, 'path> Notify<'title, 'content, 'path> {
         self
     }
 
+    pub fn force_notify(&mut self, b: bool) -> &mut Self {
+        self.force_notify = b;
+        self
+    }
+
     pub async fn notify(&self) -> io::Result<()> {
-        match SessionKind::current().await {
-            SessionKind::Cli => match atty::is(atty::Stream::Stdout).then(term::stdout).flatten() {
+        if self.force_notify || SessionKind::current().await == SessionKind::Gui {
+            let mut cmd = Command::new("notify-send");
+            if self.error {
+                cmd.args(["--urgency", "critical"]);
+            }
+            if let Some(img) = self.img {
+                cmd.arg("-i");
+                cmd.arg(img);
+            }
+            cmd.args(["-a", "m"]);
+            cmd.arg(&self.title);
+            if let Some(content) = &self.content {
+                cmd.arg(&content);
+            }
+            cmd.spawn()?.wait().await?;
+        } else {
+            match atty::is(atty::Stream::Stdout).then(term::stdout).flatten() {
                 Some(mut t) => {
                     t.attr(term::Attr::Bold)?;
                     if self.error {
@@ -82,11 +112,11 @@ impl<'title, 'content, 'path> Notify<'title, 'content, 'path> {
                         t.write_all(b"Error: ")?;
                         t.fg(term::color::WHITE)?;
                     }
-                    t.write_fmt(self.title)?;
+                    t.write_all(self.title.as_bytes())?;
                     t.write_all(b"\n")?;
                     t.reset()?;
-                    if let Some(content) = self.content {
-                        t.write_fmt(content)?;
+                    if let Some(content) = &self.content {
+                        t.write_all(content.as_bytes())?;
                         t.write_all(b"\n")?;
                     }
                 }
@@ -95,29 +125,10 @@ impl<'title, 'content, 'path> Notify<'title, 'content, 'path> {
                         print!("Error: ");
                     }
                     println!("{}", self.title);
-                    if let Some(content) = self.content {
+                    if let Some(content) = &self.content {
                         println!("{}", content);
                     }
                 }
-            },
-            SessionKind::Gui => {
-                println!("fooooooo");
-                let mut cmd = Command::new("notify-send");
-                if self.error {
-                    cmd.arg("--urgency");
-                    cmd.arg("critical");
-                }
-                if let Some(img) = self.img {
-                    cmd.arg("-i");
-                    cmd.arg(img);
-                }
-                cmd.arg("-a");
-                cmd.arg("m");
-                cmd.arg(format!("{}", self.title));
-                if let Some(content) = self.content {
-                    cmd.arg(format!("{}", content));
-                }
-                cmd.spawn()?.wait().await?;
             }
         }
         Ok(())

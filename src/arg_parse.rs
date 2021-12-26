@@ -1,12 +1,13 @@
 #![deny(missing_docs)]
 
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use structopt::clap::AppSettings::DisableVersion;
 use structopt::StructOpt;
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 pub enum Command {
     /// Toggle pause
     #[structopt(alias = "p")]
@@ -63,6 +64,7 @@ pub enum Command {
     Dequeue(DeQueue),
 
     /// Delete a song from the playlist file
+    #[structopt(alias = "del")]
     DeleteSong(DeleteSong),
 
     /// Deletes downloaded songs that are not in the playlist anymore
@@ -139,16 +141,16 @@ fn parse_new(s: &str) -> Result<(), &'static str> {
     }
 }
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct Play {
     /// Search the song on youtube
     #[structopt(short, long)]
     pub search: bool,
-    pub what: String,
+    pub what: Vec<String>,
 }
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct New {
     /// Queue it too
@@ -158,16 +160,12 @@ pub struct New {
     pub categories: Vec<String>,
 }
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct Queue {
     /// Resets the queue fairness
     #[structopt(short, long)]
     pub reset: bool,
-
-    /// Search the song on youtube
-    #[structopt(short, long)]
-    pub search: bool, // TODO: review this
 
     /// Send a notification
     #[structopt(short, long)]
@@ -189,11 +187,18 @@ pub struct Queue {
     #[structopt(short = "p", long = "no-preempt-download")]
     pub preemptive_download: bool,
 
-    /// Search terms to use, files and links are queued directly and not used to search
-    pub search_terms: Vec<String>,
+    #[structopt(flatten)]
+    pub play_opts: Play,
 }
 
-#[derive(StructOpt)]
+impl Deref for Queue {
+    type Target = Play;
+    fn deref(&self) -> &Self::Target {
+        &self.play_opts
+    }
+}
+
+#[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub enum DeQueue {
     /// The next song in the queue
@@ -218,11 +223,13 @@ pub enum DeQueue {
     },
 }
 
+#[derive(Debug)]
 enum DeQueueIndexKind {
     Relative,
     Exact,
 }
 
+#[derive(Debug)]
 pub struct DeQueueIndex(DeQueueIndexKind, isize);
 
 impl FromStr for DeQueueIndex {
@@ -242,16 +249,17 @@ impl FromStr for DeQueueIndex {
     }
 }
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct DeleteSong {
     #[structopt(short, long)]
     pub current: bool,
-    pub partial_name: Option<String>, // TODO: incompatible with current
+    pub partial_name: Vec<String>, // TODO: incompatible with current
 }
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct Amount {
     pub amount: Option<isize>,
 }
+

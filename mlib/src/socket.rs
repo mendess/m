@@ -21,6 +21,7 @@ static SOCKET_GLOB: Lazy<String> = Lazy::new(|| format!("/tmp/{}/.mpvsocket*", w
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
 
+#[derive(Debug)]
 pub struct MpvSocket {
     path: PathBuf,
     socket: UnixStream,
@@ -175,7 +176,13 @@ impl MpvSocket {
             .find_map(|b| serde_json::from_slice::<Payload<O>>(b).ok())
         {
             Some(payload) => payload,
-            None => return Err(Error::Io(io::ErrorKind::InvalidData.into())),
+            None => {
+                tracing::trace!(
+                    "could not deserialize {:?}",
+                    std::str::from_utf8(&buf[start_i..])
+                );
+                return Err(Error::Io(io::ErrorKind::InvalidData.into()));
+            }
         };
 
         match payload {
@@ -188,7 +195,7 @@ impl MpvSocket {
                 error: "success",
                 data: None,
             } => {
-                if TypeId::of::<O>() == TypeId::of::<()>() {
+                if TypeId::of::<O>() == TypeId::of::<DevNull>() {
                     Ok(unsafe { std::mem::transmute_copy(&()) })
                 } else {
                     Err(Error::IpcError(format!(
@@ -224,6 +231,47 @@ impl MpvSocket {
     where
         C: Execute<N>,
     {
-        self.mpv_do(cmd.cmd().as_slice()).await
+        self.mpv_do::<_, DevNull>(cmd.cmd().as_slice()).await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct DevNull {
+    _m: std::marker::PhantomData<()>,
+}
+
+impl DevNull {
+    const INST: Self = DevNull { _m: std::marker::PhantomData };
+}
+
+impl<'de> Deserialize<'de> for DevNull {
+
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct DVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for DVisitor {
+            type Value = DevNull;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("this should not happen")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+                Ok(DevNull::INST)
+            }
+
+            fn visit_map<A>(self, mut m: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                while m.next_entry::<String, DevNull>()?.is_some() {}
+                Ok(DevNull::INST)
+            }
+        }
+        deserializer.deserialize_any(DVisitor)
     }
 }

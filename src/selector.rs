@@ -5,6 +5,10 @@ use tokio::{
     process::Command,
 };
 
+pub async fn input(prompt: &str) -> anyhow::Result<Option<String>> {
+    selector::<_, &str>([], prompt, 0).await
+}
+
 pub async fn selector<I, S>(
     items: I,
     prompt: &str,
@@ -12,11 +16,18 @@ pub async fn selector<I, S>(
 ) -> anyhow::Result<Option<String>>
 where
     S: AsRef<str>,
-    I: Iterator<Item = S>,
+    I: IntoIterator<Item = S>,
 {
     match SessionKind::current().await {
-        SessionKind::Cli => fzf(items, prompt).await,
-        SessionKind::Gui => dmenu(items, prompt, if list_len > 80 { 30 } else { list_len }).await,
+        SessionKind::Cli => fzf(items.into_iter(), prompt).await,
+        SessionKind::Gui => {
+            dmenu(
+                items.into_iter(),
+                prompt,
+                if list_len > 80 { 30 } else { list_len },
+            )
+            .await
+        }
     }
 }
 

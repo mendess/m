@@ -19,6 +19,10 @@ tracing = "0.1.29"
 async_once = "0.2.1"
 futures-util = "0.3.18"
 tokio-stream = { version = "0.1.8", features = ["io-util"] }
+itertools = "0.10.3"
+memchr = "2.4.1"
+tempfile = "3.2.0"
+reqwest = { version = "0.11.8", features = ["rustls-tls", "stream"] }
 
 [workspace]
 members = ["mlib"]

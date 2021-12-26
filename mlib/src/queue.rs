@@ -1,11 +1,16 @@
 use crate::{
-    id_from_path, id_range,
-    playlist::Playlist,
+    id_from_path, id_range, playlist,
     socket::{self, cmds::QueueItemStatus, MpvSocket},
-    Error, Link,
+    Error, Link, LinkId, Search,
 };
 
-use std::{collections::VecDeque, fmt::Display, io, os::unix::ffi::OsStrExt, path::PathBuf};
+use std::{
+    collections::{HashSet, VecDeque},
+    ffi::OsStr,
+    fmt::Display,
+    os::unix::ffi::OsStrExt,
+    path::PathBuf,
+};
 
 use futures_util::future::OptionFuture;
 
@@ -17,23 +22,25 @@ pub struct Queue {
     pub last_queue: Option<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SongIdent {
     pub index: usize,
     pub item: Item,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Item {
     Link(Link),
     File(PathBuf),
+    Search(Search),
 }
 
 impl Item {
-    fn id(&self) -> Option<&str> {
+    pub fn id(&self) -> Option<&LinkId> {
         match self {
             Item::Link(l) => Some(l.id()),
             Item::File(p) => id_from_path(p),
+            Item::Search(_) => None,
         }
     }
 
@@ -41,6 +48,17 @@ impl Item {
         match self {
             Item::Link(l) => l.as_str().as_bytes(),
             Item::File(f) => f.as_os_str().as_bytes(),
+            Item::Search(s) => s.as_str().as_bytes(),
+        }
+    }
+}
+
+impl AsRef<OsStr> for Item {
+    fn as_ref(&self) -> &OsStr {
+        match self {
+            Item::Link(l) => l.as_str().as_ref(),
+            Item::File(p) => p.as_ref(),
+            Item::Search(s) => s.as_str().as_ref(),
         }
     }
 }
@@ -61,6 +79,7 @@ impl Display for Item {
                     }
                 })
             }
+            Item::Search(s) => f.write_str(s.as_str()),
         }
     }
 }
@@ -130,7 +149,7 @@ impl Queue {
             before,
             current: current.unwrap(),
             after,
-            last_queue: fetch_last_queue().await?,
+            last_queue: last::fetch().await?,
             playing: play_status,
         })
     }
@@ -141,12 +160,16 @@ impl Queue {
         Self::load(socket, Some(before), Some(after)).await
     }
 
-    pub async fn link(socket: &mut MpvSocket) -> Result<Option<String>, Error> {
+    pub async fn link(socket: &mut MpvSocket) -> Result<Item, Error> {
         let current_idx = socket.compute(socket::cmds::QueuePos).await?;
         let current = socket.compute(socket::cmds::QueueN(current_idx)).await?;
         match Item::from(current.filename) {
-            Item::Link(l) => Ok(Some(l.into_string())),
-            Item::File(p) => Ok(id_from_path(&p).map(|p| format!("https://youtu.be/{}", p))),
+            Item::Link(l) => Ok(Item::Link(l)),
+            Item::File(p) => Ok(id_from_path(&p)
+                .map(Link::from_id)
+                .map(Item::Link)
+                .unwrap_or_else(|| Item::File(p))),
+            Item::Search(s) => Ok(Item::Search(s)),
         }
     }
 
@@ -164,7 +187,7 @@ impl Queue {
         let playing = !socket.compute(socket::cmds::IsPaused).await?;
         let volume = socket.compute(socket::cmds::Volume).await?;
         let progress = socket.compute(socket::cmds::PercentPosition).await?;
-        let categories = OptionFuture::from(id.map(Playlist::find_song))
+        let categories = OptionFuture::from(id.map(playlist::find_song))
             .await
             .transpose()?
             .flatten()
@@ -176,7 +199,7 @@ impl Queue {
         let current_idx = socket.compute(socket::cmds::QueuePos).await?;
         // TODO: this can fail, we can be at the end, in with case I have to wrap around
         let up_next = socket
-            .compute(socket::cmds::QueueNFilename(current_idx))
+            .compute(socket::cmds::QueueNFilename(current_idx + 1))
             .await?;
         Ok(Current {
             title,
@@ -201,28 +224,8 @@ pub struct Current {
     pub playing: bool,
     pub volume: f64,
     pub progress: f64,
-    pub categories: Vec<String>,
+    pub categories: HashSet<String>,
     pub next: Option<String>,
 }
 
-async fn fetch_last_queue() -> Result<Option<usize>, Error> {
-    let mut path = Playlist::path()?;
-    let mut name = path
-        .file_name()
-        .expect("playlist path to have a filename")
-        .to_os_string();
-    path.pop();
-    name.push("_last_queue");
-    path.push(name);
-    match tokio::fs::read_to_string(&path).await {
-        Ok(s) => match s.trim().parse() {
-            Ok(n) => Ok(Some(n)),
-            Err(_) => {
-                tracing::error!("failed to parse last queue, file corrupted? '{:?}'", path);
-                Ok(None)
-            }
-        },
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
+pub mod last;

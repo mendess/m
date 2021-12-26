@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::queue::Item;
+
 use self::command::{Compute, Execute};
 
 #[derive(Serialize, Debug)]
@@ -48,13 +50,17 @@ impl Execute<1> for QueueClear {
     }
 }
 
-pub struct LoadFile(pub PathBuf);
+pub struct LoadFile<'f>(pub &'f Item);
 
-impl Execute<3> for LoadFile {
+impl Execute<3> for LoadFile<'_> {
     fn cmd(&self) -> [Value<'_>; 3] {
         [
             Value::Str("loadfile"),
-            Value::Path(&self.0),
+            match &self.0 {
+                Item::Link(l) => Value::Str(l.as_str()),
+                Item::File(f) => Value::Path(f),
+                Item::Search(s) => Value::Str(s.as_str()),
+            },
             Value::Str("append"), // TODO: don't hardcode param
         ]
     }
@@ -70,7 +76,7 @@ impl Execute<3> for QueueMove {
         [
             Value::Str("playlist-move"),
             Value::Int(self.from as _),
-            Value::Int(self.from as _),
+            Value::Int(self.to as _),
         ]
     }
 }
@@ -190,7 +196,7 @@ impl Execute<2> for QueueN {
     fn cmd(&self) -> [Value<'_>; 2] {
         [
             Value::Str("get_property"),
-            Value::String(format!("playlist/{}", self.0))
+            Value::String(format!("playlist/{}", self.0)),
         ]
     }
 }

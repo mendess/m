@@ -9,6 +9,7 @@ use std::{
     env,
     fmt::{self, Display},
     io,
+    ops::{Deref, DerefMut},
     path::PathBuf,
 };
 use tokio::{
@@ -16,15 +17,15 @@ use tokio::{
     io::AsyncReadExt,
 };
 
-use crate::Error;
+use crate::{Error, Link, LinkId};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
     pub name: String,
-    pub link: String,
+    pub link: Link,
     pub time: u64,
     #[serde(default)]
-    pub categories: Vec<String>,
+    pub categories: HashSet<String>,
 }
 
 impl Display for Song {
@@ -126,33 +127,137 @@ impl Playlist {
         Ok(())
     }
 
-    pub async fn find_song(id: &str) -> Result<Option<Song>, Error> {
-        let path = Playlist::path()?;
-        let mut buf = Vec::new();
-        File::open(&path).await?.read_to_end(&mut buf).await?;
-        match memchr::memmem::find(&buf, id.as_bytes()) {
-            Some(i) => {
-                let end = memchr::memmem::find(&buf[i..], b"\n").unwrap_or(buf.len());
-                let start = memchr::memmem::rfind(&buf[..i], b"\n")
-                    .map(|i| i + 1)
-                    .unwrap_or(0);
-                println!("{}", std::str::from_utf8(&buf[start..end]).unwrap());
-                let mut i = buf[start..end]
-                    .split(|c| *c == b'\t')
-                    .map(<[u8]>::to_vec)
-                    .map(String::from_utf8)
-                    .map(Result::unwrap);
-                Ok((|| {
-                    Some(Song {
-                        name: i.next()?,
-                        link: i.next()?,
-                        time: i.next()?.parse().unwrap(), // TODO: fix this shit
-                        categories: i.collect(),
-                    })
-                })())
-            }
-            None => Ok(None),
+    pub fn find_song<F: FnMut(&Song) -> bool>(&self, f: F) -> Option<PlaylistIndex<'_>> {
+        self.0.iter().position(f).map(|index| PlaylistIndex {
+            source: self,
+            index,
+        })
+    }
+
+    pub fn find_song_mut<F: FnMut(&mut Song) -> bool>(
+        &mut self,
+        f: F,
+    ) -> Option<PlaylistIndexMut<'_>> {
+        self.0.iter_mut().position(f).map(|index| PlaylistIndexMut {
+            source: self,
+            index,
+        })
+    }
+
+    pub fn partial_name_search<'s>(
+        &self,
+        words: impl Iterator<Item = &'s str>,
+    ) -> Result<Option<PlaylistIndex<'_>>, usize> {
+        self.partial_name_search_impl(words).map(|i| {
+            i.map(|index| PlaylistIndex {
+                source: self,
+                index,
+            })
+        })
+    }
+
+    pub fn partial_name_search_mut<'s>(
+        &mut self,
+        words: impl Iterator<Item = &'s str>,
+    ) -> Result<Option<PlaylistIndexMut<'_>>, usize> {
+        self.partial_name_search_impl(words).map(|i| {
+            i.map(|index| PlaylistIndexMut {
+                source: self,
+                index,
+            })
+        })
+    }
+
+    fn partial_name_search_impl<'s>(
+        &self,
+        words: impl Iterator<Item = &'s str>,
+    ) -> Result<Option<usize>, usize> {
+        let mut idxs = (0..self.0.len()).collect::<Vec<_>>();
+        words.for_each(|w| idxs.retain(|i| self.0[*i].name.contains(w)));
+        match &idxs[..] {
+            [index] => Ok(Some(*index)),
+            [] => Ok(None),
+            many => Err(many.len()),
         }
+    }
+
+    pub async fn save(&self) -> io::Result<()> {
+        let file = File::create(Self::path()?).await?;
+        let mut writer = WRITER_BUILDER.create_serializer(file);
+        for s in self.0.iter() {
+            writer.serialize(s).await.map_err(io::Error::from)?;
+        }
+        Ok(())
+    }
+}
+
+pub struct PlaylistIndex<'p> {
+    source: &'p Playlist,
+    index: usize,
+}
+
+impl Deref for PlaylistIndex<'_> {
+    type Target = Song;
+
+    fn deref(&self) -> &Self::Target {
+        &self.source.0[self.index]
+    }
+}
+
+pub struct PlaylistIndexMut<'p> {
+    source: &'p mut Playlist,
+    index: usize,
+}
+
+impl Deref for PlaylistIndexMut<'_> {
+    type Target = Song;
+
+    fn deref(&self) -> &Self::Target {
+        &self.source.0[self.index]
+    }
+}
+
+impl DerefMut for PlaylistIndexMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.source.0[self.index]
+    }
+}
+
+impl PlaylistIndexMut<'_> {
+    pub fn delete(self) -> Song {
+        self.source.0.remove(self.index)
+    }
+}
+
+pub async fn find_song(id: &LinkId) -> Result<Option<Song>, Error> {
+    let path = Playlist::path()?;
+    let mut buf = Vec::new();
+    File::open(&path).await?.read_to_end(&mut buf).await?;
+    match memchr::memmem::find(&buf, id.as_bytes()) {
+        Some(i) => {
+            let end = memchr::memmem::find(&buf[i..], b"\n").unwrap_or(buf.len());
+            let start = memchr::memmem::rfind(&buf[..i], b"\n")
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            println!("{}", std::str::from_utf8(&buf[start..end]).unwrap());
+            let mut i = buf[start..end]
+                .split(|c| *c == b'\t')
+                .map(<[u8]>::to_vec)
+                .map(String::from_utf8)
+                .map(Result::unwrap);
+            let not_enough_fields = || Error::PlaylistFile(String::from("not enough fields"));
+            Ok(Some(Song {
+                name: i.next().ok_or_else(not_enough_fields)?,
+                link: Link::from_url(i.next().ok_or_else(not_enough_fields)?)
+                    .map_err(|a| Error::PlaylistFile(format!("invalid link: {}", a)))?,
+                time: i
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .ok_or_else(|| Error::PlaylistFile("invalid duration".into()))?,
+                categories: i.collect(),
+            }))
+        }
+        None => Ok(None),
     }
 }
 

@@ -1,8 +1,16 @@
 pub mod util;
 
-use std::{process::{ExitStatus, Stdio}, ops::{Deref, DerefMut}};
+use std::{
+    ops::{Deref, DerefMut},
+    process::{ExitStatus, Stdio},
+};
 
-use tokio::{io::{self, BufReader}, process::{Command, Child, ChildStdout}};
+use tokio::{
+    io::{self, BufReader},
+    process::{Child, ChildStdout, Command},
+};
+
+use crate::LinkId;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -21,10 +29,12 @@ mod sealed {
     pub trait Sealed {}
     impl<T> Sealed for super::Title<T> {}
     impl<T> Sealed for super::Duration<T> {}
+    impl<T> Sealed for super::ThumbnailRequest<T> {}
     impl Sealed for super::VidId {}
     impl<T> Sealed for super::TitleRequest<T> {}
     impl<T> Sealed for super::DurationRequest<T> {}
     impl Sealed for super::LinkRequest<'_> {}
+    impl<T> Sealed for super::Thumbnail<T> {}
 }
 
 pub struct TitleRequest<T>(T);
@@ -41,6 +51,12 @@ pub struct Duration<T> {
 
 pub struct LinkRequest<'a>(&'a str);
 pub struct VidId(String);
+
+pub struct ThumbnailRequest<T>(T);
+pub struct Thumbnail<T> {
+    thumb: String,
+    tail: T,
+}
 
 pub struct YtdlBuilder<T>(T);
 
@@ -59,6 +75,10 @@ impl<T> YtdlBuilder<T> {
 
     pub fn get_duration(self) -> YtdlBuilder<DurationRequest<T>> {
         YtdlBuilder(DurationRequest(self.0))
+    }
+
+    pub fn get_thumbnail(self) -> YtdlBuilder<ThumbnailRequest<T>> {
+        YtdlBuilder(ThumbnailRequest(self.0))
     }
 }
 
@@ -85,33 +105,10 @@ impl<'l, Y, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T> {
     }
 }
 
-impl Ytdl<Title<Duration<VidId>>> {
-    pub fn title(self) -> String {
-        self.0.title
-    }
-}
-
-impl Ytdl<Duration<Title<VidId>>> {
-    pub fn title(self) -> String {
-        self.0.tail.title
-    }
-}
-
+// single, expect 3
 impl Ytdl<Title<VidId>> {
     pub fn title(self) -> String {
         self.0.title
-    }
-}
-
-impl Ytdl<Duration<Title<VidId>>> {
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.duration
-    }
-}
-
-impl Ytdl<Title<Duration<VidId>>> {
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.tail.duration
     }
 }
 
@@ -121,9 +118,163 @@ impl Ytdl<Duration<VidId>> {
     }
 }
 
+impl Ytdl<Thumbnail<VidId>> {
+    pub fn thumbnail(&self) -> &str {
+        &self.0.thumb
+    }
+}
+
+// double, expect 6
+
+impl Ytdl<Title<Duration<VidId>>> {
+    pub fn title(self) -> String {
+        self.0.title
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.tail.duration
+    }
+}
+
+impl Ytdl<Duration<Title<VidId>>> {
+    pub fn title(self) -> String {
+        self.0.tail.title
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.duration
+    }
+}
+
+impl Ytdl<Thumbnail<Title<VidId>>> {
+    pub fn title(self) -> String {
+        self.0.tail.title
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.thumb
+    }
+}
+
+impl Ytdl<Title<Thumbnail<VidId>>> {
+    pub fn title(self) -> String {
+        self.0.title
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.tail.thumb
+    }
+}
+
+impl Ytdl<Thumbnail<Duration<VidId>>> {
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.tail.duration
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.thumb
+    }
+}
+
+impl Ytdl<Duration<Thumbnail<VidId>>> {
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.duration
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.tail.thumb
+    }
+}
+
+// triple, expect 6
+
+impl Ytdl<Thumbnail<Title<Duration<VidId>>>> {
+    pub fn title(self) -> String {
+        self.0.tail.title
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.thumb
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.tail.tail.duration
+    }
+}
+
+impl Ytdl<Thumbnail<Duration<Title<VidId>>>> {
+    pub fn title(self) -> String {
+        self.0.tail.tail.title
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.tail.duration
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.thumb
+    }
+}
+
+impl Ytdl<Duration<Thumbnail<Title<VidId>>>> {
+    pub fn title(self) -> String {
+        self.0.tail.tail.title
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.duration
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.tail.thumb
+    }
+}
+
+impl Ytdl<Duration<Title<Thumbnail<VidId>>>> {
+    pub fn title(self) -> String {
+        self.0.tail.title
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.duration
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.tail.tail.thumb
+    }
+}
+
+impl Ytdl<Title<Duration<Thumbnail<VidId>>>> {
+    pub fn title(self) -> String {
+        self.0.title
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.tail.tail.thumb
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.tail.duration
+    }
+}
+
+impl Ytdl<Title<Thumbnail<Duration<VidId>>>> {
+    pub fn title(self) -> String {
+        self.0.title
+    }
+
+    pub fn thumbnail(&self) -> &str {
+        &self.0.tail.thumb
+    }
+
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.tail.tail.duration
+    }
+}
+
 impl<R: Response> Ytdl<R> {
-    pub fn id(&self) -> &str {
-        self.0.id()
+    pub fn id(&self) -> &LinkId {
+        LinkId::new(self.0.id())
     }
 }
 
@@ -152,6 +303,16 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for DurationRequest<T> {
     }
 }
 
+impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for ThumbnailRequest<T> {
+    fn collect(buf: &mut Vec<&str>) {
+        buf.push("--get-thumbnail");
+        T::collect(buf);
+    }
+    fn link(&self) -> &'l str {
+        self.0.link()
+    }
+}
+
 impl<'l> YtdlParam<'l> for LinkRequest<'l> {
     fn collect(buf: &mut Vec<&str>) {
         buf.push("--get-id")
@@ -170,7 +331,7 @@ impl<Y, T: IntoResponse<Output = Y>> IntoResponse for TitleRequest<T> {
     type Output = Title<Y>;
     fn response(buf: &mut Vec<&str>) -> Self::Output {
         Self::Output {
-            title: buf.swap_remove(0).to_string(),
+            title: buf.remove(0).to_string(),
             tail: T::response(buf),
         }
     }
@@ -199,6 +360,23 @@ impl<Y, T: IntoResponse<Output = Y>> IntoResponse for DurationRequest<T> {
 
         Self::Output {
             duration: total,
+            tail: T::response(buf),
+        }
+    }
+}
+
+impl<Y, T: IntoResponse<Output = Y>> IntoResponse for ThumbnailRequest<T> {
+    type Output = Thumbnail<Y>;
+
+    fn response(buf: &mut Vec<&str>) -> Self::Output {
+        let i = buf.len().saturating_sub(1).saturating_sub(
+            buf.iter()
+                .rev()
+                .position(|e| e.starts_with("http"))
+                .unwrap(),
+        );
+        Self::Output {
+            thumb: buf.remove(i).to_string(),
             tail: T::response(buf),
         }
     }

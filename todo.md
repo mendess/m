@@ -8,6 +8,7 @@
  - [x] selector
  - [ ] with_video
  - [x] check_cache
+ - [x] partial name search
 
 ## Simple file io
 
@@ -16,17 +17,20 @@
  - [x] cat                List all current categories
  - [?] clean-downloads    Deletes downloaded songs that are not in the playlist anymore
      - [x] decide on the file name format
+     - needs new id format to test
 
 ## Playlist management
 
  - [x] new                Add a new song to the playlist
      - [ ] queue, depends on queue
- - [ ] delete-song        Delete a song from the playlist file
+ - [?] delete-song        Delete a song from the playlist file
      - [ ] current, depends on current
+     - needs new id format to test
  - [x] add-playlist       Append a playlist to the personal playlist
      - [ ] queue, depends on queue
- - [ ] ch-cat             Add a category to the current song
+ - [?] ch-cat             Add a category to the current song
      - depends on current
+     - needs new id format to test
 
 ## Simple player interaction
 
@@ -55,8 +59,8 @@
      depends on current
 
 ## Queue management
- - [ ] play               Play something
- - [ ] queue              Queue a song
+ - [x] play               Play something
+ - [x] queue              Queue a song
  - [ ] dequeue            Dequeue a song
  - [x] dump               Save the playlist to a file to be restored later
      depends on now
