@@ -17,6 +17,7 @@ use mlib::{
 };
 use std::path::PathBuf;
 use std::{collections::HashSet, io::Write};
+use tempfile::NamedTempFile;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, AsyncWriteExt, BufWriter},
@@ -63,16 +64,17 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     let mut socket = MpvSocket::lattest()
         .await
         .context("failed getting socket")?;
-    let queue = Queue::now(&mut socket, amount.unwrap_or(10).abs() as _)
+    Queue::now(&mut socket, amount.unwrap_or(10).abs() as _)
         .await
-        .context("failed getting queue")?;
-    for i in queue.before {
-        println!("{:2}     {}", i.index, i.item);
-    }
-    println!("{:2} ==> {}", queue.current.index, queue.current.item);
-    for i in queue.after {
-        println!("{:2}     {}", i.index, i.item);
-    }
+        .context("failed getting queue")?
+        .for_each(
+            |i| {
+                println!("{:2}     {}", i.index, i.item);
+            },
+            |i| {
+                println!("{:2} ==> {}", i.index, i.item);
+            },
+        );
     Ok(())
 }
 
@@ -339,15 +341,13 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
         .collect::<Vec<_>>()
         .await;
 
-    let mut items = items.into_iter();
+    let mut items = items.into_iter().peekable();
     let first = items.by_ref().take(20);
 
+    let mut socket = MpvSocket::new().await?;
     let mut mpv = Command::new("mpv");
     mpv.arg("--geometry=820x466");
-    mpv.arg(format!(
-        "--input-ipc-server={}",
-        MpvSocket::new().await?.path().display()
-    ));
+    mpv.arg(format!("--input-ipc-server={}", socket.path().display()));
     if !with_video {
         mpv.arg("--no-video");
     }
@@ -356,11 +356,17 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     }
     mpv.args(first);
 
-    // if !items.is_empty() {
-    //     todo!("batch queue file")
-    // }
-
     mpv.spawn()?;
+
+    if items.peek().is_some() {
+        let (file, path) = NamedTempFile::new()?.into_parts();
+        let mut file = BufWriter::new(File::from_std(file));
+        for i in items {
+            file.write_all(i.as_bytes()).await?;
+            file.write_all(b"\n").await?;
+        }
+        socket.execute(sock_cmds::LoadList(&path)).await?;
+    }
 
     Ok(())
 }

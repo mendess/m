@@ -66,6 +66,18 @@ impl Execute<3> for LoadFile<'_> {
     }
 }
 
+pub struct LoadList<'f>(pub &'f Path);
+
+impl Execute<3> for LoadList<'_> {
+    fn cmd(&self) -> [Value<'_>; 3] {
+        [
+            Value::Str("loadlist"),
+            Value::Path(self.0),
+            Value::Str("append"),
+        ]
+    }
+}
+
 pub struct QueueMove {
     pub from: usize,
     pub to: usize,

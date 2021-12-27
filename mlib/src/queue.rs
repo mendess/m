@@ -148,6 +148,16 @@ impl Queue {
             .chain(Some(&self.current))
             .chain(self.after.iter())
     }
+
+    pub fn for_each<F: FnMut(&SongIdent), C: FnOnce(&SongIdent)>(&self, mut f: F, c: C) {
+        for i in &self.before {
+            f(i)
+        }
+        c(&self.current);
+        for i in &self.after {
+            f(i)
+        }
+    }
 }
 
 pub struct Current {

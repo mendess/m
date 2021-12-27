@@ -60,6 +60,7 @@
 
 ## Queue management
  - [x] play               Play something
+     - [x] handle long lists of files
  - [x] queue              Queue a song
      - [x] reset
      - [x] notify
