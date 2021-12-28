@@ -31,6 +31,10 @@ impl Link {
         Self(format!("https://youtu.be/{}", &s.0))
     }
 
+    pub fn from_id_raw(s: &str) -> Self {
+        Self(format!("https://youtu.be/{}", &s))
+    }
+
     pub fn from_url(s: String) -> Result<Self, String> {
         if s.starts_with("http") {
             Ok(Self(s))

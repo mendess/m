@@ -21,66 +21,48 @@ static SOCKET_GLOB: Lazy<String> = Lazy::new(|| format!("/tmp/{}/.mpvsocket*", w
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
 
+pub trait Socket {}
+
+impl Socket for UnixStream {}
+impl Socket for () {}
+
 #[derive(Debug)]
-pub struct MpvSocket {
+pub struct MpvSocket<S: Socket = UnixStream> {
     path: PathBuf,
-    socket: UnixStream,
+    socket: S,
 }
 
-impl MpvSocket {
+impl<S: Socket> MpvSocket<S> {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
 
-    pub async fn lattest_cached() -> Result<Self, Error> {
-        const INVALID_THREASHOLD: Duration = Duration::from_secs(30);
-
-        static CURRENT: Lazy<Mutex<(PathBuf, Instant)>> = Lazy::new(|| {
-            Mutex::new((
-                PathBuf::new(),
-                Instant::now()
-                    .checked_sub(INVALID_THREASHOLD)
-                    .unwrap_or_else(Instant::now),
-            ))
-        });
-
-        let mut current = CURRENT.lock();
-        if current.1.elapsed() >= INVALID_THREASHOLD {
-            let Self { path, socket } = Self::lattest().await?;
-            tracing::trace!("Cache hit {}", path.display());
-            current.0 = path;
-            current.1 = Instant::now();
-            Ok(Self {
-                socket,
-                path: current.0.clone(),
-            })
-        } else {
-            current.1 = Instant::now();
-            match UnixStream::connect(&current.0).await {
-                Ok(sock) => Ok(Self {
-                    socket: sock,
-                    path: current.0.clone(),
-                }),
-                Err(_) => {
-                    let Self { path, socket } = Self::lattest().await?;
-                    tracing::trace!("Cache miss. Opening {} instead", path.display());
-                    current.0 = path.clone();
-                    Ok(Self { socket, path })
-                }
-            }
-        }
+impl MpvSocket<()> {
+    pub async fn connect(self) -> Result<MpvSocket<UnixStream>, (io::Error, Self)> {
+        let socket = match UnixStream::connect(&self.path).await {
+            Ok(s) => s,
+            Err(e) => return Err((e, self)),
+        };
+        Ok(MpvSocket {
+            socket,
+            path: self.path,
+        })
     }
 
-    pub async fn new_path() -> Result<PathBuf, Error> {
-        fn new_path(end: &str) -> PathBuf {
+    pub async fn new_unconnected() -> Result<MpvSocket<()>, Error> {
+        fn new_path(end: &str) -> MpvSocket<()> {
             let mut new_path = SOCKET_GLOB.clone();
             new_path.pop(); // remove '*'
             new_path.push_str(end);
-            PathBuf::from(new_path)
+            MpvSocket {
+                path: PathBuf::from(new_path),
+                socket: (),
+            }
         }
 
-        let path = match Self::lattest().await {
-            Ok(Self { path, .. }) => path,
+        let path = match MpvSocket::<UnixStream>::lattest().await {
+            Ok(MpvSocket { path, .. }) => path,
             Err(Error::NoMpvInstance) => return Ok(new_path("0")),
             Err(e) => return Err(e),
         };
@@ -97,13 +79,46 @@ impl MpvSocket {
 
         Ok(new_path(i))
     }
+}
 
-    pub async fn new() -> Result<Self, Error> {
-        let path = Self::new_path().await?;
-        Ok(Self {
-            socket: UnixStream::connect(&path).await?,
-            path,
-        })
+impl MpvSocket<UnixStream> {
+    pub async fn lattest_cached() -> Result<Self, Error> {
+        const INVALID_THREASHOLD: Duration = Duration::from_secs(30);
+
+        static CURRENT: Lazy<Mutex<(PathBuf, Instant)>> = Lazy::new(|| {
+            Mutex::new((
+                PathBuf::new(),
+                Instant::now()
+                    .checked_sub(INVALID_THREASHOLD)
+                    .unwrap_or_else(Instant::now),
+            ))
+        });
+
+        let mut current = CURRENT.lock();
+        if current.1.elapsed() >= INVALID_THREASHOLD {
+            let Self { path, socket } = Self::lattest().await?;
+            tracing::debug!("Cache hit {}", path.display());
+            current.0 = path;
+            current.1 = Instant::now();
+            Ok(Self {
+                socket,
+                path: current.0.clone(),
+            })
+        } else {
+            current.1 = Instant::now();
+            match UnixStream::connect(&current.0).await {
+                Ok(sock) => Ok(Self {
+                    socket: sock,
+                    path: current.0.clone(),
+                }),
+                Err(_) => {
+                    let Self { path, socket } = Self::lattest().await?;
+                    tracing::debug!("Cache miss. Opening {} instead", path.display());
+                    current.0 = path.clone();
+                    Ok(Self { socket, path })
+                }
+            }
+        }
     }
 
     pub async fn lattest() -> Result<Self, Error> {
@@ -128,7 +143,7 @@ impl MpvSocket {
         &mut self,
         cmd: S,
     ) -> Result<O, Error> {
-        tracing::trace!(
+        tracing::debug!(
             "trying to fetch a property of type: {}",
             std::any::type_name::<O>()
         );
@@ -138,9 +153,9 @@ impl MpvSocket {
             data: Option<O>,
         }
 
-        tracing::trace!("Checking if socket is writable");
+        tracing::debug!("Checking if socket is writable");
         self.socket.writable().await?;
-        tracing::trace!("Writing to the socket '{:?}'", cmd);
+        tracing::debug!("Writing to the socket '{:?}'", cmd);
         let v = serde_json::to_vec(&serde_json::json!({ "command": cmd }))
             .expect("serialization to never fail");
         // TODO: check return of 0?
@@ -148,10 +163,10 @@ impl MpvSocket {
 
         let mut buf = Vec::with_capacity(1024);
         'readloop: loop {
-            tracing::trace!("Waiting for the socket to become readable");
+            tracing::debug!("Waiting for the socket to become readable");
             self.socket.readable().await?;
             loop {
-                tracing::trace!("Trying to read from socket");
+                tracing::debug!("Trying to read from socket");
                 match self.socket.try_read_buf(&mut buf) {
                     Ok(0) => break 'readloop,
                     Ok(_) => (),
@@ -177,11 +192,14 @@ impl MpvSocket {
         {
             Some(payload) => payload,
             None => {
-                tracing::trace!(
+                tracing::debug!(
                     "could not deserialize {:?}",
                     std::str::from_utf8(&buf[start_i..])
                 );
-                return Err(Error::Io(io::ErrorKind::InvalidData.into()));
+                return Err(Error::Io(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    String::from_utf8_lossy(&buf[start_i..]),
+                )));
             }
         };
 
@@ -205,7 +223,12 @@ impl MpvSocket {
                 }
             }
 
-            Payload { error, .. } => Err(Error::IpcError(error.to_string())),
+            Payload { error, .. } => Err(Error::IpcError(format!(
+                "{} :: {:?} => {}",
+                error.to_string(),
+                cmd,
+                std::any::type_name::<O>()
+            ))),
         }
     }
 
@@ -242,11 +265,12 @@ struct DevNull {
 }
 
 impl DevNull {
-    const INST: Self = DevNull { _m: std::marker::PhantomData };
+    const INST: Self = DevNull {
+        _m: std::marker::PhantomData,
+    };
 }
 
 impl<'de> Deserialize<'de> for DevNull {
-
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,

@@ -39,11 +39,7 @@ where
     let mut command = Command::new("fzf");
     feed_and_read(
         items,
-        command
-            .arg("-i")
-            .arg("--prompt")
-            .arg(prompt)
-            .arg("--print-query"),
+        command.args(["-i", "--prompt", &format!("{} ", prompt), "--print-query"]),
     )
     .await
 }
@@ -56,12 +52,7 @@ where
     let mut command = Command::new("dmenu");
     feed_and_read(
         items,
-        command
-            .arg("-i")
-            .arg("-p")
-            .arg(prompt)
-            .arg("-l")
-            .arg(&list_len.to_string()),
+        command.args(["-i", "-p", prompt, "-l", &list_len.to_string()]),
     )
     .await
 }

@@ -6,7 +6,12 @@ use once_cell::sync::Lazy;
 use tokio::{fs, process::Command};
 use tokio_stream::wrappers::ReadDirStream;
 
-use crate::{id_from_path, playlist::PlaylistIds, queue::Item, Error, Link};
+use crate::{
+    id_from_path,
+    playlist::{self, PlaylistIds},
+    queue::Item,
+    Error, Link,
+};
 
 fn dl_dir() -> Option<PathBuf> {
     static PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
@@ -93,6 +98,9 @@ pub async fn check_cache_ref(item: &mut Item) {
 }
 
 pub async fn check_cache(link: Link) -> Item {
+    if !matches!(playlist::find_song(link.id()).await, Ok(Some(_))) {
+        return Item::Link(link);
+    }
     tokio::task::spawn_blocking(move || {
         let dl_dir = match dl_dir() {
             Some(d) => d,

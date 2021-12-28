@@ -17,14 +17,15 @@ regex = { version = "1.5.4", optional = true }
 serde = { version = "1.0.131", features = ["derive"], optional = true }
 serde_json = { version = "1.0.73", optional = true }
 thiserror = { version = "1.0.30", optional = true }
-tokio = { version = "1.14.0", features = ["net", "fs", "process"], optional = true }
+tokio = { version = "1.14.0", features = ["net", "fs", "process", "rt"], optional = true }
 tokio-stream = { version = "0.1.8", features = ["fs"], optional = true }
 tracing = { version = "0.1.29", optional = true }
 whoami = { version = "1.2.1", optional = true }
+async_once = { version = "0.2.1", optional = true }
 
 [features]
 default = ["socket", "playlist", "ytdl", "queue", "downloads"]
-socket = ["whoami", "tracing", "tokio", "regex", "parking_lot", "once_cell", "glob", "serde_json"]
+socket = ["whoami", "tracing", "tokio", "regex", "parking_lot", "once_cell", "glob", "serde_json", "async_once"]
 playlist = ["csv-async", "serde", "dirs", "tokio", "thiserror", "futures-util", "memchr"]
 ytdl = ["tokio"]
 downloads = ["tokio", "tokio-stream", "glob", "once_cell"]

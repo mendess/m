@@ -18,6 +18,10 @@
  - [?] clean-downloads    Deletes downloaded songs that are not in the playlist anymore
      - [x] decide on the file name format
      - needs new id format to test
+ - [ ] status
+     - now playing
+     - queue size
+     - last queue
 
 ## Playlist management
 
@@ -78,7 +82,7 @@
 
  - [ ] lyrics             Shows lyrics for the current song
      - depends on current
- - [ ] playlist           Interactively asks the user what songs they want to play from their playlist
+ - [x] playlist           Interactively asks the user what songs they want to play from their playlist
 
 ## After
 

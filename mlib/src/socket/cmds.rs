@@ -152,7 +152,7 @@ macro_rules! get_prop_impl {
 }
 
 get_prop_impl!(
-    ChapterMetadata, "chapter-metadata" => String;
+    ChapterMetadata, "chapter-metadata" => Metadata;
     Filename, "filename" => String;
     IsPaused, "pause" => bool;
     MediaTitle, "media-title" => String;
@@ -164,6 +164,11 @@ get_prop_impl!(
     QueueSize, "playlist-count" => usize;
     Volume, "volume" => f64;
 );
+
+#[derive(Deserialize, Debug)]
+pub struct Metadata {
+    pub title: String,
+}
 
 #[derive(Deserialize, Debug)]
 pub struct QueueItem {

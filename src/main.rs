@@ -4,8 +4,9 @@ mod playlist_ctl;
 mod queue_ctl;
 mod util;
 
-use arg_parse::{Command, DeleteSong, New, Play};
+use arg_parse::{Args, Command, DeleteSong, New, Play};
 use futures_util::{future::ready, StreamExt, TryFutureExt};
+use itertools::Itertools;
 use mlib::{
     downloaded::clean_downloads,
     playlist::{Playlist, PlaylistIds},
@@ -21,11 +22,11 @@ use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
 
 async fn run() -> anyhow::Result<()> {
-    let cmd = Command::from_args();
-    match cmd {
+    let args = Args::from_args();
+    match args.cmd {
         Command::Socket { new } => {
             if new.is_some() {
-                println!("{}", MpvSocket::new_path().await?.display());
+                println!("{}", MpvSocket::new_unconnected().await?.path().display());
             } else {
                 match MpvSocket::lattest().await {
                     Ok(s) => println!("{}", s.path().display()),
@@ -129,7 +130,8 @@ async fn run() -> anyhow::Result<()> {
             queue_ctl::queue(opts, items).await?;
         }
         Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
-        _ => todo!()
+        Command::Playlist => queue_ctl::run_interactive_playlist().await?,
+        _ => todo!(),
     }
 
     Ok(())
@@ -155,7 +157,12 @@ pub fn init_logger() {
 async fn main() -> anyhow::Result<()> {
     init_logger();
     if let Err(e) = run().await {
-        error!("{:?}", e);
+        let mut chain = e.chain().skip(1).peekable();
+        if chain.peek().is_some() {
+            error!("{}", e; content: "Caused by:\n\t{}", chain.format("\n\t"));
+        } else {
+            error!("{}", e);
+        }
     }
     Ok(())
 }

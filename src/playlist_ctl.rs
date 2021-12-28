@@ -65,7 +65,7 @@ pub async fn add_playlist(
     if !link.contains("playlist") {
         return Err(anyhow::anyhow!("Not a playlist link"));
     }
-    tracing::trace!("loading playlist ids");
+    tracing::debug!("loading playlist ids");
     let playlist = PlaylistIds::load().await?;
     let id_stream = get_playlist_video_ids(&link).await?;
     Ok(LinesStream::new(id_stream.stdout.lines())

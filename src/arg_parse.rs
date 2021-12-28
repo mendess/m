@@ -8,6 +8,14 @@ use structopt::clap::AppSettings::DisableVersion;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
+pub struct Args {
+    #[structopt(short, long)]
+    pub socket: Option<usize>,
+    #[structopt(flatten)]
+    pub cmd: Command,
+}
+
+#[derive(Debug, StructOpt)]
 pub enum Command {
     /// Toggle pause
     #[structopt(alias = "p")]
@@ -131,6 +139,9 @@ pub enum Command {
     /// Shuffle
     #[structopt(alias = "shuf")]
     Shuffle,
+
+    /// Status
+    Status,
 }
 
 fn parse_new(s: &str) -> Result<(), &'static str> {

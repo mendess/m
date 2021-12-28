@@ -125,20 +125,27 @@ impl Queue {
             .map(|s| s.categories)
             .unwrap_or_default();
 
-        // TODO: chapter-metadata
+        let chapter = socket.compute(socket::cmds::ChapterMetadata).await.ok().map(|m| m.title);
 
-        let current_idx = socket.compute(socket::cmds::QueuePos).await?;
-        // TODO: this can fail, we can be at the end, in with case I have to wrap around
-        let up_next = socket
-            .compute(socket::cmds::QueueNFilename(current_idx + 1))
-            .await?;
+        let size = socket.compute(socket::cmds::QueueSize).await?;
+        let next = if size == 1 {
+            None
+        } else {
+            let current_idx = socket.compute(socket::cmds::QueuePos).await?;
+            Some(
+                socket
+                    .compute(socket::cmds::QueueNFilename((current_idx + 1) % size))
+                    .await?,
+            )
+        };
         Ok(Current {
             title,
+            chapter,
             playing,
             categories,
             volume,
             progress,
-            next: Some(up_next),
+            next,
         })
     }
 
@@ -162,6 +169,7 @@ impl Queue {
 
 pub struct Current {
     pub title: String,
+    pub chapter: Option<String>,
     pub playing: bool,
     pub volume: f64,
     pub progress: f64,

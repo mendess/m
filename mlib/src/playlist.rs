@@ -242,11 +242,12 @@ pub async fn find_song(id: &LinkId) -> Result<Option<Song>, Error> {
     File::open(&path).await?.read_to_end(&mut buf).await?;
     match memchr::memmem::find(&buf, id.as_bytes()) {
         Some(i) => {
-            let end = memchr::memmem::find(&buf[i..], b"\n").unwrap_or(buf.len());
+            let end = memchr::memmem::find(&buf[i..], b"\n")
+                .map(|new_line| new_line + i)
+                .unwrap_or_else(|| dbg!(buf.len()));
             let start = memchr::memmem::rfind(&buf[..i], b"\n")
                 .map(|i| i + 1)
                 .unwrap_or(0);
-            println!("{}", std::str::from_utf8(&buf[start..end]).unwrap());
             let mut i = buf[start..end]
                 .split(|c| *c == b'\t')
                 .map(<[u8]>::to_vec)

@@ -100,13 +100,23 @@ impl<'path> Notify<'path> {
                 cmd.arg(img);
             }
             cmd.args(["-a", "m"]);
-            cmd.arg(&self.title);
+            cmd.arg(format!(
+                "{}{}",
+                if self.error { "Error: " } else { "" },
+                triplets(&self.title.replace("\t", ""))
+                    .map(|(s, _)| s)
+                    .collect::<String>()
+            ));
             if let Some(content) = &self.content {
-                cmd.arg(&content);
+                cmd.arg(
+                    triplets(&content.replace("\t", ""))
+                        .map(|(s, _)| s)
+                        .collect::<String>(),
+                );
             }
             cmd.spawn()?.wait().await?;
         } else {
-            match atty::is(atty::Stream::Stdout).then(term::stdout).flatten() {
+            match try_color_stdout() {
                 Some(mut t) => {
                     t.attr(term::Attr::Bold)?;
                     if self.error {
@@ -114,11 +124,25 @@ impl<'path> Notify<'path> {
                         t.write_all(b"Error: ")?;
                         t.fg(term::color::WHITE)?;
                     }
-                    t.write_all(self.title.as_bytes())?;
+                    for (s, c) in triplets(&self.title) {
+                        t.write_all(s.as_bytes())?;
+                        match c {
+                            "b" => t.fg(term::color::BLUE)?,
+                            "r" | "w" => t.fg(term::color::WHITE)?,
+                            _ => (),
+                        }
+                    }
                     t.write_all(b"\n")?;
                     t.reset()?;
                     if let Some(content) = &self.content {
-                        t.write_all(content.as_bytes())?;
+                        for (s, c) in triplets(content) {
+                            t.write_all(s.as_bytes())?;
+                            match c {
+                                "b" => t.fg(term::color::BLUE)?,
+                                "r" | "w" => t.fg(term::color::WHITE)?,
+                                _ => (),
+                            }
+                        }
                         t.write_all(b"\n")?;
                     }
                 }
@@ -126,13 +150,84 @@ impl<'path> Notify<'path> {
                     if self.error {
                         print!("Error: ");
                     }
-                    println!("{}", self.title);
+                    for (s, _) in triplets(&self.title) {
+                        print!("{}", s);
+                    }
+                    println!();
                     if let Some(content) = &self.content {
-                        println!("{}", content);
+                        for (s, _) in triplets(content) {
+                            print!("{}", s);
+                        }
+                        println!();
                     }
                 }
             }
         }
         Ok(())
+    }
+}
+
+pub fn triplets(s: &str) -> impl Iterator<Item = (&str, &str)> {
+    Triplets { s }
+}
+
+struct Triplets<'s> {
+    s: &'s str,
+}
+
+impl<'s> Iterator for Triplets<'s> {
+    type Item = (&'s str, &'s str);
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.s.find('§') {
+            Some(i) => {
+                let end_of_symbol = i + '§'.len_utf8();
+                if end_of_symbol == self.s.len() {
+                    let r = (self.s, "");
+                    self.s = "";
+                    Some(r)
+                } else {
+                    let r = (&self.s[..i], &self.s[end_of_symbol..(end_of_symbol + 1)]);
+                    self.s = &self.s[(end_of_symbol + 1)..];
+                    Some(r)
+                }
+            }
+            None => {
+                if self.s.is_empty() {
+                    None
+                } else {
+                    let r = (self.s, "");
+                    self.s = "";
+                    Some(r)
+                }
+            }
+        }
+    }
+}
+
+pub fn try_color_stdout() -> Option<Box<term::StdoutTerminal>> {
+    atty::is(atty::Stream::Stdout).then(term::stdout).flatten()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple() {
+        let t = triplets("ola §b test");
+
+        assert_eq!(t.collect::<Vec<_>>(), [("ola ", "b"), (" test", "")]);
+    }
+
+    #[test]
+    fn sym_at_start() {
+        let t = triplets("§b test");
+        assert_eq!(t.collect::<Vec<_>>(), [("", "b"), (" test", "")]);
+    }
+
+    #[test]
+    fn sym_at_end() {
+        let t = triplets("test §");
+        assert_eq!(t.collect::<Vec<_>>(), [("test §", "")]);
     }
 }
