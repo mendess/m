@@ -22,6 +22,7 @@ pub mod ytdl;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
+#[repr(transparent)]
 pub struct Link(String);
 
 impl Link {
@@ -103,7 +104,7 @@ impl Display for Link {
     }
 }
 
-pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
+pub fn id_range(s: &str) -> Option<Range<usize>> {
     let front_striped = s.trim_end_matches("=m");
     let start_idx = front_striped.char_indices().rfind(|(_, c)| *c == '=')?.0;
     if front_striped.len() == start_idx {
@@ -136,6 +137,7 @@ pub enum Error {
 }
 
 #[derive(Debug, Clone)]
+#[repr(transparent)]
 pub struct Search(String);
 
 impl Search {
@@ -147,6 +149,10 @@ impl Search {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn as_link(&self) -> &Link {
+        unsafe { std::mem::transmute(self) }
     }
 }
 

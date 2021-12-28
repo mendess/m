@@ -2,12 +2,14 @@ pub mod cmds;
 
 use std::{
     any::TypeId,
-    fmt::Debug,
+    fmt::{Write, Debug },
     io::{self, IoSlice},
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
+use futures_util::{stream, Stream, StreamExt};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -16,26 +18,67 @@ use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use self::cmds::command::{Compute, Execute};
 use crate::Error;
+use arc_swap::ArcSwapOption;
+
+static OVERRIDE: ArcSwapOption<PathBuf> = ArcSwapOption::const_empty();
+
+pub fn override_lattest(id: usize) {
+    let mut path = SOCKET_GLOB.clone();
+    path.pop();
+    let _ = write!(path, "{}", id);
+    OVERRIDE.store(Some(Arc::new(PathBuf::from(path))))
+}
 
 static SOCKET_GLOB: Lazy<String> = Lazy::new(|| format!("/tmp/{}/.mpvsocket*", whoami::username()));
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
 
-pub trait Socket {}
-
-impl Socket for UnixStream {}
-impl Socket for () {}
-
 #[derive(Debug)]
-pub struct MpvSocket<S: Socket = UnixStream> {
+pub struct MpvSocket<S = UnixStream> {
     path: PathBuf,
     socket: S,
 }
 
-impl<S: Socket> MpvSocket<S> {
+impl<S> PartialEq for MpvSocket<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.path.eq(&other.path)
+    }
+}
+
+impl<S> Eq for MpvSocket<S> {}
+
+impl<S> PartialOrd for MpvSocket<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.path.partial_cmp(&other.path)
+    }
+}
+
+impl<S> Ord for MpvSocket<S> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.path.cmp(&other.path)
+    }
+}
+
+impl<S> MpvSocket<S> {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+pub fn all() -> impl Stream<Item = MpvSocket<UnixStream>> {
+    let mut paths = glob::glob(&*SOCKET_GLOB)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|x| x.to_str().map(|x| SOCKET_REGEX.is_match(x)) == Some(true))
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+    paths.reverse();
+    stream::iter(paths).filter_map(|path| async {
+        UnixStream::connect(&path)
+            .await
+            .map(|socket| MpvSocket { socket, path })
+            .ok()
+    })
 }
 
 impl MpvSocket<()> {
@@ -73,11 +116,16 @@ impl MpvSocket<()> {
             .ok_or(Error::InvalidPath("path is not valid utf8"))?;
 
         let i = SOCKET_REGEX
-            .find(path)
+            .captures(path)
             .ok_or(Error::InvalidPath("path didn't contain a number"))?
-            .as_str();
+            .get(1)
+            .unwrap()
+            .as_str()
+            .parse::<usize>()
+            .unwrap()
+            + 1;
 
-        Ok(new_path(i))
+        Ok(new_path(&i.to_string()))
     }
 }
 
@@ -122,21 +170,16 @@ impl MpvSocket<UnixStream> {
     }
 
     pub async fn lattest() -> Result<Self, Error> {
-        let mut available_sockets: Vec<_> = glob::glob(&*SOCKET_GLOB)
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|x| x.to_str().map(|x| SOCKET_REGEX.is_match(x)) == Some(true))
-            .collect();
-        available_sockets.sort();
-        for s in available_sockets.into_iter().rev() {
-            if let Ok(sock) = UnixStream::connect(&s).await {
-                return Ok(Self {
-                    socket: sock,
-                    path: s,
-                });
-            }
+        if let Some(path) = OVERRIDE.load_full() {
+            Ok(Self {
+                socket: UnixStream::connect(&*path).await?,
+                path: path.to_path_buf(),
+            })
+        } else {
+            let all = all();
+            tokio::pin!(all);
+            all.next().await.ok_or(Error::NoMpvInstance)
         }
-        Err(Error::NoMpvInstance)
     }
 
     pub(crate) async fn mpv_do<S: Serialize + Debug, O: DeserializeOwned + Debug + 'static>(

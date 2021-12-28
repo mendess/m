@@ -8,6 +8,7 @@
  - [x] selector
  - [ ] with_video
  - [x] check_cache
+     - [x] download daemon
  - [x] partial name search
 
 ## Simple file io
@@ -15,10 +16,10 @@
  - [x] socket             Get the socket in use
  - [x] songs              Get all songs in the playlist, optionaly filtered by category
  - [x] cat                List all current categories
- - [?] clean-downloads    Deletes downloaded songs that are not in the playlist anymore
+ - [x] clean-downloads    Deletes downloaded songs that are not in the playlist anymore
      - [x] decide on the file name format
      - needs new id format to test
- - [ ] status
+ - [x] status
      - now playing
      - queue size
      - last queue

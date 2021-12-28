@@ -80,7 +80,7 @@ impl Queue {
             before,
             current: current.unwrap(),
             after,
-            last_queue: last::fetch().await?,
+            last_queue: last::fetch(socket).await?,
             playing: play_status,
         })
     }
@@ -125,13 +125,17 @@ impl Queue {
             .map(|s| s.categories)
             .unwrap_or_default();
 
-        let chapter = socket.compute(socket::cmds::ChapterMetadata).await.ok().map(|m| m.title);
+        let chapter = socket
+            .compute(socket::cmds::ChapterMetadata)
+            .await
+            .ok()
+            .map(|m| m.title);
 
         let size = socket.compute(socket::cmds::QueueSize).await?;
+        let current_idx = socket.compute(socket::cmds::QueuePos).await?;
         let next = if size == 1 {
             None
         } else {
-            let current_idx = socket.compute(socket::cmds::QueuePos).await?;
             Some(
                 socket
                     .compute(socket::cmds::QueueNFilename((current_idx + 1) % size))
@@ -145,6 +149,7 @@ impl Queue {
             categories,
             volume,
             progress,
+            index: current_idx,
             next,
         })
     }
@@ -152,8 +157,12 @@ impl Queue {
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &SongIdent> {
         self.before
             .iter()
-            .chain(Some(&self.current))
+            .chain([&self.current])
             .chain(self.after.iter())
+    }
+
+    pub fn current_idx(&self) -> usize {
+        self.current.index
     }
 
     pub fn for_each<F: FnMut(&SongIdent), C: FnOnce(&SongIdent)>(&self, mut f: F, c: C) {
@@ -174,6 +183,7 @@ pub struct Current {
     pub volume: f64,
     pub progress: f64,
     pub categories: HashSet<String>,
+    pub index: usize,
     pub next: Option<String>,
 }
 

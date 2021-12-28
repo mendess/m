@@ -1,8 +1,8 @@
-use crate::{playlist::Playlist, Error};
+use crate::{socket::MpvSocket, Error};
 use std::{io, path::PathBuf};
 
-fn path() -> Result<PathBuf, Error> {
-    let mut path = Playlist::path()?;
+fn path<S>(socket: &MpvSocket<S>) -> PathBuf {
+    let mut path = socket.path().to_owned();
     let mut name = path
         .file_name()
         .expect("playlist path to have a filename")
@@ -10,11 +10,11 @@ fn path() -> Result<PathBuf, Error> {
     path.pop();
     name.push("_last_queue");
     path.push(name);
-    Ok(path)
+    path
 }
 
-pub async fn fetch() -> Result<Option<usize>, Error> {
-    let path = path()?;
+pub async fn fetch<S>(socket: &MpvSocket<S>) -> Result<Option<usize>, Error> {
+    let path = path(socket);
     match tokio::fs::read_to_string(&path).await {
         Ok(s) => match s.trim().parse() {
             Ok(n) => Ok(Some(n)),
@@ -28,8 +28,8 @@ pub async fn fetch() -> Result<Option<usize>, Error> {
     }
 }
 
-pub async fn reset() -> Result<(), Error> {
-    let path = path()?;
+pub async fn reset<S>(socket: &MpvSocket<S>) -> Result<(), Error> {
+    let path = path(socket);
     if let Err(e) = tokio::fs::remove_file(&path).await {
         if e.kind() != io::ErrorKind::NotFound {
             return Err(e.into());
@@ -38,8 +38,8 @@ pub async fn reset() -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn set(u: usize) -> Result<(), Error> {
-    let path = path()?;
+pub async fn set<S>(socket: &MpvSocket<S>, u: usize) -> Result<(), Error> {
+    let path = path(socket);
     tokio::fs::write(path, u.to_string().as_bytes()).await?;
     Ok(())
 }

@@ -1,6 +1,11 @@
 use super::arg_parse::Amount;
 
-use mlib::socket::{cmds, MpvSocket};
+use anyhow::Context;
+use futures_util::stream::StreamExt;
+use mlib::{
+    queue::{self, Queue},
+    socket::{self, cmds, MpvSocket},
+};
 
 use crate::notify;
 
@@ -75,6 +80,40 @@ pub async fn toggle_loop() -> anyhow::Result<()> {
         notify!("now looping");
     } else {
         notify!("not looping");
+    }
+    Ok(())
+}
+
+pub async fn status() -> anyhow::Result<()> {
+    let all = socket::all();
+    tokio::pin!(all);
+    while let Some(mut socket) = all.next().await {
+        let current = Queue::current(&mut socket)
+            .await
+            .with_context(|| format!("[{}] fetching current in queue", socket.path().display()))?;
+
+        let queue_size = socket
+            .compute(socket::cmds::QueueSize)
+            .await
+            .with_context(|| format!("[{}] fetching queue size", socket.path().display()))?;
+
+        let last_queue = queue::last::fetch(&socket)
+            .await
+            .with_context(|| format!("[{}] fetching last queue", socket.path().display()))?;
+
+        notify!(
+            "Player @ {}", socket.path().display();
+            content: " §btitle:§r {}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}",
+                current.title,
+                current.progress,
+                if current.playing { ">" } else { "||" },
+                current.index,
+                queue_size.saturating_sub(1),
+                match last_queue {
+                    Some(last_queue) => format!(" (last queued {})", last_queue),
+                    None => String::new(),
+                }
+        );
     }
     Ok(())
 }

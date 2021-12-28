@@ -10,7 +10,8 @@ use futures_util::{
 };
 use itertools::Itertools;
 use mlib::{
-    downloaded::check_cache,
+    downloaded::{check_cache_ref, CheckCacheDecision},
+    id_range,
     playlist::Playlist,
     queue::{Item, Queue},
     socket::{cmds as sock_cmds, MpvSocket},
@@ -18,7 +19,7 @@ use mlib::{
     Link, Search,
 };
 use rand::{prelude::SliceRandom, rngs};
-use std::{collections::HashSet, io::Write};
+use std::{collections::HashSet, io::Write, process::Stdio};
 use std::{path::PathBuf, time::Duration};
 use tempfile::NamedTempFile;
 use tokio::{
@@ -78,17 +79,50 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     let mut socket = MpvSocket::lattest()
         .await
         .context("failed getting socket")?;
-    Queue::now(&mut socket, amount.unwrap_or(10).abs() as _)
+    let queue = Queue::now(&mut socket, amount.unwrap_or(10).abs() as _)
         .await
-        .context("failed getting queue")?
-        .for_each(
-            |i| {
-                println!("{:2}     {}", i.index, i.item);
-            },
-            |i| {
-                println!("{:2} ==> {}", i.index, i.item);
-            },
-        );
+        .context("failed getting queue")?;
+    let current = queue.current_idx();
+    stream::iter(queue.iter())
+        .map(|i| async {
+            let s = match &i.item {
+                Item::Link(l) => YtdlBuilder::new(l)
+                    .get_title()
+                    .request()
+                    .await
+                    .map(|b| b.title())
+                    .unwrap_or_else(|l| l.to_string()),
+                Item::File(f) => f
+                    .file_stem()
+                    .map(|name| {
+                        let mut name = name.to_string_lossy().into_owned();
+                        let start_of_id = id_range(&name)
+                            .map(|r| r.start.saturating_sub(1)) // strip '='
+                            .unwrap_or_else(|| name.len());
+                        name.truncate(start_of_id);
+                        name
+                    })
+                    .unwrap_or_else(|| f.to_string_lossy().into_owned()),
+                Item::Search(s) => YtdlBuilder::new(s.as_link())
+                    .get_title()
+                    .request()
+                    .await
+                    .map(|b| b.title())
+                    .unwrap_or_else(|l| l.to_string()),
+            };
+            (i.index, s)
+        })
+        .buffered(8)
+        .for_each(|(index, s)| async move {
+            static SEPERATORS: [&str; 2] = ["   ", "==>"];
+            println!(
+                "{:2} {} {}",
+                index,
+                SEPERATORS[(index == current) as usize],
+                s
+            )
+        })
+        .await;
     Ok(())
 }
 
@@ -112,13 +146,14 @@ pub async fn queue(
     }
     if q.reset || q.clear {
         notify!("Reseting queue...");
-        mlib::queue::last::reset()
+        mlib::queue::last::reset(&socket)
             .await
             .context("resetting queue")?;
     }
     let mut n_targets = 0;
     let mut notify_tasks = FuturesUnordered::new();
-    for item in items.into_iter().inspect(|_| n_targets += 1) {
+    for mut item in items.into_iter().inspect(|_| n_targets += 1) {
+        check_cache_ref(&mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
         socket
@@ -146,7 +181,7 @@ pub async fn queue(
             let mut target = (current + 1) % count;
             tracing::debug!("first target: {}", target);
 
-            if let Some(last) = mlib::queue::last::fetch()
+            if let Some(last) = mlib::queue::last::fetch(&socket)
                 .await
                 .context("fetching the last queue position")?
             {
@@ -169,7 +204,7 @@ pub async fn queue(
                     .with_context(|| format!("moving file from {} to {}", from, target))?;
                 println!("succcess");
             }
-            mlib::queue::last::set(target).await?;
+            mlib::queue::last::set(&socket, target).await?;
             target
         };
         if q.notify {
@@ -193,7 +228,7 @@ pub async fn queue(
         .await;
     if n_targets > 5 {
         tracing::debug!("reseting queue because got {} targets", n_targets);
-        mlib::queue::last::reset()
+        mlib::queue::last::reset(&socket)
             .await
             .context("reseting last queue")?;
     }
@@ -283,7 +318,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
             socket.execute(sock_cmds::QueueRemove(prev)).await?;
         }
         DeQueue::Pop => {
-            let last = match mlib::queue::last::fetch().await? {
+            let last = match mlib::queue::last::fetch(&socket).await? {
                 Some(l) => l,
                 None => return Err(anyhow::anyhow!("no last queue to pop from")),
             };
@@ -359,25 +394,34 @@ pub async fn load(file: PathBuf) -> anyhow::Result<()> {
 }
 
 pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> anyhow::Result<()> {
-    let items = stream::iter(items)
-        .map(|i| async move {
-            match i {
-                Item::Link(l) => check_cache(l).await,
-                x => x,
+    let mut items = items.into_iter().collect::<Vec<_>>();
+    let to_download = stream::iter(items.iter_mut())
+        .map(|i| async {
+            match check_cache_ref(i).await {
+                CheckCacheDecision::Download(l) => Some(l),
+                CheckCacheDecision::Skip => None,
             }
         })
         .buffered(16)
+        .filter_map(futures_util::future::ready)
         .collect::<Vec<_>>()
         .await;
+
+    start_background_download(to_download).await;
 
     let mut items = items.into_iter().peekable();
     let first = items.by_ref().take(20);
 
+    if let Ok(mut socket) = MpvSocket::lattest().await {
+        if let Err(e) = socket.execute(sock_cmds::Pause).await {
+            crate::error!("failed to pause previous player"; content: "{:?}", e);
+        }
+    }
     let mut unconn_socket = MpvSocket::new_unconnected()
         .await
         .context("creating a new socket")?;
     let mut mpv = Command::new("mpv");
-    mpv.arg("--geometry=820x466");
+    mpv.args(["--geometry=820x466", "--no-terminal"]);
     mpv.arg(format!(
         "--input-ipc-server={}",
         unconn_socket.path().display()
@@ -389,6 +433,7 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
         mpv.arg("--loop-playlist");
     }
     mpv.args(first);
+    mpv.stdout(Stdio::null());
 
     mpv.spawn().context("spawning mpv")?;
 
@@ -417,6 +462,22 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     }
 
     Ok(())
+}
+
+pub const ARG_0: &str = "into-the-m-verse";
+
+pub async fn start_background_download(to_download: Vec<Link>) {
+    use std::{os::unix::process::CommandExt, process::Command};
+    let child = Command::new("/proc/self/exe")
+        .arg0(ARG_0)
+        .args(to_download.into_iter().map(Link::into_string))
+        .spawn();
+    match child {
+        Ok(_) => {}
+        Err(e) => {
+            crate::error!("failed to start myself: {:?}", e);
+        }
+    }
 }
 
 pub async fn run_interactive_playlist() -> anyhow::Result<()> {
@@ -458,12 +519,16 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
             }
             None => return Err(anyhow::anyhow!("empty playlist")),
         },
-        "All" => playlist
-            .0
-            .into_iter()
-            .rev()
-            .map(|l| Item::Link(l.link))
-            .collect(),
+        "All" => {
+            let mut l = playlist
+                .0
+                .into_iter()
+                .rev()
+                .map(|l| Item::Link(l.link))
+                .collect::<Vec<_>>();
+            l.shuffle(&mut rngs::OsRng);
+            l
+        }
         "Category" => {
             let category = selector(
                 playlist.categories().map(|(s, _)| s).unique(),

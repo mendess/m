@@ -1,4 +1,5 @@
 mod arg_parse;
+mod download_ctl;
 mod player_ctl;
 mod playlist_ctl;
 mod queue_ctl;
@@ -15,14 +16,30 @@ use mlib::{
     Error as SockErr, Link, Search,
 };
 use rand::seq::SliceRandom;
+use std::env::args;
 use structopt::StructOpt;
 use tokio::io;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
+use util::session_kind::SessionKind;
 
 async fn run() -> anyhow::Result<()> {
-    let args = Args::from_args();
+    if args().next().as_deref() == Some(queue_ctl::ARG_0) {
+        return download_ctl::download(args().skip(1)).await;
+    }
+    let args = match Args::from_args_safe() {
+        Ok(args) => args,
+        Err(e) => {
+            if let SessionKind::Gui = SessionKind::current().await {
+                error!("Invalid arguments"; content: "{:?}", e)
+            }
+            e.exit()
+        }
+    };
+    if let Some(id) = args.socket {
+        mlib::socket::override_lattest(id);
+    }
     match args.cmd {
         Command::Socket { new } => {
             if new.is_some() {
@@ -94,6 +111,8 @@ async fn run() -> anyhow::Result<()> {
                     Ok(f) => {
                         if let Err(e) = tokio::fs::remove_file(&f).await {
                             error!("Failed to delete {}", f.display(); content: "{}", e)
+                        } else {
+                            notify!("deleted {}", f.display());
                         }
                     }
                     Err(e) => {
@@ -131,6 +150,7 @@ async fn run() -> anyhow::Result<()> {
         }
         Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
         Command::Playlist => queue_ctl::run_interactive_playlist().await?,
+        Command::Status => player_ctl::status().await?,
         _ => todo!(),
     }
 

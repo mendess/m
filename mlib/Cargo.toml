@@ -22,6 +22,7 @@ tokio-stream = { version = "0.1.8", features = ["fs"], optional = true }
 tracing = { version = "0.1.29", optional = true }
 whoami = { version = "1.2.1", optional = true }
 async_once = { version = "0.2.1", optional = true }
+arc-swap = "1.5.0"
 
 [features]
 default = ["socket", "playlist", "ytdl", "queue", "downloads"]
