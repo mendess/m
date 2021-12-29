@@ -10,7 +10,7 @@ use tokio::{
     process::{Child, ChildStdout, Command},
 };
 
-use crate::{Link, LinkId};
+use crate::{Link, LinkId, Search};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -49,7 +49,20 @@ pub struct Duration<T> {
     tail: T,
 }
 
-pub struct LinkRequest<'a>(&'a Link);
+#[repr(transparent)]
+pub struct LinkQuery(str);
+impl<'l> From<&'l Link> for &'l LinkQuery {
+    fn from(l: &'l Link) -> Self {
+        unsafe { std::mem::transmute(l.as_str()) }
+    }
+}
+impl<'s> From<&'s Search> for &'s LinkQuery {
+    fn from(s: &'s Search) -> Self {
+        unsafe { std::mem::transmute(s.as_str().trim_start_matches("ytdl://")) }
+    }
+}
+
+pub struct LinkRequest<'a>(&'a LinkQuery);
 pub struct VidId(String);
 
 pub struct ThumbnailRequest<T>(T);
@@ -61,8 +74,8 @@ pub struct Thumbnail<T> {
 pub struct YtdlBuilder<T>(T);
 
 impl<'l> YtdlBuilder<LinkRequest<'l>> {
-    pub fn new(link: &'l Link) -> Self {
-        Self(LinkRequest(link))
+    pub fn new<L: Into<&'l LinkQuery>>(link: L) -> Self {
+        Self(LinkRequest(link.into()))
     }
 }
 
@@ -86,7 +99,7 @@ impl<'l, Y, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T> {
     pub async fn request(self) -> Result<Ytdl<Y>, Error> {
         let mut v = Vec::new();
         let link = self.0.link();
-        v.push(link.as_str());
+        v.push(&link.0);
         T::collect(&mut v);
         let output = Command::new("youtube-dl").args(v).output().await?;
         if output.status.success() {
@@ -280,7 +293,7 @@ impl<R: Response> Ytdl<R> {
 
 pub trait YtdlParam<'l>: sealed::Sealed {
     fn collect(buf: &mut Vec<&str>);
-    fn link(&self) -> &'l Link;
+    fn link(&self) -> &'l LinkQuery;
 }
 
 impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for TitleRequest<T> {
@@ -288,7 +301,7 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for TitleRequest<T> {
         buf.push("--get-title");
         T::collect(buf);
     }
-    fn link(&self) -> &'l Link {
+    fn link(&self) -> &'l LinkQuery {
         self.0.link()
     }
 }
@@ -298,7 +311,7 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for DurationRequest<T> {
         buf.push("--get-duration");
         T::collect(buf);
     }
-    fn link(&self) -> &'l Link {
+    fn link(&self) -> &'l LinkQuery {
         self.0.link()
     }
 }
@@ -308,7 +321,7 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for ThumbnailRequest<T> {
         buf.push("--get-thumbnail");
         T::collect(buf);
     }
-    fn link(&self) -> &'l Link {
+    fn link(&self) -> &'l LinkQuery {
         self.0.link()
     }
 }
@@ -317,7 +330,7 @@ impl<'l> YtdlParam<'l> for LinkRequest<'l> {
     fn collect(buf: &mut Vec<&str>) {
         buf.push("--get-id")
     }
-    fn link(&self) -> &'l Link {
+    fn link(&self) -> &'l LinkQuery {
         self.0
     }
 }

@@ -94,7 +94,7 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
                 Item::File(f) => mlib::item::clean_up_path(&f)
                     .map(ToString::to_string)
                     .unwrap_or_else(|| f.to_string_lossy().into_owned()),
-                Item::Search(s) => YtdlBuilder::new(s.as_link())
+                Item::Search(s) => YtdlBuilder::new(s)
                     .get_title()
                     .request()
                     .await

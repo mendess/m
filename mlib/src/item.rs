@@ -184,10 +184,6 @@ impl Search {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    pub fn as_link(&self) -> &Link {
-        unsafe { std::mem::transmute(self) }
-    }
 }
 
 pub fn clean_up_path<P: AsRef<Path>>(p: &P) -> Option<&str> {
