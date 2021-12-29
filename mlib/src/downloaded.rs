@@ -106,7 +106,7 @@ pub async fn download(link: Link) -> Result<Link, Error> {
         .arg("-o")
         .arg(&*output_format.to_string_lossy())
         .arg("--add-metadata")
-        .arg(&link.0)
+        .arg(link.as_str())
         .stdout(Stdio::null())
         .spawn()?
         .wait()

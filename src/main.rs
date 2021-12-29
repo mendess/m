@@ -154,6 +154,10 @@ async fn run() -> anyhow::Result<()> {
         _ => todo!(),
     }
 
+    tracing::debug!("updating bar");
+    // TODO: move this somewhere that only runs when actual updates happen
+    mlib::update_bar().await?;
+
     Ok(())
 }
 

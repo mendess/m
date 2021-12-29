@@ -11,7 +11,6 @@ use futures_util::{
 use itertools::Itertools;
 use mlib::{
     downloaded::{check_cache_ref, CheckCacheDecision},
-    id_range,
     playlist::Playlist,
     queue::{Item, Queue},
     socket::{cmds as sock_cmds, MpvSocket},
@@ -66,11 +65,11 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
             format!("\n\nCategories: | {} |", current.categories.iter().join(" | "))
         },
         if let Some(next) = current.next {
-            format!("\n\n=== UP NEXT ===\n{}", next)
+            format!("\n\n=== UP NEXT ===\n{}", mlib::item::clean_up_path(&next).unwrap_or(&next))
         } else {
             String::new()
-        }
-        ; force_notify: notify
+        };
+        force_notify: notify
     );
     Ok(())
 }
@@ -92,16 +91,8 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
                     .await
                     .map(|b| b.title())
                     .unwrap_or_else(|l| l.to_string()),
-                Item::File(f) => f
-                    .file_stem()
-                    .map(|name| {
-                        let mut name = name.to_string_lossy().into_owned();
-                        let start_of_id = id_range(&name)
-                            .map(|r| r.start.saturating_sub(1)) // strip '='
-                            .unwrap_or_else(|| name.len());
-                        name.truncate(start_of_id);
-                        name
-                    })
+                Item::File(f) => mlib::item::clean_up_path(&f)
+                    .map(ToString::to_string)
                     .unwrap_or_else(|| f.to_string_lossy().into_owned()),
                 Item::Search(s) => YtdlBuilder::new(s.as_link())
                     .get_title()

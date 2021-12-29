@@ -25,9 +25,10 @@ async_once = { version = "0.2.1", optional = true }
 arc-swap = "1.5.0"
 
 [features]
-default = ["socket", "playlist", "ytdl", "queue", "downloads"]
+default = ["socket", "playlist", "ytdl", "queue", "downloads", "items"]
 socket = ["whoami", "tracing", "tokio", "regex", "parking_lot", "once_cell", "glob", "serde_json", "async_once"]
 playlist = ["csv-async", "serde", "dirs", "tokio", "thiserror", "futures-util", "memchr"]
 ytdl = ["tokio"]
 downloads = ["tokio", "tokio-stream", "glob", "once_cell"]
+items = ["serde"]
 queue = []
