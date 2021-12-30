@@ -82,7 +82,9 @@ async fn run() -> anyhow::Result<()> {
             link,
             categories,
         }) => {
-            let links = playlist_ctl::add_playlist(link, categories).await?;
+            let link =
+                Link::from_url(link).map_err(|s| anyhow::anyhow!("{} is not a valid link", s))?;
+            let links = playlist_ctl::add_playlist(&link, categories).await?;
             if queue {
                 links
                     .for_each(|r| async move {

@@ -2,7 +2,7 @@ pub mod cmds;
 
 use std::{
     any::TypeId,
-    fmt::{Write, Debug },
+    fmt::{Debug, Write},
     io::{self, IoSlice},
     path::{Path, PathBuf},
     sync::Arc,
@@ -231,7 +231,7 @@ impl MpvSocket<UnixStream> {
 
         let payload = match buf[start_i..]
             .split(|&b| b == b'\n')
-            .find_map(|b| serde_json::from_slice::<Payload<O>>(b).ok())
+            .find_map(|b| serde_json::from_slice::<Payload<'_, O>>(b).ok())
         {
             Some(payload) => payload,
             None => {
@@ -323,7 +323,7 @@ impl<'de> Deserialize<'de> for DevNull {
         impl<'de> serde::de::Visitor<'de> for DVisitor {
             type Value = DevNull;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 formatter.write_str("this should not happen")
             }
 

@@ -1,4 +1,5 @@
 #![warn(clippy::dbg_macro)]
+#![warn(rust_2018_idioms)]
 
 use std::io;
 use thiserror::Error;
@@ -36,6 +37,10 @@ pub enum Error {
     MusicDirNotFound,
     #[error("failed to read playlist file: {0}")]
     PlaylistFile(String),
+    #[error("{0}")]
+    YtdlError(#[from] ytdl::YtdlError),
+    #[error("invalid utf8 {0}")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
 }
 
 pub async fn update_bar() -> io::Result<()> {

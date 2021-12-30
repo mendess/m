@@ -234,7 +234,7 @@ mod loop_status {
     impl<'de> Visitor<'de> for LoopStatusVisitor {
         type Value = LoopStatus;
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             formatter.write_str(r#""inf", "force", "no" or a positive integer"#)
         }
 

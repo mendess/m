@@ -28,6 +28,7 @@
 
  - [x] new                Add a new song to the playlist
      - [x] queue, depends on queue
+     - [ ] search
  - [?] delete-song        Delete a song from the playlist file
      - [?] current, depends on current
      - needs new id format to test

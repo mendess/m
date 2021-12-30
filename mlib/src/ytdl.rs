@@ -1,29 +1,21 @@
+mod getters;
 pub mod util;
 
 use std::{
-    ops::{Deref, DerefMut},
+    pin::Pin,
     process::{ExitStatus, Stdio},
+    task::{Context, Poll},
 };
 
+use futures_util::stream::{Chunks, Stream, StreamExt};
+use pin_project::pin_project;
 use tokio::{
-    io::{self, BufReader},
+    io::{AsyncBufReadExt, BufReader},
     process::{Child, ChildStdout, Command},
 };
+use tokio_stream::wrappers::LinesStream;
 
-use crate::{Link, LinkId, Search};
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("{0}")]
-    Io(#[from] io::Error),
-    #[error("status {status_code}, because: {stderr}")]
-    YtdlFailed {
-        status_code: ExitStatus,
-        stderr: String,
-    },
-    #[error("invalid utf8 {0}")]
-    Utf8Error(#[from] std::string::FromUtf8Error),
-}
+use crate::{Error, Search, Link, LinkId};
 
 mod sealed {
     pub trait Sealed {}
@@ -81,6 +73,21 @@ impl<'l> YtdlBuilder<LinkRequest<'l>> {
 
 pub struct Ytdl<T>(T);
 
+#[derive(Error, Debug)]
+pub enum YtdlError {
+    #[error("not enough fields, expected {expected} found {found}: {fields:?}")]
+    InsufisientFields {
+        expected: usize,
+        found: usize,
+        fields: Vec<String>,
+    },
+    #[error("status {status_code}, because: {stderr}")]
+    NonZeroStatus {
+        status_code: ExitStatus,
+        stderr: String,
+    },
+}
+
 impl<T> YtdlBuilder<T> {
     pub fn get_title(self) -> YtdlBuilder<TitleRequest<T>> {
         YtdlBuilder(TitleRequest(self.0))
@@ -95,193 +102,75 @@ impl<T> YtdlBuilder<T> {
     }
 }
 
-impl<'l, Y, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T> {
+impl<'l, Y: 'static, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T> {
     pub async fn request(self) -> Result<Ytdl<Y>, Error> {
-        let mut v = Vec::new();
-        let link = self.0.link();
-        v.push(&link.0);
-        T::collect(&mut v);
-        let output = Command::new("youtube-dl").args(v).output().await?;
-        if output.status.success() {
-            let string = String::from_utf8_lossy(&output.stdout);
-            let mut lines = string
-                .split('\n')
-                .filter(|x| !x.is_empty())
-                .collect::<Vec<_>>();
-            Ok(Ytdl(T::response(&mut lines)))
-        } else {
-            Err(Error::YtdlFailed {
-                status_code: output.status,
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            })
+        let n_fields = self.0.n_params();
+        match self.request_multiple()?.next().await {
+            Some(r) => r,
+            None => Err(YtdlError::InsufisientFields {
+                expected: n_fields,
+                found: 0,
+                fields: vec![],
+            }
+            .into()),
         }
     }
-}
 
-// single, expect 3
-impl Ytdl<Title<VidId>> {
-    pub fn title(self) -> String {
-        self.0.title
+    pub fn request_multiple(&self) -> Result<YtdlStream2<Y>, Error> {
+        let mut cmd = Command::new("youtube-dl");
+        cmd.arg(&self.0.link().0);
+        T::collect(&mut cmd);
+
+        let mut child = cmd.kill_on_drop(true).stdout(Stdio::piped()).spawn()?;
+
+        let n_fields = self.0.n_params();
+
+        Ok(YtdlStream2 {
+            stream: LinesStream::new(BufReader::new(child.stdout.take().unwrap()).lines())
+                .chunks(n_fields),
+            n_fields,
+            response: T::response,
+            _child: child,
+        })
     }
 }
 
-impl Ytdl<Duration<VidId>> {
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.duration
-    }
+#[pin_project]
+pub struct YtdlStream2<Y> {
+    #[pin]
+    stream: Chunks<LinesStream<BufReader<ChildStdout>>>,
+    n_fields: usize,
+    response: fn(&mut Vec<String>) -> Y,
+    _child: Child,
 }
 
-impl Ytdl<Thumbnail<VidId>> {
-    pub fn thumbnail(&self) -> &str {
-        &self.0.thumb
-    }
-}
+impl<Y> Stream for YtdlStream2<Y> {
+    type Item = Result<Ytdl<Y>, Error>;
 
-// double, expect 6
-
-impl Ytdl<Title<Duration<VidId>>> {
-    pub fn title(self) -> String {
-        self.0.title
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.tail.duration
-    }
-}
-
-impl Ytdl<Duration<Title<VidId>>> {
-    pub fn title(self) -> String {
-        self.0.tail.title
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.duration
-    }
-}
-
-impl Ytdl<Thumbnail<Title<VidId>>> {
-    pub fn title(self) -> String {
-        self.0.tail.title
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.thumb
-    }
-}
-
-impl Ytdl<Title<Thumbnail<VidId>>> {
-    pub fn title(self) -> String {
-        self.0.title
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.tail.thumb
-    }
-}
-
-impl Ytdl<Thumbnail<Duration<VidId>>> {
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.tail.duration
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.thumb
-    }
-}
-
-impl Ytdl<Duration<Thumbnail<VidId>>> {
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.duration
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.tail.thumb
-    }
-}
-
-// triple, expect 6
-
-impl Ytdl<Thumbnail<Title<Duration<VidId>>>> {
-    pub fn title(self) -> String {
-        self.0.tail.title
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.thumb
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.tail.tail.duration
-    }
-}
-
-impl Ytdl<Thumbnail<Duration<Title<VidId>>>> {
-    pub fn title(self) -> String {
-        self.0.tail.tail.title
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.tail.duration
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.thumb
-    }
-}
-
-impl Ytdl<Duration<Thumbnail<Title<VidId>>>> {
-    pub fn title(self) -> String {
-        self.0.tail.tail.title
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.duration
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.tail.thumb
-    }
-}
-
-impl Ytdl<Duration<Title<Thumbnail<VidId>>>> {
-    pub fn title(self) -> String {
-        self.0.tail.title
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.duration
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.tail.tail.thumb
-    }
-}
-
-impl Ytdl<Title<Duration<Thumbnail<VidId>>>> {
-    pub fn title(self) -> String {
-        self.0.title
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.tail.tail.thumb
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.tail.duration
-    }
-}
-
-impl Ytdl<Title<Thumbnail<Duration<VidId>>>> {
-    pub fn title(self) -> String {
-        self.0.title
-    }
-
-    pub fn thumbnail(&self) -> &str {
-        &self.0.tail.thumb
-    }
-
-    pub fn duration(&self) -> std::time::Duration {
-        self.0.tail.tail.duration
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let n_fields = self.n_fields;
+        let response = self.response;
+        match self.project().stream.poll_next(cx) {
+            Poll::Ready(Some(lines)) => Poll::Ready(Some({
+                let lines = lines
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(Error::from);
+                lines.and_then(|mut lines| {
+                    if lines.len() == n_fields {
+                        Ok(Ytdl(response(&mut lines)))
+                    } else {
+                        Err(Error::from(YtdlError::InsufisientFields {
+                            expected: n_fields,
+                            found: lines.len(),
+                            fields: lines,
+                        }))
+                    }
+                })
+            })),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -292,68 +181,97 @@ impl<R: Response> Ytdl<R> {
 }
 
 pub trait YtdlParam<'l>: sealed::Sealed {
-    fn collect(buf: &mut Vec<&str>);
+    fn collect(cmd: &mut Command);
     fn link(&self) -> &'l LinkQuery;
+    fn n_params(&self) -> usize;
 }
 
 impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for TitleRequest<T> {
-    fn collect(buf: &mut Vec<&str>) {
-        buf.push("--get-title");
-        T::collect(buf);
+    fn collect(cmd: &mut Command) {
+        cmd.arg("--get-title");
+        T::collect(cmd);
     }
+
     fn link(&self) -> &'l LinkQuery {
         self.0.link()
+    }
+
+    fn n_params(&self) -> usize {
+        1 + self.0.n_params()
     }
 }
 
 impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for DurationRequest<T> {
-    fn collect(buf: &mut Vec<&str>) {
-        buf.push("--get-duration");
-        T::collect(buf);
+    fn collect(cmd: &mut Command) {
+        cmd.arg("--get-duration");
+        T::collect(cmd);
     }
+
     fn link(&self) -> &'l LinkQuery {
         self.0.link()
+    }
+
+    fn n_params(&self) -> usize {
+        1 + self.0.n_params()
     }
 }
 
 impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for ThumbnailRequest<T> {
-    fn collect(buf: &mut Vec<&str>) {
-        buf.push("--get-thumbnail");
-        T::collect(buf);
+    fn collect(cmd: &mut Command) {
+        cmd.arg("--get-thumbnail");
+        T::collect(cmd);
     }
+
     fn link(&self) -> &'l LinkQuery {
         self.0.link()
+    }
+
+    fn n_params(&self) -> usize {
+        1 + self.0.n_params()
     }
 }
 
 impl<'l> YtdlParam<'l> for LinkRequest<'l> {
-    fn collect(buf: &mut Vec<&str>) {
-        buf.push("--get-id")
+    fn collect(cmd: &mut Command) {
+        cmd.arg("--get-id");
     }
+
     fn link(&self) -> &'l LinkQuery {
         self.0
+    }
+
+    fn n_params(&self) -> usize {
+        1
     }
 }
 
 pub trait IntoResponse: sealed::Sealed {
-    type Output;
-    fn response(buf: &mut Vec<&str>) -> Self::Output;
+    type Output: 'static;
+    fn response<S>(buf: &mut Vec<S>) -> Self::Output
+    where
+        S: AsRef<str>;
 }
 
-impl<Y, T: IntoResponse<Output = Y>> IntoResponse for TitleRequest<T> {
+impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for TitleRequest<T> {
     type Output = Title<Y>;
-    fn response(buf: &mut Vec<&str>) -> Self::Output {
+    fn response<S>(buf: &mut Vec<S>) -> Self::Output
+    where
+        S: AsRef<str>,
+    {
         Self::Output {
-            title: buf.remove(0).to_string(),
+            title: buf.remove(0).as_ref().to_string(),
             tail: T::response(buf),
         }
     }
 }
 
-impl<Y, T: IntoResponse<Output = Y>> IntoResponse for DurationRequest<T> {
+impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for DurationRequest<T> {
     type Output = Duration<Y>;
 
-    fn response(buf: &mut Vec<&str>) -> Self::Output {
+    fn response<S>(buf: &mut Vec<S>) -> Self::Output
+    where
+        S: AsRef<str>,
+    {
         use std::time::Duration;
 
         const CTORS: &[fn(u64) -> Duration] = &[
@@ -364,6 +282,7 @@ impl<Y, T: IntoResponse<Output = Y>> IntoResponse for DurationRequest<T> {
 
         let dur = buf.pop().unwrap();
         let total = dur
+            .as_ref()
             .split(':')
             .rev()
             .map_while(|n| n.parse::<u64>().ok())
@@ -378,18 +297,21 @@ impl<Y, T: IntoResponse<Output = Y>> IntoResponse for DurationRequest<T> {
     }
 }
 
-impl<Y, T: IntoResponse<Output = Y>> IntoResponse for ThumbnailRequest<T> {
+impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for ThumbnailRequest<T> {
     type Output = Thumbnail<Y>;
 
-    fn response(buf: &mut Vec<&str>) -> Self::Output {
+    fn response<S>(buf: &mut Vec<S>) -> Self::Output
+    where
+        S: AsRef<str>,
+    {
         let i = buf.len().saturating_sub(1).saturating_sub(
             buf.iter()
                 .rev()
-                .position(|e| e.starts_with("http"))
+                .position(|e| e.as_ref().starts_with("http"))
                 .unwrap(),
         );
         Self::Output {
-            thumb: buf.remove(i).to_string(),
+            thumb: buf.remove(i).as_ref().to_string(),
             tail: T::response(buf),
         }
     }
@@ -397,8 +319,11 @@ impl<Y, T: IntoResponse<Output = Y>> IntoResponse for ThumbnailRequest<T> {
 
 impl IntoResponse for LinkRequest<'_> {
     type Output = VidId;
-    fn response(buf: &mut Vec<&str>) -> Self::Output {
-        VidId(buf.pop().unwrap().into())
+    fn response<S>(buf: &mut Vec<S>) -> Self::Output
+    where
+        S: AsRef<str>,
+    {
+        VidId(buf.pop().unwrap().as_ref().to_string())
     }
 }
 
@@ -422,37 +347,4 @@ impl Response for VidId {
     fn id(&self) -> &str {
         &self.0
     }
-}
-
-pub struct StreamingChild {
-    _child: Child,
-    pub stdout: BufReader<ChildStdout>,
-}
-
-impl Deref for StreamingChild {
-    type Target = BufReader<ChildStdout>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.stdout
-    }
-}
-
-impl DerefMut for StreamingChild {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.stdout
-    }
-}
-
-pub async fn get_playlist_video_ids(link: &str) -> Result<StreamingChild, Error> {
-    let mut child = Command::new("youtube-dl")
-        .arg("--get-id")
-        .arg(link)
-        .kill_on_drop(true)
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    Ok(StreamingChild {
-        stdout: BufReader::new(child.stdout.take().unwrap()),
-        _child: child,
-    })
 }

@@ -3,10 +3,16 @@ use crate::{
     notify,
     util::selector::selector,
 };
+
+use std::{
+    collections::HashSet, io::Write, path::PathBuf, pin::Pin, process::Stdio, time::Duration,
+};
+
 use anyhow::Context;
 use futures_util::{
+    future::ready,
     stream::{self, FuturesUnordered},
-    StreamExt, TryStreamExt,
+    Stream, StreamExt, TryStreamExt,
 };
 use itertools::Itertools;
 use mlib::{
@@ -14,12 +20,10 @@ use mlib::{
     playlist::Playlist,
     queue::{Item, Queue},
     socket::{cmds as sock_cmds, MpvSocket},
-    ytdl::{self, YtdlBuilder},
-    Link, Search,
+    ytdl::YtdlBuilder,
+    Error, Link, Search,
 };
 use rand::{prelude::SliceRandom, rngs};
-use std::{collections::HashSet, io::Write, process::Stdio};
-use std::{path::PathBuf, time::Duration};
 use tempfile::NamedTempFile;
 use tokio::{
     fs::File,
@@ -549,47 +553,35 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
         _ => return Ok(()),
     };
 
-    async fn expand_playlist(l: Link) -> Vec<Item> {
-        match ytdl::get_playlist_video_ids(l.as_str()).await {
-            Ok(ids_stream) => {
-                LinesStream::new(ids_stream.stdout.lines())
-                    .then(|id| async { id.map(|s| Link::from_id_raw(&s)) })
-                    .filter_map(|r| async {
-                        match r {
-                            Ok(x) => Some(Item::Link(x)),
-                            Err(e) => {
-                                tracing::error!("failed to load id {:?}", e);
-                                None
-                            }
-                        }
-                    })
-                    .collect()
-                    .await
-            }
-            Err(e) => {
-                crate::error!(
-                    "failed to convert playlist link {} into list of links:", l;
-                    content: "{:?}", e
-                );
-                vec![Item::Link(l)]
-            }
-        }
+    fn expand_playlist<'l>(l: &'l Link) -> Result<impl Stream<Item = Item> + 'static, Error> {
+        Ok(YtdlBuilder::new(l)
+            .request_multiple()?
+            .then(|id| async { id.map(|b| Link::from_id(b.id())) })
+            .filter_map(|r| async {
+                match r {
+                    Ok(x) => Some(Item::Link(x)),
+                    Err(e) => {
+                        tracing::error!("failed to load id {:?}", e);
+                        None
+                    }
+                }
+            }))
     }
 
     vids = stream::iter(vids)
-        .then(|i| async {
-            match i {
-                Item::Link(l) => {
-                    if l.as_str().contains("playlist") {
-                        expand_playlist(l).await
-                    } else {
-                        vec![Item::Link(l)]
+        .flat_map(|i| match i {
+            Item::Link(l) => {
+                if l.as_str().contains("playlist") {
+                    match expand_playlist(&l) {
+                        Ok(s) => Box::pin(s) as Pin<Box<dyn Stream<Item = Item>>>,
+                        Err(_) => Box::pin(stream::once(ready(Item::Link(l)))),
                     }
+                } else {
+                    Box::pin(stream::once(ready(Item::Link(l))))
                 }
-                x => vec![x],
             }
+            x => Box::pin(stream::once(ready(x))),
         })
-        .flat_map(stream::iter)
         .collect()
         .await;
     queue(

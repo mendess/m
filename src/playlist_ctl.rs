@@ -9,12 +9,10 @@ use mlib::{
     playlist::{self, Playlist, PlaylistIds, Song},
     queue::Queue,
     socket::MpvSocket,
-    ytdl::{get_playlist_video_ids, YtdlBuilder},
-    Link, LinkId,
+    ytdl::YtdlBuilder,
+    Link,
 };
 use regex::Regex;
-use tokio::io::AsyncBufReadExt;
-use tokio_stream::wrappers::LinesStream;
 
 pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     let category = category
@@ -59,25 +57,21 @@ pub async fn new(link: String, categories: Vec<String>) -> anyhow::Result<Link> 
 }
 
 pub async fn add_playlist(
-    link: String,
+    link: &Link,
     categories: Vec<String>,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<Link>>> {
-    if !link.contains("playlist") {
+    if !link.as_str().contains("playlist") {
         return Err(anyhow::anyhow!("Not a playlist link"));
     }
     tracing::debug!("loading playlist ids");
     let playlist = PlaylistIds::load().await?;
-    let id_stream = get_playlist_video_ids(&link).await?;
-    Ok(LinesStream::new(id_stream.stdout.lines())
+    let id_stream = YtdlBuilder::new(link).request_multiple()?;
+    Ok(id_stream
         .map_err(anyhow::Error::from)
-        .map_ok(|mut id| {
-            id.retain(|c| !c.is_whitespace());
-            id
-        })
-        .and_then(move |id| ready(Ok((playlist.contains(&id), id))))
-        .try_filter_map(move |(success, id)| async move {
+        .and_then(move |b| ready(Ok((playlist.contains(b.id().as_str()), b))))
+        .try_filter_map(move |(success, b)| async move {
             if success {
-                Ok(Some(Link::from_id(LinkId::new_unchecked(&id))))
+                Ok(Some(Link::from_id(b.id())))
             } else {
                 notify!("song already in playlist"; content: "{}", ";");
                 Ok(None)
