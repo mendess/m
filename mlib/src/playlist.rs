@@ -1,3 +1,5 @@
+mod uniq_vec;
+
 use csv_async::{AsyncReaderBuilder, AsyncWriterBuilder, StringRecord};
 use dirs::config_dir;
 use futures_util::{stream::TryStreamExt, Stream};
@@ -25,7 +27,7 @@ pub struct Song {
     pub link: Link,
     pub time: u64,
     #[serde(default)]
-    pub categories: HashSet<String>,
+    pub categories: uniq_vec::UniqVec<String>,
 }
 
 impl Display for Song {
@@ -47,7 +49,7 @@ pub struct Playlist(pub Vec<Song>);
 
 static WRITER_BUILDER: Lazy<AsyncWriterBuilder> = Lazy::new(|| {
     let mut builder = AsyncWriterBuilder::new();
-    builder.delimiter(b'\t').has_headers(false);
+    builder.delimiter(b'\t').has_headers(false).flexible(true);
     builder
 });
 
@@ -188,11 +190,11 @@ impl Playlist {
         }
     }
 
-    pub async fn save(&self) -> io::Result<()> {
+    pub async fn save(&self) -> Result<(), Error> {
         let file = File::create(Self::path()?).await?;
         let mut writer = WRITER_BUILDER.create_serializer(file);
         for s in self.0.iter() {
-            writer.serialize(s).await.map_err(io::Error::from)?;
+            writer.serialize(s).await.map_err(Error::from)?;
         }
         Ok(())
     }

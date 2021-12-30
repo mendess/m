@@ -27,6 +27,9 @@ pub use item::{Item, Link, LinkId, Search};
 pub enum Error {
     #[error("io: {0}")]
     Io(#[from] io::Error),
+    #[cfg(feature = "playlist")]
+    #[error("csv: {0}")]
+    Csv(#[from] csv_async::Error),
     #[error("no mpv instance running")]
     NoMpvInstance,
     #[error("invalid socket path: {0}")]
@@ -39,6 +42,7 @@ pub enum Error {
     PlaylistFile(String),
     #[error("{0}")]
     YtdlError(#[from] ytdl::YtdlError),
+    #[cfg(feature = "ytdl")]
     #[error("invalid utf8 {0}")]
     Utf8Error(#[from] std::string::FromUtf8Error),
 }

@@ -99,8 +99,16 @@ pub async fn ch_cat() -> anyhow::Result<()> {
         None => return Err(anyhow::anyhow!("current song not in playlist")),
     };
 
-    while let Some(new_cat) = selector::input("Category name? (Esq to quit)").await? {
-        current.categories.insert(new_cat);
+    while let Some(new_cat) = selector::selector(
+        current.categories.iter(),
+        "Category name? (Esq to quit)",
+        current.categories.len(),
+    )
+    .await?
+    {
+        if let Some(old_cat) = current.categories.push(new_cat) {
+            current.categories.remove(&old_cat);
+        }
     }
     playlist.save().await?;
     Ok(())
@@ -135,7 +143,7 @@ async fn add_song(link: Link, categories: HashSet<String>) -> anyhow::Result<()>
         time: b.duration().as_secs(),
         link,
         name: b.title(),
-        categories,
+        categories: categories.into_iter().collect(),
     };
     Playlist::add_song(&song).await?;
     notify!("Song added"; content: "{}", song);

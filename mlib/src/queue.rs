@@ -4,7 +4,7 @@ use crate::{
     Error, Link,
 };
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 
 use futures_util::future::OptionFuture;
 
@@ -146,7 +146,7 @@ impl Queue {
             title,
             chapter,
             playing,
-            categories,
+            categories: categories.into_vec(),
             volume,
             progress,
             index: current_idx,
@@ -182,7 +182,7 @@ pub struct Current {
     pub playing: bool,
     pub volume: f64,
     pub progress: f64,
-    pub categories: HashSet<String>,
+    pub categories: Vec<String>,
     pub index: usize,
     pub next: Option<String>,
 }
