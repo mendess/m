@@ -42,11 +42,7 @@ pub async fn cat() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn new(link: String, categories: Vec<String>) -> anyhow::Result<Link> {
-    let link = match Link::from_url(link) {
-        Ok(l) => l,
-        Err(_) => return Err(anyhow::anyhow!("not a link")),
-    };
+pub async fn new(link: Link, categories: Vec<String>) -> anyhow::Result<Link> {
     let id = link.id();
     if Playlist::contains_song(id).await? {
         return Err(anyhow::anyhow!("Song already in playlist"));
@@ -122,13 +118,15 @@ pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Re
         let current = current
             .id()
             .ok_or_else(|| anyhow::anyhow!("current song is not identified"))?;
-        Ok(playlist.find_song_mut(|s| s.link.id() == current))
+        playlist.find_song_mut(|s| s.link.id() == current).into()
     } else if !partial_name.is_empty() {
         playlist.partial_name_search_mut(partial_name.iter().map(String::as_str))
     } else {
         unreachable!()
     };
-    notify!("song deleted"; content: "{}", super::handle_search_result(idx)?.delete());
+    let deleted = super::handle_search_result(idx)?.delete();
+    playlist.save().await?;
+    notify!("song deleted"; content: "{}", deleted);
     Ok(())
 }
 

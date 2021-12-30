@@ -36,7 +36,7 @@ pub enum Command {
     New(New),
 
     /// Append a playlist to the personal playlist
-    AddPlaylist(New),
+    AddPlaylist(AddPlaylist),
 
     /// List all current categories
     Cat,
@@ -164,6 +164,18 @@ pub struct Play {
 #[derive(Debug, StructOpt)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct New {
+    /// Queue it too
+    #[structopt(short, long)]
+    pub queue: bool,
+    #[structopt(short, long)]
+    pub search: bool,
+    pub query: String,
+    pub categories: Vec<String>,
+}
+
+#[derive(Debug, StructOpt)]
+#[structopt(global_settings = &[DisableVersion])]
+pub struct AddPlaylist {
     /// Queue it too
     #[structopt(short, long)]
     pub queue: bool,

@@ -15,7 +15,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::LinesStream;
 
-use crate::{Error, Search, Link, LinkId};
+use crate::{Error, Link, LinkId, Search};
 
 mod sealed {
     pub trait Sealed {}
@@ -116,7 +116,7 @@ impl<'l, Y: 'static, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T>
         }
     }
 
-    pub fn request_multiple(&self) -> Result<YtdlStream2<Y>, Error> {
+    pub fn request_multiple(&self) -> Result<YtdlStream<Y>, Error> {
         let mut cmd = Command::new("youtube-dl");
         cmd.arg(&self.0.link().0);
         T::collect(&mut cmd);
@@ -125,7 +125,7 @@ impl<'l, Y: 'static, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T>
 
         let n_fields = self.0.n_params();
 
-        Ok(YtdlStream2 {
+        Ok(YtdlStream {
             stream: LinesStream::new(BufReader::new(child.stdout.take().unwrap()).lines())
                 .chunks(n_fields),
             n_fields,
@@ -136,7 +136,7 @@ impl<'l, Y: 'static, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T>
 }
 
 #[pin_project]
-pub struct YtdlStream2<Y> {
+pub struct YtdlStream<Y> {
     #[pin]
     stream: Chunks<LinesStream<BufReader<ChildStdout>>>,
     n_fields: usize,
@@ -144,7 +144,7 @@ pub struct YtdlStream2<Y> {
     _child: Child,
 }
 
-impl<Y> Stream for YtdlStream2<Y> {
+impl<Y> Stream for YtdlStream<Y> {
     type Item = Result<Ytdl<Y>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {

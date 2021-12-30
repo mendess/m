@@ -6,14 +6,15 @@ mod queue_ctl;
 mod util;
 
 use arg_parse::{Args, Command, DeleteSong, New, Play};
-use futures_util::{future::ready, StreamExt, TryFutureExt};
+use futures_util::{future::ready, StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
 use mlib::{
     downloaded::clean_downloads,
-    playlist::{Playlist, PlaylistIds},
+    playlist::{Playlist, PlaylistIds, PartialSearchResult},
     queue::Item,
     socket::MpvSocket,
-    Error as SockErr, Link, Search,
+    ytdl::YtdlBuilder,
+    Error as SockErr, Link, LinkId, Search,
 };
 use rand::seq::SliceRandom;
 use std::env::args;
@@ -23,6 +24,8 @@ use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
 use util::session_kind::SessionKind;
+
+use crate::{arg_parse::AddPlaylist, util::selector};
 
 async fn run() -> anyhow::Result<()> {
     if args().next().as_deref() == Some(queue_ctl::ARG_0) {
@@ -68,16 +71,38 @@ async fn run() -> anyhow::Result<()> {
         Command::Shuffle => player_ctl::shuffle().await?,
         Command::Loop => player_ctl::toggle_loop().await?,
         Command::New(New {
+            search,
             queue,
-            link,
+            query: link,
             categories,
         }) => {
+            let link = if search {
+                let search = Search::multiple(link, 10);
+                let results = YtdlBuilder::new(&search)
+                    .get_title()
+                    .request_multiple()?
+                    .try_collect::<Vec<_>>()
+                    .await?;
+                match selector::selector(results.iter().map(|l| l.title_ref()), "pick", 10).await? {
+                    Some(pick) => results
+                        .into_iter()
+                        .find(|l| l.title_ref() == pick)
+                        .map(|l| Link::from_id(l.id()))
+                        .ok_or_else(|| anyhow::anyhow!("not in the list"))?,
+                    None => return Ok(()),
+                }
+            } else {
+                Link::from_id(
+                    LinkId::from_url(&link)
+                        .ok_or_else(|| anyhow::anyhow!("{} is not a valid link", link))?,
+                )
+            };
             let link = playlist_ctl::new(link, categories).await?;
             if queue {
                 queue_ctl::queue(Default::default(), Some(Item::Link(link))).await?;
             }
         }
-        Command::AddPlaylist(New {
+        Command::AddPlaylist(AddPlaylist {
             queue,
             link,
             categories,
@@ -184,21 +209,26 @@ async fn main() -> anyhow::Result<()> {
     init_logger();
     if let Err(e) = run().await {
         let mut chain = e.chain().skip(1).peekable();
+        let stringified = e.to_string();
+        let (header, rest) = match stringified.split_once("\n") {
+            Some(x) => x,
+            None => (stringified.as_str(), "")
+        };
         if chain.peek().is_some() {
-            error!("{}", e; content: "Caused by:\n\t{}", chain.format("\n\t"));
+            error!("{}", header; content: "{}Caused by:\n\t{}", rest, chain.format("\n\t"));
         } else {
-            error!("{}", e);
+            error!("{}", header; content: "{}", rest);
         }
     }
     Ok(())
 }
 
-fn handle_search_result<T>(r: Result<Option<T>, usize>) -> anyhow::Result<T> {
+fn handle_search_result<T>(r: PartialSearchResult<T>) -> anyhow::Result<T> {
     match r {
-        Ok(Some(t)) => Ok(t),
-        Ok(None) => return Err(anyhow::anyhow!("song not in playlist")),
-        Err(too_many_matches) => {
-            return Err(anyhow::anyhow!("too many matches: {}", too_many_matches))
+        PartialSearchResult::One(t) => Ok(t),
+        PartialSearchResult::None => return Err(anyhow::anyhow!("song not in playlist")),
+        PartialSearchResult::Many(too_many_matches) => {
+            return Err(anyhow::anyhow!("too many matches:\n  {}", too_many_matches.into_iter().format("\n  ")))
         }
     }
 }

@@ -5,6 +5,10 @@ impl Ytdl<Title<VidId>> {
     pub fn title(self) -> String {
         self.0.title
     }
+
+    pub fn title_ref(&self) -> &str {
+        &self.0.title
+    }
 }
 
 impl Ytdl<Duration<VidId>> {
@@ -26,6 +30,10 @@ impl Ytdl<Title<Duration<VidId>>> {
         self.0.title
     }
 
+    pub fn title_ref(&self) -> &str {
+        &self.0.title
+    }
+
     pub fn duration(&self) -> std::time::Duration {
         self.0.tail.duration
     }
@@ -34,6 +42,10 @@ impl Ytdl<Title<Duration<VidId>>> {
 impl Ytdl<Duration<Title<VidId>>> {
     pub fn title(self) -> String {
         self.0.tail.title
+    }
+
+    pub fn title_ref(&self) -> &str {
+        &self.0.tail.title
     }
 
     pub fn duration(&self) -> std::time::Duration {
@@ -46,6 +58,10 @@ impl Ytdl<Thumbnail<Title<VidId>>> {
         self.0.tail.title
     }
 
+    pub fn title_ref(&self) -> &str {
+        &self.0.tail.title
+    }
+
     pub fn thumbnail(&self) -> &str {
         &self.0.thumb
     }
@@ -54,6 +70,10 @@ impl Ytdl<Thumbnail<Title<VidId>>> {
 impl Ytdl<Title<Thumbnail<VidId>>> {
     pub fn title(self) -> String {
         self.0.title
+    }
+
+    pub fn title_ref(&self) -> &str {
+        &self.0.title
     }
 
     pub fn thumbnail(&self) -> &str {
@@ -88,6 +108,10 @@ impl Ytdl<Thumbnail<Title<Duration<VidId>>>> {
         self.0.tail.title
     }
 
+    pub fn title_ref(&self) -> &str {
+        &self.0.tail.title
+    }
+
     pub fn thumbnail(&self) -> &str {
         &self.0.thumb
     }
@@ -100,6 +124,10 @@ impl Ytdl<Thumbnail<Title<Duration<VidId>>>> {
 impl Ytdl<Thumbnail<Duration<Title<VidId>>>> {
     pub fn title(self) -> String {
         self.0.tail.tail.title
+    }
+
+    pub fn title_ref(&self) -> &str {
+        &self.0.tail.tail.title
     }
 
     pub fn duration(&self) -> std::time::Duration {
@@ -116,6 +144,10 @@ impl Ytdl<Duration<Thumbnail<Title<VidId>>>> {
         self.0.tail.tail.title
     }
 
+    pub fn title_ref(&self) -> &str {
+        &self.0.tail.tail.title
+    }
+
     pub fn duration(&self) -> std::time::Duration {
         self.0.duration
     }
@@ -128,6 +160,10 @@ impl Ytdl<Duration<Thumbnail<Title<VidId>>>> {
 impl Ytdl<Duration<Title<Thumbnail<VidId>>>> {
     pub fn title(self) -> String {
         self.0.tail.title
+    }
+
+    pub fn title_ref(&self) -> &str {
+        &self.0.tail.title
     }
 
     pub fn duration(&self) -> std::time::Duration {
@@ -144,6 +180,10 @@ impl Ytdl<Title<Duration<Thumbnail<VidId>>>> {
         self.0.title
     }
 
+    pub fn title_ref(&self) -> &str {
+        &self.0.title
+    }
+
     pub fn thumbnail(&self) -> &str {
         &self.0.tail.tail.thumb
     }
@@ -156,6 +196,10 @@ impl Ytdl<Title<Duration<Thumbnail<VidId>>>> {
 impl Ytdl<Title<Thumbnail<Duration<VidId>>>> {
     pub fn title(self) -> String {
         self.0.title
+    }
+
+    pub fn title_ref(&self) -> &str {
+        &self.0.title
     }
 
     pub fn thumbnail(&self) -> &str {

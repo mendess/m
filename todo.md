@@ -28,13 +28,13 @@
 
  - [x] new                Add a new song to the playlist
      - [x] queue, depends on queue
-     - [ ] search
- - [?] delete-song        Delete a song from the playlist file
-     - [?] current, depends on current
+     - [x] search
+ - [x] delete-song        Delete a song from the playlist file
+     - [x] current, depends on current
      - needs new id format to test
  - [x] add-playlist       Append a playlist to the personal playlist
      - [x] queue, depends on queue
- - [?] ch-cat             Add a category to the current song
+ - [x] ch-cat             Add a category to the current song
      - depends on current
      - needs new id format to test
 

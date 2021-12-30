@@ -49,7 +49,11 @@ pub struct Playlist(pub Vec<Song>);
 
 static WRITER_BUILDER: Lazy<AsyncWriterBuilder> = Lazy::new(|| {
     let mut builder = AsyncWriterBuilder::new();
-    builder.delimiter(b'\t').has_headers(false).flexible(true);
+    builder
+        .delimiter(b'\t')
+        .has_headers(false)
+        .flexible(true)
+        .quote_style(csv_async::QuoteStyle::Never);
     builder
 });
 
@@ -156,37 +160,43 @@ impl Playlist {
     pub fn partial_name_search<'s>(
         &self,
         words: impl Iterator<Item = &'s str>,
-    ) -> Result<Option<PlaylistIndex<'_>>, usize> {
-        self.partial_name_search_impl(words).map(|i| {
-            i.map(|index| PlaylistIndex {
+    ) -> PartialSearchResult<PlaylistIndex<'_>> {
+        self.partial_name_search_impl(words)
+            .map(|index| PlaylistIndex {
                 source: self,
                 index,
             })
-        })
     }
 
     pub fn partial_name_search_mut<'s>(
         &mut self,
         words: impl Iterator<Item = &'s str>,
-    ) -> Result<Option<PlaylistIndexMut<'_>>, usize> {
-        self.partial_name_search_impl(words).map(|i| {
-            i.map(|index| PlaylistIndexMut {
+    ) -> PartialSearchResult<PlaylistIndexMut<'_>> {
+        self.partial_name_search_impl(words)
+            .map(|index| PlaylistIndexMut {
                 source: self,
                 index,
             })
-        })
     }
 
     fn partial_name_search_impl<'s>(
         &self,
         words: impl Iterator<Item = &'s str>,
-    ) -> Result<Option<usize>, usize> {
+    ) -> PartialSearchResult<usize> {
         let mut idxs = (0..self.0.len()).collect::<Vec<_>>();
-        words.for_each(|w| idxs.retain(|i| self.0[*i].name.contains(w)));
+        words.for_each(|w| {
+            let regex = regex::RegexBuilder::new(&regex::escape(w))
+                .case_insensitive(true)
+                .build()
+                .unwrap();
+            idxs.retain(|i| regex.is_match(&self.0[*i].name))
+        });
         match &idxs[..] {
-            [index] => Ok(Some(*index)),
-            [] => Ok(None),
-            many => Err(many.len()),
+            [index] => PartialSearchResult::One(*index),
+            [] => PartialSearchResult::None,
+            many => {
+                PartialSearchResult::Many(many.iter().map(|i| self.0[*i].name.clone()).collect())
+            }
         }
     }
 
@@ -197,6 +207,32 @@ impl Playlist {
             writer.serialize(s).await.map_err(Error::from)?;
         }
         Ok(())
+    }
+}
+
+pub enum PartialSearchResult<T> {
+    None,
+    One(T),
+    Many(Vec<String>),
+}
+
+impl<T> PartialSearchResult<T> {
+    #[inline(always)]
+    fn map<R>(self, f: impl FnOnce(T) -> R) -> PartialSearchResult<R> {
+        match self {
+            PartialSearchResult::One(t) => PartialSearchResult::One(f(t)),
+            PartialSearchResult::None => PartialSearchResult::None,
+            PartialSearchResult::Many(x) => PartialSearchResult::Many(x),
+        }
+    }
+}
+
+impl<T> From<Option<T>> for PartialSearchResult<T> {
+    fn from(o: Option<T>) -> Self {
+        match o {
+            Some(t) => PartialSearchResult::One(t),
+            None => PartialSearchResult::None,
+        }
     }
 }
 

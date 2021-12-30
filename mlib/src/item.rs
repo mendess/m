@@ -5,6 +5,7 @@ use std::{
     ops::{Deref, Range},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 #[derive(Debug, Clone)]
@@ -82,10 +83,6 @@ impl Link {
         Self(format!("https://youtu.be/{}", &s.0))
     }
 
-    pub fn from_id_raw(s: &str) -> Self {
-        Self(format!("https://youtu.be/{}", &s))
-    }
-
     pub fn from_url(s: String) -> Result<Self, String> {
         if s.starts_with("http") {
             Ok(Self(s))
@@ -95,22 +92,7 @@ impl Link {
     }
 
     pub fn id(&self) -> &LinkId {
-        match self.0.match_indices(Self::VID_QUERY_PARAM).next() {
-            Some((i, _)) => {
-                let x = &self.0[(i + Self::VID_QUERY_PARAM.len())..];
-                let end = x
-                    .char_indices()
-                    .find_map(|(i, c)| (c == '&').then(|| i))
-                    .unwrap_or(x.len());
-                LinkId::new(&x[..end])
-            }
-            None => LinkId::new(
-                self.0
-                    .split('/')
-                    .last()
-                    .expect("there should be an id here bro"),
-            ),
-        }
+        id_from_link(&self.0)
     }
 
     pub fn as_str(&self) -> &str {
@@ -119,6 +101,32 @@ impl Link {
 
     pub fn into_string(self) -> String {
         self.0
+    }
+}
+
+fn id_from_link(s: &str) -> &LinkId {
+    match s.match_indices(Link::VID_QUERY_PARAM).next() {
+        Some((i, _)) => {
+            let x = &s[(i + Link::VID_QUERY_PARAM.len())..];
+            let end = x
+                .char_indices()
+                .find_map(|(i, c)| (c == '&').then(|| i))
+                .unwrap_or(x.len());
+            LinkId::new(&x[..end])
+        }
+        None => LinkId::new(s.split('/').last().expect("there should be an id here bro")),
+    }
+}
+
+impl FromStr for Link {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with("http") {
+            Ok(Self(s.into()))
+        } else {
+            Err("invalid url")
+        }
     }
 }
 
@@ -137,12 +145,12 @@ impl LinkId {
         unsafe { std::mem::transmute(s) }
     }
 
-    pub fn new_unchecked(s: &str) -> &Self {
-        Self::new(s)
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn from_url(s: &str) -> Option<&Self> {
+        s.starts_with("http").then(|| id_from_link(s))
     }
 }
 
@@ -175,10 +183,15 @@ pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&LinkId> {
 pub struct Search(String);
 
 impl Search {
-    const PREFIX: &'static str = "ytdl://ytsearch:";
+    const PREFIX: &'static str = "ytdl://ytsearch";
     pub fn new(mut s: String) -> Self {
+        s.insert(0, ':');
         s.insert_str(0, Self::PREFIX);
         Self(s)
+    }
+
+    pub fn multiple(s: String, limit: usize) -> Self {
+        Self(format!("{}{}:{}", Self::PREFIX, limit, s))
     }
 
     pub fn as_str(&self) -> &str {

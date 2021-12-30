@@ -28,7 +28,7 @@ pin-project = "1.0.9"
 [features]
 default = ["socket", "playlist", "ytdl", "queue", "downloads", "items"]
 socket = ["whoami", "tracing", "tokio", "regex", "parking_lot", "once_cell", "glob", "serde_json", "async_once"]
-playlist = ["csv-async", "serde", "dirs", "tokio", "thiserror", "futures-util", "memchr"]
+playlist = ["csv-async", "serde", "dirs", "tokio", "thiserror", "futures-util", "memchr", "regex"]
 ytdl = ["tokio"]
 downloads = ["tokio", "tokio-stream", "glob", "once_cell"]
 items = ["serde"]
