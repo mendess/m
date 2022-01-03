@@ -10,11 +10,12 @@ use futures_util::{future::ready, StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
 use mlib::{
     downloaded::clean_downloads,
-    playlist::{Playlist, PlaylistIds, PartialSearchResult},
+    item::link::VideoLink,
+    playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
     socket::MpvSocket,
     ytdl::YtdlBuilder,
-    Error as SockErr, Link, LinkId, Search,
+    Error as SockErr, Link, Search,
 };
 use rand::seq::SliceRandom;
 use std::env::args;
@@ -25,7 +26,10 @@ use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
 use util::session_kind::SessionKind;
 
-use crate::{arg_parse::AddPlaylist, util::selector};
+use crate::{
+    arg_parse::AddPlaylist,
+    util::{dl_dir, selector},
+};
 
 async fn run() -> anyhow::Result<()> {
     if args().next().as_deref() == Some(queue_ctl::ARG_0) {
@@ -80,26 +84,25 @@ async fn run() -> anyhow::Result<()> {
                 let search = Search::multiple(link, 10);
                 let results = YtdlBuilder::new(&search)
                     .get_title()
-                    .request_multiple()?
+                    .search_multiple()?
                     .try_collect::<Vec<_>>()
                     .await?;
                 match selector::selector(results.iter().map(|l| l.title_ref()), "pick", 10).await? {
                     Some(pick) => results
                         .into_iter()
                         .find(|l| l.title_ref() == pick)
-                        .map(|l| Link::from_id(l.id()))
+                        .map(|l| Link::from_video_id(l.id()))
                         .ok_or_else(|| anyhow::anyhow!("not in the list"))?,
                     None => return Ok(()),
                 }
             } else {
-                Link::from_id(
-                    LinkId::from_url(&link)
-                        .ok_or_else(|| anyhow::anyhow!("{} is not a valid link", link))?,
-                )
+                VideoLink::from_url(link)
+                    .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?
+                    .into()
             };
             let link = playlist_ctl::new(link, categories).await?;
             if queue {
-                queue_ctl::queue(Default::default(), Some(Item::Link(link))).await?;
+                queue_ctl::queue(Default::default(), Some(Item::Link(link.into()))).await?;
             }
         }
         Command::AddPlaylist(AddPlaylist {
@@ -115,7 +118,7 @@ async fn run() -> anyhow::Result<()> {
                     .for_each(|r| async move {
                         let r = ready(r)
                             .and_then(|link| {
-                                queue_ctl::queue(Default::default(), Some(Item::Link(link)))
+                                queue_ctl::queue(Default::default(), Some(Item::Link(link.into())))
                             })
                             .await;
                         if let Err(e) = r {
@@ -131,7 +134,7 @@ async fn run() -> anyhow::Result<()> {
         Command::Now(a) => queue_ctl::now(a).await?,
         Command::CleanDownloads => {
             let ids = PlaylistIds::load().await?;
-            let to_delete = clean_downloads(&ids).await?;
+            let to_delete = clean_downloads(dl_dir()?, &ids).await?;
             tokio::pin!(to_delete);
             while let Some(f) = to_delete.next().await {
                 match f {
@@ -167,6 +170,7 @@ async fn run() -> anyhow::Result<()> {
                     .filter_map(|s| async move {
                         s.categories.iter().any(|c| c.contains(cat)).then(|| s.link)
                     })
+                    .map(Link::Video)
                     .map(Item::Link)
                     .collect::<Vec<_>>()
                     .await;
@@ -183,7 +187,7 @@ async fn run() -> anyhow::Result<()> {
 
     tracing::debug!("updating bar");
     // TODO: move this somewhere that only runs when actual updates happen
-    mlib::update_bar().await?;
+    util::update_bar().await?;
 
     Ok(())
 }
@@ -212,7 +216,7 @@ async fn main() -> anyhow::Result<()> {
         let stringified = e.to_string();
         let (header, rest) = match stringified.split_once("\n") {
             Some(x) => x,
-            None => (stringified.as_str(), "")
+            None => (stringified.as_str(), ""),
         };
         if chain.peek().is_some() {
             error!("{}", header; content: "{}Caused by:\n\t{}", rest, chain.format("\n\t"));
@@ -228,7 +232,10 @@ fn handle_search_result<T>(r: PartialSearchResult<T>) -> anyhow::Result<T> {
         PartialSearchResult::One(t) => Ok(t),
         PartialSearchResult::None => return Err(anyhow::anyhow!("song not in playlist")),
         PartialSearchResult::Many(too_many_matches) => {
-            return Err(anyhow::anyhow!("too many matches:\n  {}", too_many_matches.into_iter().format("\n  ")))
+            return Err(anyhow::anyhow!(
+                "too many matches:\n  {}",
+                too_many_matches.into_iter().format("\n  ")
+            ))
         }
     }
 }
@@ -273,7 +280,8 @@ async fn search_params_to_items(Play { what, search }: Play) -> anyhow::Result<V
                     .partial_name_search_mut(words.iter().map(String::as_str)),
             )?
             .delete()
-            .link,
+            .link
+            .into(),
         )
     };
     items.push(link);

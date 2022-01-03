@@ -1,12 +1,14 @@
-use serde::{Deserialize, Serialize};
+pub mod link;
+
 use std::{
     ffi::OsStr,
     fmt::Display,
-    ops::{Deref, Range},
+    ops::Range,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    str::FromStr,
 };
+
+pub use link::{Link, PlaylistId, PlaylistLink, VideoId};
 
 #[derive(Debug, Clone)]
 pub enum Item {
@@ -16,9 +18,9 @@ pub enum Item {
 }
 
 impl Item {
-    pub fn id(&self) -> Option<&LinkId> {
+    pub fn id(&self) -> Option<&VideoId> {
         match self {
-            Item::Link(l) => Some(l.id()),
+            Item::Link(l) => l.video_id(),
             Item::File(p) => id_from_path(p),
             Item::Search(_) => None,
         }
@@ -71,97 +73,6 @@ impl From<String> for Item {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-#[repr(transparent)]
-pub struct Link(String);
-
-impl Link {
-    const VID_QUERY_PARAM: &'static str = "v=";
-
-    pub fn from_id(s: &LinkId) -> Self {
-        Self(format!("https://youtu.be/{}", &s.0))
-    }
-
-    pub fn from_url(s: String) -> Result<Self, String> {
-        if s.starts_with("http") {
-            Ok(Self(s))
-        } else {
-            Err(s)
-        }
-    }
-
-    pub fn id(&self) -> &LinkId {
-        id_from_link(&self.0)
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_string(self) -> String {
-        self.0
-    }
-}
-
-fn id_from_link(s: &str) -> &LinkId {
-    match s.match_indices(Link::VID_QUERY_PARAM).next() {
-        Some((i, _)) => {
-            let x = &s[(i + Link::VID_QUERY_PARAM.len())..];
-            let end = x
-                .char_indices()
-                .find_map(|(i, c)| (c == '&').then(|| i))
-                .unwrap_or(x.len());
-            LinkId::new(&x[..end])
-        }
-        None => LinkId::new(s.split('/').last().expect("there should be an id here bro")),
-    }
-}
-
-impl FromStr for Link {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with("http") {
-            Ok(Self(s.into()))
-        } else {
-            Err("invalid url")
-        }
-    }
-}
-
-impl Display for Link {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct LinkId(str);
-
-impl LinkId {
-    pub(crate) fn new(s: &str) -> &Self {
-        unsafe { std::mem::transmute(s) }
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn from_url(s: &str) -> Option<&Self> {
-        s.starts_with("http").then(|| id_from_link(s))
-    }
-}
-
-impl Deref for LinkId {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
 pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
     let front_striped = s.trim_end_matches("=m");
     let start_idx = front_striped.char_indices().rfind(|(_, c)| *c == '=')?.0;
@@ -171,11 +82,11 @@ pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
     Some((start_idx + 1)..(front_striped.len()))
 }
 
-pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&LinkId> {
+pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
     // format: [name]=[id]=m.ext
     let name = p.as_ref().file_stem()?.to_str()?;
     let range = id_range(name)?;
-    Some(LinkId::new(&name[range]))
+    Some(VideoId::new(&name[range]))
 }
 
 #[derive(Debug, Clone)]
@@ -213,7 +124,7 @@ mod test {
     #[test]
     fn trivial() {
         assert_eq!(
-            Some(LinkId::new("AAA")),
+            Some(VideoId::new("AAA")),
             id_from_path(&PathBuf::from("Song Name 😎=AAA=m.mkv"))
         )
     }

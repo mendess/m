@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::queue::Item;
+use crate::item::Item;
 
 use self::command::{Compute, Execute};
 

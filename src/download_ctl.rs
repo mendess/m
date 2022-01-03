@@ -5,6 +5,7 @@ use crate::error;
 
 pub async fn download(links: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
     let mut task_set = FuturesUnordered::new();
+    let dl_dir = crate::util::dl_dir()?;
 
     for l in links {
         match Link::from_url(l) {
@@ -13,7 +14,7 @@ pub async fn download(links: impl IntoIterator<Item = String>) -> anyhow::Result
             }
             Ok(l) => {
                 tracing::debug!("downloading {}", l);
-                task_set.push(downloaded::download(l));
+                task_set.push(downloaded::download(dl_dir.clone(), l));
             }
         }
 

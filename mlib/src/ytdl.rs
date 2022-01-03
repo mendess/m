@@ -2,6 +2,7 @@ mod getters;
 pub mod util;
 
 use std::{
+    ffi::OsStr,
     pin::Pin,
     process::{ExitStatus, Stdio},
     task::{Context, Poll},
@@ -15,7 +16,10 @@ use tokio::{
 };
 use tokio_stream::wrappers::LinesStream;
 
-use crate::{Error, Link, LinkId, Search};
+use crate::{
+    item::{link::VideoLink, PlaylistLink},
+    Error, Link, Search, VideoId,
+};
 
 mod sealed {
     pub trait Sealed {}
@@ -25,7 +29,7 @@ mod sealed {
     impl Sealed for super::VidId {}
     impl<T> Sealed for super::TitleRequest<T> {}
     impl<T> Sealed for super::DurationRequest<T> {}
-    impl Sealed for super::LinkRequest<'_> {}
+    impl<L> Sealed for super::LinkRequest<'_, L> {}
     impl<T> Sealed for super::Thumbnail<T> {}
 }
 
@@ -41,20 +45,31 @@ pub struct Duration<T> {
     tail: T,
 }
 
-#[repr(transparent)]
-pub struct LinkQuery(str);
-impl<'l> From<&'l Link> for &'l LinkQuery {
+impl<'l> From<&'l Link> for LinkRequest<'l, Link> {
     fn from(l: &'l Link) -> Self {
-        unsafe { std::mem::transmute(l.as_str()) }
-    }
-}
-impl<'s> From<&'s Search> for &'s LinkQuery {
-    fn from(s: &'s Search) -> Self {
-        unsafe { std::mem::transmute(s.as_str().trim_start_matches("ytdl://")) }
+        Self(l)
     }
 }
 
-pub struct LinkRequest<'a>(&'a LinkQuery);
+impl<'l> From<&'l VideoLink> for LinkRequest<'l, VideoLink> {
+    fn from(l: &'l VideoLink) -> Self {
+        Self(l)
+    }
+}
+impl<'l> From<&'l PlaylistLink> for LinkRequest<'l, PlaylistLink> {
+    fn from(l: &'l PlaylistLink) -> Self {
+        Self(l)
+    }
+}
+impl<'s> From<&'s Search> for LinkRequest<'s, Search> {
+    fn from(s: &'s Search) -> Self {
+        Self(s)
+        // unsafe { std::mem::transmute(s.as_str().trim_start_matches("ytdl://")) }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct LinkRequest<'l, L>(&'l L);
 pub struct VidId(String);
 
 pub struct ThumbnailRequest<T>(T);
@@ -65,9 +80,12 @@ pub struct Thumbnail<T> {
 
 pub struct YtdlBuilder<T>(T);
 
-impl<'l> YtdlBuilder<LinkRequest<'l>> {
-    pub fn new<L: Into<&'l LinkQuery>>(link: L) -> Self {
-        Self(LinkRequest(link.into()))
+impl<'l, L> YtdlBuilder<LinkRequest<'l, L>>
+where
+    LinkRequest<'l, L>: From<&'l L>,
+{
+    pub fn new(link: &'l L) -> Self {
+        Self(link.into())
     }
 }
 
@@ -102,37 +120,89 @@ impl<T> YtdlBuilder<T> {
     }
 }
 
-impl<'l, Y: 'static, T: YtdlParam<'l> + IntoResponse<Output = Y>> YtdlBuilder<T> {
+impl<'l, Y, T> YtdlBuilder<T>
+where
+    T: IntoResponse<Output = Y>,
+    T: YtdlParam<'l, Link = VideoLink>,
+{
     pub async fn request(self) -> Result<Ytdl<Y>, Error> {
         let n_fields = self.0.n_params();
-        match self.request_multiple()?.next().await {
-            Some(r) => r,
-            None => Err(YtdlError::InsufisientFields {
-                expected: n_fields,
-                found: 0,
-                fields: vec![],
-            }
-            .into()),
-        }
+        let link = self.0.link();
+        request_impl::<_, T, _>(link.as_ref(), n_fields)?
+            .next()
+            .await
+            .ok_or_else(|| {
+                Error::from(YtdlError::InsufisientFields {
+                    expected: n_fields,
+                    found: 0,
+                    fields: vec![],
+                })
+            })?
     }
+}
 
-    pub fn request_multiple(&self) -> Result<YtdlStream<Y>, Error> {
-        let mut cmd = Command::new("youtube-dl");
-        cmd.arg(&self.0.link().0);
-        T::collect(&mut cmd);
-
-        let mut child = cmd.kill_on_drop(true).stdout(Stdio::piped()).spawn()?;
-
+impl<'l, Y, T> YtdlBuilder<T>
+where
+    T: IntoResponse<Output = Y>,
+    T: YtdlParam<'l, Link = Search>,
+{
+    pub async fn search(self) -> Result<Ytdl<Y>, Error> {
         let n_fields = self.0.n_params();
-
-        Ok(YtdlStream {
-            stream: LinesStream::new(BufReader::new(child.stdout.take().unwrap()).lines())
-                .chunks(n_fields),
-            n_fields,
-            response: T::response,
-            _child: child,
-        })
+        request_impl::<_, T, _>(self.0.link().as_str().trim_start_matches("ytdl://"), n_fields)?
+            .next()
+            .await
+            .ok_or_else(|| {
+                Error::from(YtdlError::InsufisientFields {
+                    expected: n_fields,
+                    found: 0,
+                    fields: vec![],
+                })
+            })?
     }
+}
+
+impl<'l, Y, T> YtdlBuilder<T>
+where
+    T: IntoResponse<Output = Y>,
+    T: YtdlParam<'l, Link = PlaylistLink>,
+{
+    pub fn request_playlist(&self) -> Result<YtdlStream<Y>, Error> {
+        request_impl::<_, T, _>(&self.0.link().without_video_id(), self.0.n_params())
+    }
+}
+
+impl<'l, Y, T> YtdlBuilder<T>
+where
+    T: IntoResponse<Output = Y>,
+    T: YtdlParam<'l, Link = Search>,
+{
+    pub fn search_multiple(&self) -> Result<YtdlStream<Y>, Error> {
+        request_impl::<&str, T, Y>(
+            self.0.link().as_str().trim_start_matches("ytdl://"),
+            self.0.n_params(),
+        )
+    }
+}
+
+fn request_impl<'l, L, T, Y>(link: L, n_fields: usize) -> Result<YtdlStream<Y>, Error>
+where
+    T: IntoResponse<Output = Y>,
+    T: YtdlParam<'l>,
+    L: AsRef<OsStr>,
+{
+    let mut cmd = Command::new("youtube-dl");
+    cmd.arg(link);
+    T::collect(&mut cmd);
+
+    let mut child = cmd.kill_on_drop(true).stdout(Stdio::piped()).spawn()?;
+
+    Ok(YtdlStream {
+        stream: LinesStream::new(BufReader::new(child.stdout.take().unwrap()).lines())
+            .chunks(n_fields),
+        n_fields,
+        response: T::response,
+        _child: child,
+    })
 }
 
 #[pin_project]
@@ -175,24 +245,27 @@ impl<Y> Stream for YtdlStream<Y> {
 }
 
 impl<R: Response> Ytdl<R> {
-    pub fn id(&self) -> &LinkId {
-        LinkId::new(self.0.id())
+    pub fn id(&self) -> &VideoId {
+        VideoId::new(self.0.id())
     }
 }
 
 pub trait YtdlParam<'l>: sealed::Sealed {
+    type Link;
     fn collect(cmd: &mut Command);
-    fn link(&self) -> &'l LinkQuery;
+    fn link(&self) -> &'l Self::Link;
     fn n_params(&self) -> usize;
 }
 
-impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for TitleRequest<T> {
+impl<'l, L, T: YtdlParam<'l, Link = L>> YtdlParam<'l> for TitleRequest<T> {
+    type Link = L;
+
     fn collect(cmd: &mut Command) {
         cmd.arg("--get-title");
         T::collect(cmd);
     }
 
-    fn link(&self) -> &'l LinkQuery {
+    fn link(&self) -> &'l Self::Link {
         self.0.link()
     }
 
@@ -201,13 +274,15 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for TitleRequest<T> {
     }
 }
 
-impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for DurationRequest<T> {
+impl<'l, L, T: YtdlParam<'l, Link = L>> YtdlParam<'l> for DurationRequest<T> {
+    type Link = L;
+
     fn collect(cmd: &mut Command) {
         cmd.arg("--get-duration");
         T::collect(cmd);
     }
 
-    fn link(&self) -> &'l LinkQuery {
+    fn link(&self) -> &'l Self::Link {
         self.0.link()
     }
 
@@ -216,13 +291,15 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for DurationRequest<T> {
     }
 }
 
-impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for ThumbnailRequest<T> {
+impl<'l, L, T: YtdlParam<'l, Link = L>> YtdlParam<'l> for ThumbnailRequest<T> {
+    type Link = L;
+
     fn collect(cmd: &mut Command) {
         cmd.arg("--get-thumbnail");
         T::collect(cmd);
     }
 
-    fn link(&self) -> &'l LinkQuery {
+    fn link(&self) -> &'l Self::Link {
         self.0.link()
     }
 
@@ -231,12 +308,14 @@ impl<'l, T: YtdlParam<'l>> YtdlParam<'l> for ThumbnailRequest<T> {
     }
 }
 
-impl<'l> YtdlParam<'l> for LinkRequest<'l> {
+impl<'l, L> YtdlParam<'l> for LinkRequest<'l, L> {
+    type Link = L;
+
     fn collect(cmd: &mut Command) {
         cmd.arg("--get-id");
     }
 
-    fn link(&self) -> &'l LinkQuery {
+    fn link(&self) -> &'l Self::Link {
         self.0
     }
 
@@ -317,7 +396,7 @@ impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for ThumbnailRequest<
     }
 }
 
-impl IntoResponse for LinkRequest<'_> {
+impl<L> IntoResponse for LinkRequest<'_, L> {
     type Output = VidId;
     fn response<S>(buf: &mut Vec<S>) -> Self::Output
     where

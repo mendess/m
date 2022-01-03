@@ -5,6 +5,7 @@ use crate::util::selector;
 use anyhow::Context;
 use futures_util::TryStreamExt;
 use futures_util::{future::ready, Stream};
+use mlib::item::link::VideoLink;
 use mlib::{
     playlist::{self, Playlist, PlaylistIds, Song},
     queue::Queue,
@@ -42,9 +43,11 @@ pub async fn cat() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn new(link: Link, categories: Vec<String>) -> anyhow::Result<Link> {
-    let id = link.id();
-    if Playlist::contains_song(id).await? {
+pub async fn new(link: Link, categories: Vec<String>) -> anyhow::Result<VideoLink> {
+    let link = link
+        .into_video()
+        .map_err(|link| anyhow::anyhow!("{} is not a video link", link))?;
+    if Playlist::contains_song(link.id()).await? {
         return Err(anyhow::anyhow!("Song already in playlist"));
     }
     notify!("Fetching song info");
@@ -55,19 +58,20 @@ pub async fn new(link: Link, categories: Vec<String>) -> anyhow::Result<Link> {
 pub async fn add_playlist(
     link: &Link,
     categories: Vec<String>,
-) -> anyhow::Result<impl Stream<Item = anyhow::Result<Link>>> {
-    if !link.as_str().contains("playlist") {
-        return Err(anyhow::anyhow!("Not a playlist link"));
-    }
+) -> anyhow::Result<impl Stream<Item = anyhow::Result<VideoLink>>> {
+    let link = match link.as_playlist() {
+        Some(s) => s,
+        None => return Err(anyhow::anyhow!("Not a playlist link")),
+    };
     tracing::debug!("loading playlist ids");
     let playlist = PlaylistIds::load().await?;
-    let id_stream = YtdlBuilder::new(link).request_multiple()?;
+    let id_stream = YtdlBuilder::new(link).request_playlist()?;
     Ok(id_stream
         .map_err(anyhow::Error::from)
         .and_then(move |b| ready(Ok((playlist.contains(b.id().as_str()), b))))
         .try_filter_map(move |(success, b)| async move {
             if success {
-                Ok(Some(Link::from_id(b.id())))
+                Ok(Some(VideoLink::from_id(b.id())))
             } else {
                 notify!("song already in playlist"; content: "{}", ";");
                 Ok(None)
@@ -130,7 +134,7 @@ pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Re
     Ok(())
 }
 
-async fn add_song(link: Link, categories: HashSet<String>) -> anyhow::Result<()> {
+async fn add_song(link: VideoLink, categories: HashSet<String>) -> anyhow::Result<()> {
     let b = YtdlBuilder::new(&link)
         .get_title()
         .get_duration()

@@ -1,5 +1,6 @@
 use crate::{
-    id_from_path, playlist,
+    item::id_from_path,
+    playlist,
     socket::{self, cmds::QueueItemStatus, MpvSocket},
     Error, Link,
 };
@@ -97,7 +98,7 @@ impl Queue {
         match Item::from(current.filename) {
             Item::Link(l) => Ok(Item::Link(l)),
             Item::File(p) => Ok(id_from_path(&p)
-                .map(Link::from_id)
+                .map(Link::from_video_id)
                 .map(Item::Link)
                 .unwrap_or_else(|| Item::File(p))),
             Item::Search(s) => Ok(Item::Search(s)),

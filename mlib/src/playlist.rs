@@ -19,12 +19,12 @@ use tokio::{
     io::AsyncReadExt,
 };
 
-use crate::{Error, Link, LinkId};
+use crate::{item::link::VideoLink, Error, VideoId};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
     pub name: String,
-    pub link: Link,
+    pub link: VideoLink,
     pub time: u64,
     #[serde(default)]
     pub categories: uniq_vec::UniqVec<String>,
@@ -274,7 +274,7 @@ impl PlaylistIndexMut<'_> {
     }
 }
 
-pub async fn find_song(id: &LinkId) -> Result<Option<Song>, Error> {
+pub async fn find_song(id: &VideoId) -> Result<Option<Song>, Error> {
     let path = Playlist::path()?;
     let mut buf = Vec::new();
     File::open(&path).await?.read_to_end(&mut buf).await?;
@@ -294,7 +294,7 @@ pub async fn find_song(id: &LinkId) -> Result<Option<Song>, Error> {
             let not_enough_fields = || Error::PlaylistFile(String::from("not enough fields"));
             Ok(Some(Song {
                 name: i.next().ok_or_else(not_enough_fields)?,
-                link: Link::from_url(i.next().ok_or_else(not_enough_fields)?)
+                link: VideoLink::from_url(i.next().ok_or_else(not_enough_fields)?)
                     .map_err(|a| Error::PlaylistFile(format!("invalid link: {}", a)))?,
                 time: i
                     .next()

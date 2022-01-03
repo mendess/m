@@ -3,7 +3,6 @@
 
 use std::io;
 use thiserror::Error;
-use tokio::process::Command;
 
 #[cfg(feature = "downloads")]
 pub mod downloaded;
@@ -19,48 +18,36 @@ pub mod socket;
 pub mod ytdl;
 
 #[cfg(feature = "items")]
-pub(crate) use item::id_from_path;
-#[cfg(feature = "items")]
-pub use item::{Item, Link, LinkId, Search};
+pub use item::{Item, Link, Search, VideoId};
 
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("io: {0}")]
     Io(#[from] io::Error),
+
     #[cfg(feature = "playlist")]
     #[error("csv: {0}")]
     Csv(#[from] csv_async::Error),
+
     #[error("no mpv instance running")]
     NoMpvInstance,
+
     #[error("invalid socket path: {0}")]
     InvalidPath(&'static str),
+
     #[error("ipc error: {0}")]
     IpcError(String),
+
     #[error("can't find music directory")]
     MusicDirNotFound,
+
     #[error("failed to read playlist file: {0}")]
     PlaylistFile(String),
+
+    #[cfg(feature = "ytdl")]
     #[error("{0}")]
     YtdlError(#[from] ytdl::YtdlError),
-    #[cfg(feature = "ytdl")]
+
     #[error("invalid utf8 {0}")]
     Utf8Error(#[from] std::string::FromUtf8Error),
-}
-
-pub async fn update_bar() -> io::Result<()> {
-    let mut update_panel = dirs::config_dir()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "config dir not found"))?;
-    update_panel.push("m");
-    update_panel.push("update_panel.sh");
-    tracing::debug!(
-        "checking if update panel script (at {}) exists",
-        update_panel.display()
-    );
-    let metadata = tokio::fs::metadata(&update_panel).await;
-    tracing::debug!("metadata check for script {:?}", metadata);
-    if metadata.is_ok() {
-        Command::new("sh").arg(update_panel).spawn()?.wait().await?;
-    }
-
-    Ok(())
 }

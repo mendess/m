@@ -1,26 +1,21 @@
-use std::{io, path::PathBuf, process::Stdio};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use futures_util::{Stream, TryStreamExt};
 use glob::Paths;
-use once_cell::sync::Lazy;
 use tokio::{fs, process::Command};
 use tokio_stream::wrappers::ReadDirStream;
 
-use crate::{id_from_path, playlist::PlaylistIds, queue::Item, Error, Link};
+use crate::{item::id_from_path, playlist::PlaylistIds, queue::Item, Error, Link};
 
-fn dl_dir() -> Option<PathBuf> {
-    static PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
-        let mut p = dirs::audio_dir()?;
-        p.push("m");
-        Some(p)
-    });
-    PATH.clone()
-}
-
-pub async fn clean_downloads(
+pub async fn clean_downloads<P: AsRef<Path>>(
+    dl_dir: P,
     ids: &PlaylistIds,
 ) -> Result<impl Stream<Item = Result<PathBuf, io::Error>> + '_, crate::Error> {
-    let files = fs::read_dir(dl_dir().ok_or(crate::Error::MusicDirNotFound)?).await?;
+    let files = fs::read_dir(dl_dir).await?;
     Ok(
         ReadDirStream::new(files).try_filter_map(move |f| async move {
             if !f.metadata().await?.is_file() {
@@ -41,7 +36,7 @@ pub enum CheckCacheDecision {
     Skip,
 }
 
-pub async fn check_cache_ref(item: &mut Item) -> CheckCacheDecision {
+pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDecision {
     enum R {
         F(PathBuf),
         Error,
@@ -51,13 +46,12 @@ pub async fn check_cache_ref(item: &mut Item) -> CheckCacheDecision {
         Item::Link(l) => l,
         _ => return CheckCacheDecision::Skip,
     };
-    let dl_dir = match dl_dir() {
-        Some(d) => d,
-        None => return CheckCacheDecision::Skip,
-    };
     let mut s = dl_dir.to_string_lossy().into_owned();
     s.push_str("/*");
-    s.push_str(link.id());
+    s.push_str(match link.video_id() {
+        Some(id) => id,
+        None => return CheckCacheDecision::Skip,
+    });
     s.push_str("=m.*");
     let file = tokio::task::spawn_blocking(move || {
         tracing::debug!("searching cache using glob: {:?}", s);
@@ -99,8 +93,8 @@ pub async fn check_cache_ref(item: &mut Item) -> CheckCacheDecision {
     CheckCacheDecision::Skip
 }
 
-pub async fn download(link: Link) -> Result<Link, Error> {
-    let mut output_format = dl_dir().ok_or(Error::MusicDirNotFound)?;
+pub async fn download(dl_dir: PathBuf, link: Link) -> Result<Link, Error> {
+    let mut output_format = dl_dir;
     output_format.push("%(title)s=%(id)s=m.%(ext)s");
     Command::new("youtube-dl")
         .arg("-o")

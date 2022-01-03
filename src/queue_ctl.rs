@@ -1,7 +1,7 @@
 use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
     notify,
-    util::selector::selector,
+    util::{dl_dir, selector::selector},
 };
 
 use std::{
@@ -17,6 +17,7 @@ use futures_util::{
 use itertools::Itertools;
 use mlib::{
     downloaded::{check_cache_ref, CheckCacheDecision},
+    item::{link::VideoLink, PlaylistLink},
     playlist::Playlist,
     queue::{Item, Queue},
     socket::{cmds as sock_cmds, MpvSocket},
@@ -89,18 +90,22 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     stream::iter(queue.iter())
         .map(|i| async {
             let s = match &i.item {
-                Item::Link(l) => YtdlBuilder::new(l)
-                    .get_title()
-                    .request()
-                    .await
-                    .map(|b| b.title())
-                    .unwrap_or_else(|l| l.to_string()),
+                // TODO: should be able to move here
+                Item::Link(l) => match l.as_video() {
+                    Ok(l) => YtdlBuilder::new(l)
+                        .get_title()
+                        .request()
+                        .await
+                        .map(|b| b.title())
+                        .unwrap_or_else(|l| l.to_string()),
+                    Err(_) => l.to_string(),
+                },
                 Item::File(f) => mlib::item::clean_up_path(&f)
                     .map(ToString::to_string)
                     .unwrap_or_else(|| f.to_string_lossy().into_owned()),
                 Item::Search(s) => YtdlBuilder::new(s)
                     .get_title()
-                    .request()
+                    .search()
                     .await
                     .map(|b| b.title())
                     .unwrap_or_else(|l| l.to_string()),
@@ -148,7 +153,7 @@ pub async fn queue(
     let mut n_targets = 0;
     let mut notify_tasks = FuturesUnordered::new();
     for mut item in items.into_iter().inspect(|_| n_targets += 1) {
-        check_cache_ref(&mut item).await;
+        check_cache_ref(dl_dir()?, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
         socket
@@ -236,11 +241,22 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
     tracing::debug!("image tmp path: {}", img_path.display());
     let title = match item {
         Item::Link(l) => {
-            let b = YtdlBuilder::new(&l)
-                .get_title()
-                .get_thumbnail()
-                .request()
-                .await?;
+            let b = match l.into_video() {
+                Ok(v) => {
+                    YtdlBuilder::new(&v)
+                        .get_title()
+                        .get_thumbnail()
+                        .request()
+                        .await?
+                }
+                Err(pl) => YtdlBuilder::new(&pl)
+                    .get_title()
+                    .get_thumbnail()
+                    .request_playlist()?
+                    .next()
+                    .await
+                    .ok_or_else(|| anyhow::anyhow!("playlist was emtpy"))??,
+            };
             tracing::debug!("thumbnail: {}", b.thumbnail());
             let thumb = reqwest::get(b.thumbnail()).await?;
             let mut byte_stream = thumb.bytes_stream();
@@ -392,7 +408,7 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     let mut items = items.into_iter().collect::<Vec<_>>();
     let to_download = stream::iter(items.iter_mut())
         .map(|i| async {
-            match check_cache_ref(i).await {
+            match check_cache_ref(dl_dir().ok()?, i).await {
                 CheckCacheDecision::Download(l) => Some(l),
                 CheckCacheDecision::Skip => None,
             }
@@ -503,14 +519,14 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                 None => return Ok(()),
                 Some(name) => vec![playlist
                     .find_song(|s| s.name == name)
-                    .map(|idx| Item::Link(idx.link.clone()))
+                    .map(|idx| Item::Link(idx.link.clone().into()))
                     .unwrap_or_else(|| Item::Search(Search::new(name)))],
             }
         }
         "random" => match playlist.0.choose(&mut rngs::OsRng) {
             Some(x) => {
                 loop_list = false;
-                vec![Item::Link(x.link.clone())]
+                vec![Item::Link(x.link.clone().into())]
             }
             None => return Err(anyhow::anyhow!("empty playlist")),
         },
@@ -519,7 +535,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                 .0
                 .into_iter()
                 .rev()
-                .map(|l| Item::Link(l.link))
+                .map(|l| Item::Link(l.link.into()))
                 .collect::<Vec<_>>();
             l.shuffle(&mut rngs::OsRng);
             l
@@ -539,7 +555,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                 .0
                 .into_iter()
                 .filter(|s| s.categories.contains(&category))
-                .map(|l| Item::Link(l.link))
+                .map(|l| Item::Link(l.link.into()))
                 .collect()
         }
         "clipboard" => {
@@ -553,13 +569,15 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
         _ => return Ok(()),
     };
 
-    fn expand_playlist<'l>(l: &'l Link) -> Result<impl Stream<Item = Item> + 'static, Error> {
+    fn expand_playlist<'l>(
+        l: &'l PlaylistLink,
+    ) -> Result<impl Stream<Item = VideoLink> + 'static, Error> {
         Ok(YtdlBuilder::new(l)
-            .request_multiple()?
-            .then(|id| async { id.map(|b| Link::from_id(b.id())) })
+            .request_playlist()?
+            .then(|id| async { id.map(|b| VideoLink::from_id(b.id())) })
             .filter_map(|r| async {
                 match r {
-                    Ok(x) => Some(Item::Link(x)),
+                    Ok(x) => Some(x),
                     Err(e) => {
                         tracing::error!("failed to load id {:?}", e);
                         None
@@ -570,10 +588,11 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
 
     vids = stream::iter(vids)
         .flat_map(|i| match i {
-            Item::Link(l) => {
-                if l.as_str().contains("playlist") {
-                    match expand_playlist(&l) {
-                        Ok(s) => Box::pin(s) as Pin<Box<dyn Stream<Item = Item>>>,
+            Item::Link(mut l) => {
+                if let Some(playlist) = l.as_playlist_mut() {
+                    match expand_playlist(playlist) {
+                        Ok(s) => Box::pin(s.map(|l| Item::Link(l.into())))
+                            as Pin<Box<dyn Stream<Item = Item>>>,
                         Err(_) => Box::pin(stream::once(ready(Item::Link(l)))),
                     }
                 } else {
