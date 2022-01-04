@@ -61,7 +61,7 @@
 
 ## Idk, it just depends on stuff before it
 
- - [ ] interactive        Enter interactive mode
+ - [x] interactive        Enter interactive mode
      depends on current
 
 ## Queue management

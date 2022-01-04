@@ -174,7 +174,10 @@ impl VideoLink {
     }
 
     fn is_video_link(s: &str) -> bool {
-        s.starts_with("http") && s.contains(Self::QUERY_PARAM)
+        static SHORT_LINK_PAT: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"https?://youtu\.be/[0-9a-zA-Z_\-]+$").unwrap());
+
+        s.starts_with("http") && (s.contains(Self::QUERY_PARAM) || SHORT_LINK_PAT.is_match(s))
     }
 }
 

@@ -31,23 +31,11 @@ use crate::{
     util::{dl_dir, selector},
 };
 
-async fn run() -> anyhow::Result<()> {
-    if args().next().as_deref() == Some(queue_ctl::ARG_0) {
-        return download_ctl::download(args().skip(1)).await;
-    }
-    let args = match Args::from_args_safe() {
-        Ok(args) => args,
-        Err(e) => {
-            if let SessionKind::Gui = SessionKind::current().await {
-                error!("Invalid arguments"; content: "{:?}", e)
-            }
-            e.exit()
-        }
-    };
-    if let Some(id) = args.socket {
-        mlib::socket::override_lattest(id);
-    }
-    match args.cmd {
+use async_recursion::async_recursion;
+
+#[async_recursion(?Send)]
+async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
+    match cmd {
         Command::Socket { new } => {
             if new.is_some() {
                 println!("{}", MpvSocket::new_unconnected().await?.path().display());
@@ -182,12 +170,34 @@ async fn run() -> anyhow::Result<()> {
         Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
         Command::Playlist => queue_ctl::run_interactive_playlist().await?,
         Command::Status => player_ctl::status().await?,
+        Command::Interactive => player_ctl::interactive().await?,
         _ => todo!(),
     }
-
     tracing::debug!("updating bar");
     // TODO: move this somewhere that only runs when actual updates happen
     util::update_bar().await?;
+
+    Ok(())
+}
+
+async fn run() -> anyhow::Result<()> {
+    if args().next().as_deref() == Some(queue_ctl::ARG_0) {
+        return download_ctl::download(args().skip(1)).await;
+    }
+    let args = match Args::from_args_safe() {
+        Ok(args) => args,
+        Err(e) => {
+            if let SessionKind::Gui = SessionKind::current().await {
+                error!("Invalid arguments"; content: "{:?}", e)
+            }
+            e.exit()
+        }
+    };
+    if let Some(id) = args.socket {
+        mlib::socket::override_lattest(id);
+    }
+
+    process_cmd(args.cmd).await?;
 
     Ok(())
 }

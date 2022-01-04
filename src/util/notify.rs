@@ -1,6 +1,15 @@
-use std::{io, path::Path};
+use std::{
+    io::{self, stdout, StdoutLock, Write},
+    path::Path,
+};
 
 use crate::util::session_kind::SessionKind;
+use crossterm::{
+    cursor::MoveToNextLine,
+    style::{Attribute, Color, Print, SetAttribute, SetForegroundColor},
+    tty::IsTty,
+    QueueableCommand,
+};
 use tokio::process::Command;
 
 #[macro_export]
@@ -90,77 +99,100 @@ impl<'path> Notify<'path> {
     }
 
     pub async fn notify(&self) -> io::Result<()> {
-        if self.force_notify || SessionKind::current().await == SessionKind::Gui {
-            let mut cmd = Command::new("notify-send");
-            if self.error {
-                cmd.args(["--urgency", "critical"]);
+        trait BoolPaint {
+            fn paint<T: crossterm::Command>(
+                self,
+                stdout: &mut StdoutLock,
+                cmd: T,
+            ) -> io::Result<()>;
+        }
+        impl BoolPaint for bool {
+            fn paint<T: crossterm::Command>(
+                self,
+                stdout: &mut StdoutLock,
+                cmd: T,
+            ) -> io::Result<()> {
+                self.then(|| stdout.queue(cmd))
+                    .map(|_| Ok(()))
+                    .unwrap_or(Ok(()))
             }
-            if let Some(img) = self.img {
-                cmd.arg("-i");
-                cmd.arg(img);
+        }
+        fn print(stdout: &mut StdoutLock, s: &str) -> io::Result<()> {
+            for line in s.split_inclusive('\n') {
+                if line.ends_with('\n') {
+                    stdout.queue(Print(&line[..(line.len().saturating_sub(2))]))?;
+                    stdout.queue(MoveToNextLine(1))?;
+                } else {
+                    stdout.queue(Print(line))?;
+                }
             }
-            cmd.args(["-a", "m"]);
-            cmd.arg(format!(
-                "{}{}",
-                if self.error { "Error: " } else { "" },
-                triplets(&self.title.replace("\t", ""))
-                    .map(|(s, _)| s)
-                    .collect::<String>()
-            ));
-            if let Some(content) = &self.content {
-                cmd.arg(
-                    triplets(&content.replace("\t", ""))
+            Ok(())
+        }
+        match SessionKind::current().await {
+            SessionKind::Cli if !self.force_notify => {
+                let stdout = stdout();
+                let mut stdout = stdout.lock();
+                let is_tty = stdout.is_tty();
+                is_tty.paint(&mut stdout, SetAttribute(Attribute::Bold))?;
+                if self.error {
+                    is_tty.paint(&mut stdout, SetForegroundColor(Color::Red))?;
+                    stdout.queue(Print("Error: "))?;
+                    is_tty.paint(&mut stdout, SetForegroundColor(Color::Reset))?;
+                }
+                for (s, c) in triplets(&self.title) {
+                    print(&mut stdout, s)?;
+                    if let Some(x) = match c {
+                        "b" => Some(Color::Blue),
+                        "w" => Some(Color::White),
+                        "r" => Some(Color::Reset),
+                        _ => None,
+                    } {
+                        is_tty.paint(&mut stdout, SetForegroundColor(x))?;
+                    }
+                }
+                stdout.queue(MoveToNextLine(1))?;
+                is_tty.paint(&mut stdout, SetAttribute(Attribute::Reset))?;
+                if let Some(content) = &self.content {
+                    for (s, c) in triplets(content) {
+                        print(&mut stdout, s)?;
+                        if let Some(x) = match c {
+                            "b" => Some(Color::Blue),
+                            "w" => Some(Color::White),
+                            "r" => Some(Color::Reset),
+                            _ => None,
+                        } {
+                            is_tty.paint(&mut stdout, SetForegroundColor(x))?;
+                        }
+                    }
+                    stdout.queue(MoveToNextLine(1))?;
+                }
+                stdout.flush()?;
+            }
+            _ => {
+                let mut cmd = Command::new("notify-send");
+                if self.error {
+                    cmd.args(["--urgency", "critical"]);
+                }
+                if let Some(img) = self.img {
+                    cmd.arg("-i");
+                    cmd.arg(img);
+                }
+                cmd.args(["-a", "m"]);
+                cmd.arg(format!(
+                    "{}{}",
+                    if self.error { "Error: " } else { "" },
+                    triplets(&self.title.replace("\t", ""))
                         .map(|(s, _)| s)
-                        .collect::<String>(),
-                );
-            }
-            cmd.spawn()?.wait().await?;
-        } else {
-            match try_color_stdout() {
-                Some(mut t) => {
-                    t.attr(term::Attr::Bold)?;
-                    if self.error {
-                        t.fg(term::color::RED)?;
-                        t.write_all(b"Error: ")?;
-                        t.fg(term::color::WHITE)?;
-                    }
-                    for (s, c) in triplets(&self.title) {
-                        t.write_all(s.as_bytes())?;
-                        match c {
-                            "b" => t.fg(term::color::BLUE)?,
-                            "r" | "w" => t.fg(term::color::WHITE)?,
-                            _ => (),
-                        }
-                    }
-                    t.write_all(b"\n")?;
-                    t.reset()?;
-                    if let Some(content) = &self.content {
-                        for (s, c) in triplets(content) {
-                            t.write_all(s.as_bytes())?;
-                            match c {
-                                "b" => t.fg(term::color::BLUE)?,
-                                "r" | "w" => t.fg(term::color::WHITE)?,
-                                _ => (),
-                            }
-                        }
-                        t.write_all(b"\n")?;
-                    }
+                        .collect::<String>()
+                ));
+                if let Some(content) = &self.content {
+                    cmd.arg(
+                        triplets(&content.replace("\t", ""))
+                            .map(|(s, _)| s)
+                            .collect::<String>(),
+                    );
                 }
-                None => {
-                    if self.error {
-                        print!("Error: ");
-                    }
-                    for (s, _) in triplets(&self.title) {
-                        print!("{}", s);
-                    }
-                    println!();
-                    if let Some(content) = &self.content {
-                        for (s, _) in triplets(content) {
-                            print!("{}", s);
-                        }
-                        println!();
-                    }
-                }
+                cmd.spawn()?.wait().await?;
             }
         }
         Ok(())
@@ -202,10 +234,6 @@ impl<'s> Iterator for Triplets<'s> {
             }
         }
     }
-}
-
-pub fn try_color_stdout() -> Option<Box<term::StdoutTerminal>> {
-    atty::is(atty::Stream::Stdout).then(term::stdout).flatten()
 }
 
 #[cfg(test)]

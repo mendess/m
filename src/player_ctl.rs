@@ -1,11 +1,19 @@
+use std::io::{stdout, Write};
+
 use super::arg_parse::Amount;
 
 use anyhow::Context;
+use crossterm::{
+    cursor::{self, MoveTo},
+    terminal::{Clear, ClearType},
+    QueueableCommand,
+};
 use futures_util::stream::StreamExt;
 use mlib::{
     queue::{self, Queue},
     socket::{self, cmds, MpvSocket},
 };
+use structopt::StructOpt;
 
 use crate::notify;
 
@@ -116,6 +124,73 @@ pub async fn status() -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+struct RawMode;
+impl RawMode {
+    fn enable() -> crossterm::Result<Self> {
+        crossterm::terminal::enable_raw_mode().map(|_| Self)
+    }
+}
+impl Drop for RawMode {
+    fn drop(&mut self) {
+        if let Err(e) = crossterm::terminal::disable_raw_mode() {
+            eprintln!("failed to disable raw mode: {:?}", e);
+        } else {
+            tracing::trace!("leaving raw mode");
+        }
+    }
+}
+
+pub async fn interactive() -> anyhow::Result<()> {
+    use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+
+    let _guard = RawMode::enable()?;
+    let (column, row) = cursor::position()?;
+    let show_current = || async {
+        let r = stdout()
+            .lock()
+            .queue(MoveTo(column, row))
+            .and_then(|s| s.queue(Clear(ClearType::FromCursorDown)))
+            .and_then(|s| s.flush());
+        match r {
+            Ok(_) => {
+                super::process_cmd(crate::arg_parse::Command::Current { notify: false, link: false }).await
+            }
+            Err(e) => Err(e.into())
+        }
+    };
+    let mut error = None;
+    loop {
+        show_current().await?;
+        if let Some(cmd) = error.take() {
+            crate::error!("invalid command: {}", cmd);
+        }
+        let cmd = event::read()?;
+        match cmd {
+            Event::Key(KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                let mut buf = [0; 4];
+                let cmd = c.encode_utf8(&mut buf);
+                if let Ok(cmd) = crate::arg_parse::Command::from_iter_safe(["", &*cmd]) {
+                    if matches!(cmd, crate::arg_parse::Command::Current { .. }) {
+                        show_current().await?;
+                    } else {
+                        super::process_cmd(cmd).await?
+                    }
+                } else {
+                    error = Some(String::from(cmd));
+                }
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('c' | 'd'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => return Ok(()),
+            _ => {}
+        }
+    }
 }
 
 async fn fire<S: AsRef<[u8]>>(c: S) -> anyhow::Result<()> {
