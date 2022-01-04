@@ -118,13 +118,17 @@ impl<'path> Notify<'path> {
             }
         }
         fn print(stdout: &mut StdoutLock, s: &str) -> io::Result<()> {
-            for line in s.split_inclusive('\n') {
-                if line.ends_with('\n') {
-                    stdout.queue(Print(&line[..(line.len().saturating_sub(2))]))?;
-                    stdout.queue(MoveToNextLine(1))?;
-                } else {
-                    stdout.queue(Print(line))?;
+            if crossterm::terminal::is_raw_mode_enabled()? {
+                for line in s.split_inclusive('\n') {
+                    if line.ends_with('\n') {
+                        stdout.queue(Print(&line[..(line.len().saturating_sub(2))]))?;
+                        stdout.queue(MoveToNextLine(1))?;
+                    } else {
+                        stdout.queue(Print(line))?;
+                    }
                 }
+            } else {
+                stdout.write_all(s.as_bytes())?;
             }
             Ok(())
         }
@@ -150,7 +154,11 @@ impl<'path> Notify<'path> {
                         is_tty.paint(&mut stdout, SetForegroundColor(x))?;
                     }
                 }
-                stdout.queue(MoveToNextLine(1))?;
+                if crossterm::terminal::is_raw_mode_enabled()? {
+                    stdout.queue(MoveToNextLine(1))?;
+                } else {
+                    stdout.write_all(b"\n")?;
+                }
                 is_tty.paint(&mut stdout, SetAttribute(Attribute::Reset))?;
                 if let Some(content) = &self.content {
                     for (s, c) in triplets(content) {
@@ -164,7 +172,11 @@ impl<'path> Notify<'path> {
                             is_tty.paint(&mut stdout, SetForegroundColor(x))?;
                         }
                     }
-                    stdout.queue(MoveToNextLine(1))?;
+                    if crossterm::terminal::is_raw_mode_enabled()? {
+                        stdout.queue(MoveToNextLine(1))?;
+                    } else {
+                        stdout.write_all(b"\n")?;
+                    }
                 }
                 stdout.flush()?;
             }
