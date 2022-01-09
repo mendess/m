@@ -6,7 +6,7 @@ mod queue_ctl;
 mod util;
 
 use arg_parse::{Args, Command, DeleteSong, New, Play};
-use futures_util::{future::ready, StreamExt, TryFutureExt, TryStreamExt};
+use futures_util::{future::ready, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
 use mlib::{
     downloaded::clean_downloads,
@@ -70,17 +70,32 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         }) => {
             let link = if search {
                 let search = Search::multiple(link, 10);
+                notify!("searching for 10 videos....");
                 let results = YtdlBuilder::new(&search)
                     .get_title()
                     .search_multiple()?
                     .try_collect::<Vec<_>>()
                     .await?;
-                match selector::selector(results.iter().map(|l| l.title_ref()), "pick", 10).await? {
-                    Some(pick) => results
-                        .into_iter()
-                        .find(|l| l.title_ref() == pick)
-                        .map(|l| Link::from_video_id(l.id()))
-                        .ok_or_else(|| anyhow::anyhow!("not in the list"))?,
+                let titles = results.iter().map(|l| l.title_ref()).collect::<Vec<_>>();
+                let results_ref = &results;
+                match selector::interative_select(
+                    &titles,
+                    [(
+                        'p',
+                        Box::new(|_, i| {
+                            async move {
+                                notify!("loading preview....");
+                                if let Err(e) = util::preview_video(results_ref[i].id()).await {
+                                    notify!("Error previewing"; content: "{}", e)
+                                }
+                            }
+                            .boxed()
+                        }),
+                    )],
+                )
+                .await?
+                {
+                    Some(pick) => Link::from_video_id(results[pick].id()),
                     None => return Ok(()),
                 }
             } else {
@@ -171,7 +186,20 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Playlist => queue_ctl::run_interactive_playlist().await?,
         Command::Status => player_ctl::status().await?,
         Command::Interactive => player_ctl::interactive().await?,
-        _ => todo!(),
+        Command::Lyrics => {
+            dbg!(
+                selector::interative_select(
+                    &["option 1", "option 2"],
+                    [(
+                        'p',
+                        Box::new(|e, _| {
+                            async move { notify!("{}", e; force_notify: true) }.boxed()
+                        })
+                    )]
+                )
+                .await
+            )?;
+        }
     }
     tracing::debug!("updating bar");
     // TODO: move this somewhere that only runs when actual updates happen

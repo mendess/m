@@ -2,6 +2,8 @@ pub mod notify;
 pub mod selector;
 pub mod session_kind;
 
+use mlib::item::link::VideoLink;
+use mlib::VideoId;
 use once_cell::sync::Lazy;
 use std::io;
 use std::path::PathBuf;
@@ -33,4 +35,30 @@ pub async fn update_bar() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+pub async fn preview_video(l: &VideoId) -> anyhow::Result<()> {
+    Command::new("mpv")
+        .args(["--start=20", "--geometry=820x466", "--no-terminal"])
+        .arg(VideoLink::from_id(l))
+        .spawn()?
+        .wait()
+        .await?;
+    Ok(())
+}
+
+pub struct RawMode;
+impl RawMode {
+    pub fn enable() -> crossterm::Result<Self> {
+        crossterm::terminal::enable_raw_mode().map(|_| Self)
+    }
+}
+impl Drop for RawMode {
+    fn drop(&mut self) {
+        if let Err(e) = crossterm::terminal::disable_raw_mode() {
+            eprintln!("failed to disable raw mode: {:?}", e);
+        } else {
+            tracing::trace!("leaving raw mode");
+        }
+    }
 }

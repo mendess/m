@@ -126,23 +126,8 @@ pub async fn status() -> anyhow::Result<()> {
     Ok(())
 }
 
-struct RawMode;
-impl RawMode {
-    fn enable() -> crossterm::Result<Self> {
-        crossterm::terminal::enable_raw_mode().map(|_| Self)
-    }
-}
-impl Drop for RawMode {
-    fn drop(&mut self) {
-        if let Err(e) = crossterm::terminal::disable_raw_mode() {
-            eprintln!("failed to disable raw mode: {:?}", e);
-        } else {
-            tracing::trace!("leaving raw mode");
-        }
-    }
-}
-
 pub async fn interactive() -> anyhow::Result<()> {
+    use crate::util::RawMode;
     use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
     let _guard = RawMode::enable()?;
@@ -155,9 +140,13 @@ pub async fn interactive() -> anyhow::Result<()> {
             .and_then(|s| s.flush());
         match r {
             Ok(_) => {
-                super::process_cmd(crate::arg_parse::Command::Current { notify: false, link: false }).await
+                super::process_cmd(crate::arg_parse::Command::Current {
+                    notify: false,
+                    link: false,
+                })
+                .await
             }
-            Err(e) => Err(e.into())
+            Err(e) => Err(e.into()),
         }
     };
     let mut error = None;
