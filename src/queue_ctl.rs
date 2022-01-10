@@ -5,7 +5,8 @@ use crate::{
 };
 
 use std::{
-    collections::HashSet, io::Write, path::PathBuf, pin::Pin, process::Stdio, time::Duration,
+    collections::HashSet, future, io::Write, path::PathBuf, pin::Pin, process::Stdio,
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -152,7 +153,35 @@ pub async fn queue(
     }
     let mut n_targets = 0;
     let mut notify_tasks = FuturesUnordered::new();
-    for mut item in items.into_iter().inspect(|_| n_targets += 1) {
+    let mut items = stream::iter(items.into_iter())
+        .flat_map(|i| match i {
+            Item::Link(Link::Playlist(l)) => match YtdlBuilder::new(&l).request_playlist() {
+                Ok(plylist) => Box::pin(
+                    plylist
+                        .filter_map(|r| async {
+                            match r {
+                                Ok(x) => Some(x),
+                                Err(e) => {
+                                    crate::error!(
+                                    "failed to parse playlist item when expanding playlist: {:?}",
+                                    e
+                                );
+                                    None
+                                }
+                            }
+                        })
+                        .map(|l| Item::Link(Link::from(VideoLink::from_id(l.id())))),
+                ),
+                Err(e) => {
+                    tracing::error!("failed to expand: {:?}", e);
+                    Box::pin(stream::once(future::ready(Item::Link(Link::Playlist(l)))))
+                        as Pin<Box<dyn Stream<Item = Item>>>
+                }
+            },
+            x => Box::pin(stream::once(future::ready(x))),
+        })
+        .inspect(|_| n_targets += 1);
+    while let Some(mut item) = items.next().await {
         check_cache_ref(dl_dir()?, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
