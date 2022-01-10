@@ -186,6 +186,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Playlist => queue_ctl::run_interactive_playlist().await?,
         Command::Status => player_ctl::status().await?,
         Command::Interactive => player_ctl::interactive().await?,
+        Command::CacheStatus => download_ctl::cache_status().await?,
         Command::Lyrics => {
             dbg!(
                 selector::interative_select(
@@ -209,8 +210,8 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
-    if args().next().as_deref() == Some(queue_ctl::ARG_0) {
-        return download_ctl::download(args().skip(1)).await;
+    if args().next().as_deref() == Some(download_ctl::ARG_0) {
+        return download_ctl::download_daemon().await;
     }
     let args = match Args::from_args_safe() {
         Ok(args) => args,

@@ -1,4 +1,5 @@
 pub mod cmds;
+pub mod event;
 
 use std::{
     any::TypeId,
@@ -14,9 +15,12 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tokio::{io::AsyncWriteExt, net::UnixStream};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::UnixStream,
+};
 
-use self::cmds::command::{Compute, Execute};
+use self::cmds::command::{Compute, Execute, Property};
 use crate::Error;
 use arc_swap::ArcSwapOption;
 
@@ -298,6 +302,66 @@ impl MpvSocket<UnixStream> {
         C: Execute<N>,
     {
         self.mpv_do::<_, DevNull>(cmd.cmd().as_slice()).await?;
+        Ok(())
+    }
+
+    pub async fn observe<P, F>(&mut self, mut f: F) -> Result<(), Error>
+    where
+        P: Property,
+        F: FnMut(P::Output),
+    {
+        tracing::debug!(
+            "trying to observe a property of type: {}",
+            std::any::type_name::<P>()
+        );
+        tracing::debug!("Checking if socket is writable");
+        self.socket.writable().await?;
+        tracing::debug!(
+            r#"Writing to the socket '["observe_property", {:?}]'"#,
+            P::NAME
+        );
+        let v =
+            serde_json::to_vec(&serde_json::json!({ "command": ["observe_property", 1, P::NAME] }))
+                .expect("serialization to never fail");
+        // TODO: check return of 0?
+        self.writeln(&v).await?;
+
+        let mut lines = BufReader::new(&mut self.socket).lines();
+        if let Some(line) = lines.next_line().await? {
+            #[derive(Deserialize, Debug)]
+            struct Status<'s> {
+                error: &'s str,
+            }
+            match serde_json::from_str::<Status<'_>>(&line) {
+                Ok(Status { error: "success" }) => {}
+                Ok(Status { error: _ }) => {
+                    return Err(Error::IpcError(format!(
+                        "failed to observe property {:?}: {:?}",
+                        P::NAME,
+                        line
+                    )))
+                }
+                Err(e) => {
+                    return Err(Error::IpcError(format!(
+                        "failed to deserialize status from {:?}: {:?}",
+                        line,
+                        e
+                    )))
+                }
+            }
+        }
+        while let Some(line) = lines.next_line().await? {
+            #[derive(Deserialize, Debug)]
+            struct Event<O> {
+                data: O,
+            }
+            match serde_json::from_str::<Event<P::Output>>(&line) {
+                Ok(Event { data }) => f(data),
+                Err(e) => {
+                    tracing::error!("failed to deserialize {:?}: {:?}", line, e)
+                }
+            }
+        }
         Ok(())
     }
 }

@@ -644,6 +644,7 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
+ "whoami",
 ]
 
 [[package]]
@@ -725,6 +726,8 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-log",
+ "tracing-subscriber",
  "whoami",
 ]
 
@@ -1407,6 +1410,7 @@ dependencies = [
  "mio",
  "num_cpus",
  "once_cell",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "tokio-macros",

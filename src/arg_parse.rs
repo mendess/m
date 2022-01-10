@@ -142,6 +142,9 @@ pub enum Command {
 
     /// Status
     Status,
+
+    /// Cache Status
+    CacheStatus,
 }
 
 fn parse_new(s: &str) -> Result<(), &'static str> {

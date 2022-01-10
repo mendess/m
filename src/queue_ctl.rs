@@ -1,12 +1,12 @@
 use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
+    download_ctl::check_cache_ref,
     notify,
     util::{dl_dir, selector::selector},
 };
 
 use std::{
-    collections::HashSet, future, io::Write, path::PathBuf, pin::Pin, process::Stdio,
-    time::Duration,
+    collections::HashSet, io::Write, path::PathBuf, pin::Pin, process::Stdio, time::Duration,
 };
 
 use anyhow::Context;
@@ -17,13 +17,12 @@ use futures_util::{
 };
 use itertools::Itertools;
 use mlib::{
-    downloaded::{check_cache_ref, CheckCacheDecision},
     item::{link::VideoLink, PlaylistLink},
     playlist::Playlist,
     queue::{Item, Queue},
     socket::{cmds as sock_cmds, MpvSocket},
     ytdl::YtdlBuilder,
-    Error, Link, Search,
+    Error, Search,
 };
 use rand::{prelude::SliceRandom, rngs};
 use tempfile::NamedTempFile;
@@ -153,34 +152,7 @@ pub async fn queue(
     }
     let mut n_targets = 0;
     let mut notify_tasks = FuturesUnordered::new();
-    let mut items = stream::iter(items.into_iter())
-        .flat_map(|i| match i {
-            Item::Link(Link::Playlist(l)) => match YtdlBuilder::new(&l).request_playlist() {
-                Ok(plylist) => Box::pin(
-                    plylist
-                        .filter_map(|r| async {
-                            match r {
-                                Ok(x) => Some(x),
-                                Err(e) => {
-                                    crate::error!(
-                                    "failed to parse playlist item when expanding playlist: {:?}",
-                                    e
-                                );
-                                    None
-                                }
-                            }
-                        })
-                        .map(|l| Item::Link(Link::from(VideoLink::from_id(l.id())))),
-                ),
-                Err(e) => {
-                    tracing::error!("failed to expand: {:?}", e);
-                    Box::pin(stream::once(future::ready(Item::Link(Link::Playlist(l)))))
-                        as Pin<Box<dyn Stream<Item = Item>>>
-                }
-            },
-            x => Box::pin(stream::once(future::ready(x))),
-        })
-        .inspect(|_| n_targets += 1);
+    let mut items = expand_playlists(items).inspect(|_| n_targets += 1);
     while let Some(mut item) = items.next().await {
         check_cache_ref(dl_dir()?, &mut item).await;
         print!("Queuing song: {} ... ", item);
@@ -435,19 +407,19 @@ pub async fn load(file: PathBuf) -> anyhow::Result<()> {
 
 pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> anyhow::Result<()> {
     let mut items = items.into_iter().collect::<Vec<_>>();
-    let to_download = stream::iter(items.iter_mut())
-        .map(|i| async {
-            match check_cache_ref(dl_dir().ok()?, i).await {
-                CheckCacheDecision::Download(l) => Some(l),
-                CheckCacheDecision::Skip => None,
-            }
+    // let to_download = stream::iter(items.iter_mut())
+    //     .then(|i| async { check_cache_ref(dl_dir().ok()?, i).await })
+    //     .buffered(16)
+    //     .await;
+    stream::iter(items.iter_mut())
+        .for_each_concurrent(16, |i| async {
+            let dl_dir = match dl_dir() {
+                Ok(d) => d,
+                Err(_) => return,
+            };
+            check_cache_ref(dl_dir, i).await
         })
-        .buffered(16)
-        .filter_map(futures_util::future::ready)
-        .collect::<Vec<_>>()
         .await;
-
-    start_background_download(to_download).await;
 
     let mut items = items.into_iter().peekable();
     let first = items.by_ref().take(20);
@@ -502,22 +474,6 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     }
 
     Ok(())
-}
-
-pub const ARG_0: &str = "into-the-m-verse";
-
-pub async fn start_background_download(to_download: Vec<Link>) {
-    use std::{os::unix::process::CommandExt, process::Command};
-    let child = Command::new("/proc/self/exe")
-        .arg0(ARG_0)
-        .args(to_download.into_iter().map(Link::into_string))
-        .spawn();
-    match child {
-        Ok(_) => {}
-        Err(e) => {
-            crate::error!("failed to start myself: {:?}", e);
-        }
-    }
 }
 
 pub async fn run_interactive_playlist() -> anyhow::Result<()> {
@@ -598,40 +554,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
         _ => return Ok(()),
     };
 
-    fn expand_playlist<'l>(
-        l: &'l PlaylistLink,
-    ) -> Result<impl Stream<Item = VideoLink> + 'static, Error> {
-        Ok(YtdlBuilder::new(l)
-            .request_playlist()?
-            .then(|id| async { id.map(|b| VideoLink::from_id(b.id())) })
-            .filter_map(|r| async {
-                match r {
-                    Ok(x) => Some(x),
-                    Err(e) => {
-                        tracing::error!("failed to load id {:?}", e);
-                        None
-                    }
-                }
-            }))
-    }
-
-    vids = stream::iter(vids)
-        .flat_map(|i| match i {
-            Item::Link(mut l) => {
-                if let Some(playlist) = l.as_playlist_mut() {
-                    match expand_playlist(playlist) {
-                        Ok(s) => Box::pin(s.map(|l| Item::Link(l.into())))
-                            as Pin<Box<dyn Stream<Item = Item>>>,
-                        Err(_) => Box::pin(stream::once(ready(Item::Link(l)))),
-                    }
-                } else {
-                    Box::pin(stream::once(ready(Item::Link(l))))
-                }
-            }
-            x => Box::pin(stream::once(ready(x))),
-        })
-        .collect()
-        .await;
+    vids = expand_playlists(vids).collect().await;
     queue(
         QueueOpts {
             notify: true,
@@ -649,4 +572,41 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
             .await?
     }
     Ok(())
+}
+
+fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item = Item> {
+    let expand_playlist = |l: &'_ PlaylistLink| {
+        Result::<_, Error>::Ok(
+            YtdlBuilder::new(l)
+                .request_playlist()?
+                .filter_map(|r| async {
+                    match r {
+                        Ok(x) => Some(x),
+                        Err(e) => {
+                            crate::error!(
+                                "failed to parse playlist item when expanding playlist: {:?}",
+                                e
+                            );
+                            None
+                        }
+                    }
+                })
+                .map(|b| VideoLink::from_id(b.id())),
+        )
+    };
+
+    stream::iter(items).flat_map(move |i| match i {
+        Item::Link(mut l) => {
+            if let Some(playlist) = l.as_playlist_mut() {
+                match expand_playlist(playlist) {
+                    Ok(s) => Box::pin(s.map(|l| Item::Link(l.into()))),
+                    Err(_) => Box::pin(stream::once(ready(Item::Link(l))))
+                        as Pin<Box<dyn Stream<Item = Item>>>,
+                }
+            } else {
+                Box::pin(stream::once(ready(Item::Link(l))))
+            }
+        }
+        x => Box::pin(stream::once(ready(x))),
+    })
 }

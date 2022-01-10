@@ -9,7 +9,12 @@ use glob::Paths;
 use tokio::{fs, process::Command};
 use tokio_stream::wrappers::ReadDirStream;
 
-use crate::{item::id_from_path, playlist::PlaylistIds, queue::Item, Error, Link};
+use crate::{
+    item::{id_from_path, link::VideoLink},
+    playlist::PlaylistIds,
+    queue::Item,
+    Error,
+};
 
 pub async fn clean_downloads<P: AsRef<Path>>(
     dl_dir: P,
@@ -32,8 +37,29 @@ pub async fn clean_downloads<P: AsRef<Path>>(
 }
 
 pub enum CheckCacheDecision {
-    Download(Link),
+    Download(VideoLink),
     Skip,
+}
+
+pub async fn check_cache(dl_dir: &Path, link: &VideoLink) -> bool {
+    let mut s = dl_dir.to_string_lossy().into_owned();
+    s.push_str("/*=");
+    s.push_str(link.id());
+    s.push_str("=m.*");
+    tokio::task::spawn_blocking(move || {
+        tracing::debug!("searching cache using glob: {:?}", s);
+        let file = glob::glob(&s).map(Paths::collect::<Vec<_>>);
+        let mut files = match file {
+            Ok(files) => files,
+            Err(e) => {
+                tracing::error!("parsing glob pattern {:?}: {:?}", s, e);
+                return false;
+            }
+        };
+        matches!(files.pop(), Some(Ok(_)) if files.is_empty())
+    })
+    .await
+    .unwrap()
 }
 
 pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDecision {
@@ -43,15 +69,15 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
         None,
     }
     let link = match item {
-        Item::Link(l) => l,
+        Item::Link(l) => match l.as_video() {
+            Ok(v) => v,
+            Err(_) => return CheckCacheDecision::Skip,
+        },
         _ => return CheckCacheDecision::Skip,
     };
     let mut s = dl_dir.to_string_lossy().into_owned();
-    s.push_str("/*");
-    s.push_str(match link.video_id() {
-        Some(id) => id,
-        None => return CheckCacheDecision::Skip,
-    });
+    s.push_str("/*=");
+    s.push_str(link.id());
     s.push_str("=m.*");
     let file = tokio::task::spawn_blocking(move || {
         tracing::debug!("searching cache using glob: {:?}", s);
@@ -93,14 +119,16 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
     CheckCacheDecision::Skip
 }
 
-pub async fn download(dl_dir: PathBuf, link: Link) -> Result<Link, Error> {
+pub async fn download(dl_dir: PathBuf, link: VideoLink) -> Result<VideoLink, Error> {
     let mut output_format = dl_dir;
     output_format.push("%(title)s=%(id)s=m.%(ext)s");
     Command::new("youtube-dl")
-        .arg("-o")
-        .arg(&*output_format.to_string_lossy())
-        .arg("--add-metadata")
-        .arg(link.as_str())
+        .args([
+            "-o",
+            &*output_format.to_string_lossy(),
+            "--add-metadata",
+            link.as_str(),
+        ])
         .stdout(Stdio::null())
         .spawn()?
         .wait()
