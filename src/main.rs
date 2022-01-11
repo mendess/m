@@ -201,6 +201,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 .await
             )?;
         }
+        Command::AutoComplete { shell } => {
+            Args::clap().gen_completions_to("m", shell, &mut std::io::stdout().lock())
+        }
     }
     tracing::debug!("updating bar");
     // TODO: move this somewhere that only runs when actual updates happen

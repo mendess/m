@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use structopt::clap::AppSettings::DisableVersion;
+use structopt::clap::Shell;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -145,6 +146,9 @@ pub enum Command {
 
     /// Cache Status
     CacheStatus,
+
+    /// Generate auto complete script
+    AutoComplete { shell: Shell },
 }
 
 fn parse_new(s: &str) -> Result<(), &'static str> {
