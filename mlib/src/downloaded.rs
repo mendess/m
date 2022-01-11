@@ -11,7 +11,7 @@ use tokio_stream::wrappers::ReadDirStream;
 
 use crate::{
     item::{id_from_path, link::VideoLink},
-    playlist::PlaylistIds,
+    playlist::{self, PlaylistIds},
     queue::Item,
     Error,
 };
@@ -75,6 +75,9 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
         },
         _ => return CheckCacheDecision::Skip,
     };
+    if !matches!(playlist::find_song(link.id()).await, Ok(Some(_))) {
+        return CheckCacheDecision::Skip;
+    }
     let mut s = dl_dir.to_string_lossy().into_owned();
     s.push_str("/*=");
     s.push_str(link.id());
