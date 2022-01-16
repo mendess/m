@@ -113,7 +113,7 @@ pub async fn status() -> anyhow::Result<()> {
             "Player @ {}", socket.path().display();
             content: " §btitle:§r {}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}",
                 current.title,
-                current.progress,
+                current.progress.as_ref().map(ToString::to_string).unwrap_or_else(|| String::from("none")),
                 if current.playing { ">" } else { "||" },
                 current.index,
                 queue_size.saturating_sub(1),
@@ -157,6 +157,16 @@ pub async fn interactive() -> anyhow::Result<()> {
         }
         let cmd = event::read()?;
         match cmd {
+            Event::Key(
+                KeyEvent {
+                    code: KeyCode::Char('q'),
+                    modifiers: KeyModifiers::NONE,
+                }
+                | KeyEvent {
+                    code: KeyCode::Char('c' | 'd'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+            ) => return Ok(()),
             Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers: KeyModifiers::NONE,
@@ -173,10 +183,6 @@ pub async fn interactive() -> anyhow::Result<()> {
                     error = Some(String::from(cmd));
                 }
             }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('c' | 'd'),
-                modifiers: KeyModifiers::CONTROL,
-            }) => return Ok(()),
             _ => {}
         }
     }

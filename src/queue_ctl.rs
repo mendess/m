@@ -48,7 +48,10 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     let current = Queue::current(&mut socket)
         .await
         .context("loading the current queue")?;
-    let plus = "+".repeat(current.progress as usize / 10);
+    let plus = match current.progress {
+        Some(progress) => "+".repeat(progress as usize / 10),
+        None => "???".into(),
+    };
     let minus = "-".repeat(10usize.saturating_sub(plus.len()));
     let song = match current.chapter {
         Some(c) => {
@@ -63,7 +66,7 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
         current.volume,
         plus,
         minus,
-        current.progress,
+        current.progress.as_ref().map(ToString::to_string).unwrap_or_else(|| String::from("none")),
         if current.categories.is_empty() {
             String::new()
         } else {

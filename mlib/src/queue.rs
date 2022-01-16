@@ -118,7 +118,11 @@ impl Queue {
 
         let playing = !socket.compute(socket::cmds::IsPaused).await?;
         let volume = socket.compute(socket::cmds::Volume).await?;
-        let progress = socket.compute(socket::cmds::PercentPosition).await?;
+        let progress = match socket.compute(socket::cmds::PercentPosition).await {
+            Ok(progress) => Some(progress),
+            Err(Error::IpcError(s)) if s.contains("property unavailable") => None,
+            Err(e) => return Err(e),
+        };
         let categories = OptionFuture::from(id.map(playlist::find_song))
             .await
             .transpose()?
@@ -182,7 +186,7 @@ pub struct Current {
     pub chapter: Option<String>,
     pub playing: bool,
     pub volume: f64,
-    pub progress: f64,
+    pub progress: Option<f64>,
     pub categories: Vec<String>,
     pub index: usize,
     pub next: Option<String>,
