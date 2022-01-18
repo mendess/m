@@ -142,10 +142,10 @@ pub enum Command {
     Shuffle,
 
     /// Status
-    Status,
-
-    /// Cache Status
-    CacheStatus,
+    Status {
+        #[structopt(default_value = "players")]
+        entity: EntityStatus,
+    },
 
     /// Generate auto complete script
     AutoComplete { shell: Shell },
@@ -303,4 +303,25 @@ pub struct DeleteSong {
 #[structopt(global_settings = &[DisableVersion])]
 pub struct Amount {
     pub amount: Option<isize>,
+}
+
+#[derive(Debug, StructOpt)]
+#[structopt(global_settings = &[DisableVersion])]
+pub enum EntityStatus {
+    Players,
+    Cache,
+    Downloads,
+}
+
+impl FromStr for EntityStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match &s.to_lowercase()[..] {
+            "players" => Ok(Self::Players),
+            "cache" => Ok(Self::Cache),
+            "downloads" => Ok(Self::Downloads),
+            _ => Err(format!("Invalid entity: {}", s)),
+        }
+    }
 }
