@@ -85,6 +85,7 @@
  - [ ] lyrics             Shows lyrics for the current song
      - depends on current
  - [x] playlist           Interactively asks the user what songs they want to play from their playlist
+ - [ ] info               Shows info on a random link or playlist item
 
 ## After
 
