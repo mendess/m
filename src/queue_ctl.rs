@@ -493,7 +493,6 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
 
     let playlist = Playlist::load().await?;
 
-    let mut loop_list = true;
     let mut vids = match mode.as_str() {
         "single" => {
             let song_name = selector(
@@ -502,7 +501,6 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                 playlist.0.len(),
             )
             .await?;
-            loop_list = false;
             match song_name {
                 None => return Ok(()),
                 Some(name) => vec![playlist
@@ -513,21 +511,16 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
         }
         "random" => match playlist.0.choose(&mut rngs::OsRng) {
             Some(x) => {
-                loop_list = false;
                 vec![Item::Link(x.link.clone().into())]
             }
             None => return Err(anyhow::anyhow!("empty playlist")),
         },
-        "All" => {
-            let mut l = playlist
-                .0
-                .into_iter()
-                .rev()
-                .map(|l| Item::Link(l.link.into()))
-                .collect::<Vec<_>>();
-            l.shuffle(&mut rngs::OsRng);
-            l
-        }
+        "All" => playlist
+            .0
+            .into_iter()
+            .rev()
+            .map(|l| Item::Link(l.link.into()))
+            .collect(),
         "Category" => {
             let category = selector(
                 playlist.categories().map(|(s, _)| s).unique(),
@@ -551,13 +544,18 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
             let clipboard = ClipboardContext::new()
                 .and_then(|mut c| c.get_contents())
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
-            loop_list = false;
             vec![Item::from(clipboard)]
         }
         _ => return Ok(()),
     };
 
     vids = expand_playlists(vids).collect().await;
+
+    let loop_list = vids.len() > 1;
+    if loop_list {
+        vids.shuffle(&mut rngs::OsRng);
+    }
+
     queue(
         QueueOpts {
             notify: true,
