@@ -93,16 +93,28 @@ impl Playlist {
         })
     }
 
-    pub async fn load() -> io::Result<Self> {
+    pub async fn load() -> Result<Self, Error> {
         let playlist_path = Self::path()?;
-        let file = File::open(playlist_path).await?;
+        let file = match File::open(&playlist_path).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(Error::PlaylistFileNotFound(playlist_path))
+            },
+            Err(e) => return Err(e.into())
+        };
         let reader = READER_BUILDER.create_deserializer(file);
         Ok(Self(reader.into_deserialize().try_collect().await?))
     }
 
-    pub async fn stream() -> io::Result<impl Stream<Item = Result<Song, csv_async::Error>>> {
+    pub async fn stream() -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
         let playlist_path = Self::path()?;
-        let file = File::open(playlist_path).await?;
+        let file = match File::open(&playlist_path).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(Error::PlaylistFileNotFound(playlist_path))
+            },
+            Err(e) => return Err(e.into())
+        };
         let reader = READER_BUILDER.create_deserializer(file);
         Ok(reader.into_deserialize())
     }

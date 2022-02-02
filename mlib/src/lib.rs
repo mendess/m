@@ -1,7 +1,7 @@
 #![warn(clippy::dbg_macro)]
 #![warn(rust_2018_idioms)]
 
-use std::io;
+use std::{path::PathBuf, io};
 use thiserror::Error;
 
 #[cfg(feature = "downloads")]
@@ -50,4 +50,8 @@ pub enum Error {
 
     #[error("invalid utf8 {0}")]
     Utf8Error(#[from] std::string::FromUtf8Error),
+
+    #[cfg(feature = "playlist")]
+    #[error("playlist file not found at: {0}")]
+    PlaylistFileNotFound(PathBuf),
 }

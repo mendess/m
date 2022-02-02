@@ -491,7 +491,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
         None => return Ok(()),
     };
 
-    let playlist = Playlist::load().await?;
+    let playlist = Playlist::load().await.context("loading playlist")?;
 
     let mut vids = match mode.as_str() {
         "single" => {
