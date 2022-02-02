@@ -136,6 +136,7 @@ pub async fn queue(
     let mut socket = match MpvSocket::lattest().await {
         Ok(sock) => sock,
         Err(mlib::Error::NoMpvInstance) => {
+            tracing::debug!("no mpv instance, starting a new one");
             return play(items, false).await;
         }
         Err(e) => return Err(e.into()),
@@ -428,6 +429,7 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     let first = items.by_ref().take(20);
 
     if let Ok(mut socket) = MpvSocket::lattest().await {
+        tracing::info!("pausing previous mpv instance");
         if let Err(e) = socket.execute(sock_cmds::Pause).await {
             crate::error!("failed to pause previous player"; content: "{:?}", e);
         }

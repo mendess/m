@@ -33,7 +33,11 @@ pub fn override_lattest(id: usize) {
     OVERRIDE.store(Some(Arc::new(PathBuf::from(path))))
 }
 
-static SOCKET_GLOB: Lazy<String> = Lazy::new(|| format!("/tmp/{}/.mpvsocket*", whoami::username()));
+static SOCKET_GLOB: Lazy<String> = Lazy::new(|| {
+    let s = format!("/tmp/{}", whoami::username());
+    let _ = std::fs::create_dir_all(&s);
+    s + "/.mpvsocket*"
+});
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
 
