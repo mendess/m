@@ -453,12 +453,14 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     mpv.spawn().context("spawning mpv")?;
 
     if items.peek().is_some() {
+        tracing::info!("queueing the leftover songs");
+        let mut connected = false;
         for i in 0..5 {
+            tracing::debug!("attempt {}", i + 1);
             match unconn_socket.connect().await {
                 Err((_, s)) => {
                     unconn_socket = s;
                     sleep(Duration::from_secs(i * 2)).await;
-                    continue;
                 }
                 Ok(mut socket) => {
                     let (file, path) = NamedTempFile::new()?.into_parts();
@@ -469,10 +471,15 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
                             .context("writing bytes")?;
                         file.write_all(b"\n").await.context("writing bytes")?;
                     }
+                    file.flush().await?;
                     socket.execute(sock_cmds::LoadList(&path)).await?;
+                    connected = true;
                     break;
                 }
             };
+        }
+        if !connected {
+            crate::error!("never managed to connect to queue the rest of the songs")
         }
     }
 
