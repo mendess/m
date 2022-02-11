@@ -5,7 +5,7 @@ mod playlist_ctl;
 mod queue_ctl;
 mod util;
 
-use arg_parse::{Args, Command, DeleteSong, New, Play, EntityStatus};
+use arg_parse::{Args, Command, DeleteSong, EntityStatus, New, Play};
 use futures_util::{future::ready, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
 use mlib::{
@@ -18,7 +18,7 @@ use mlib::{
     Error as SockErr, Link, Search,
 };
 use rand::seq::SliceRandom;
-use std::env::args;
+use std::{env::args, io::Write};
 use structopt::StructOpt;
 use tokio::io;
 use tracing::dispatcher::set_global_default;
@@ -184,13 +184,11 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         }
         Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
         Command::Playlist => queue_ctl::run_interactive_playlist().await?,
-        Command::Status { entity } => {
-            match entity {
-                EntityStatus::Players => player_ctl::status().await?,
-                EntityStatus::Cache => download_ctl::cache_status().await?,
-                EntityStatus::Downloads => download_ctl::daemon_status().await?,
-            }
-        }
+        Command::Status { entity } => match entity {
+            EntityStatus::Players => player_ctl::status().await?,
+            EntityStatus::Cache => download_ctl::cache_status().await?,
+            EntityStatus::Downloads => download_ctl::daemon_status().await?,
+        },
         Command::Interactive => player_ctl::interactive().await?,
         Command::Lyrics => {
             dbg!(
@@ -207,7 +205,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             )?;
         }
         Command::AutoComplete { shell } => {
-            Args::clap().gen_completions_to("m", shell, &mut std::io::stdout().lock())
+            Args::clap().gen_completions_to("m", shell, &mut TracedWriter(std::io::stdout().lock()))
         }
     }
     tracing::debug!("updating bar");
@@ -215,6 +213,40 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     util::update_bar().await?;
 
     Ok(())
+}
+
+struct TracedWriter<W: Write>(W);
+
+impl<W> Write for TracedWriter<W>
+where
+    W: Write,
+{
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        log_if_err(self.0.write(buf))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        log_if_err(self.0.flush())
+    }
+
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> io::Result<usize> {
+        log_if_err(self.0.write_vectored(bufs))
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        log_if_err(self.0.write_all(buf))
+    }
+
+    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> io::Result<()> {
+        log_if_err(self.0.write_fmt(fmt))
+    }
+}
+
+fn log_if_err<T, E: std::fmt::Debug>(r: Result<T, E>) -> Result<T, E> {
+    if let Err(e) = &r {
+        tracing::error!("{:?}", e)
+    }
+    r
 }
 
 async fn run() -> anyhow::Result<()> {
