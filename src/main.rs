@@ -280,7 +280,9 @@ pub fn init_logger() {
         EnvFilter::new("warn")
     };
 
-    let fmt = fmt::layer().event_format(fmt::format());
+    let fmt = fmt::layer()
+        .with_writer(std::io::stderr)
+        .pretty();
 
     let sub = Registry::default().with(env_filter).with(fmt);
 
