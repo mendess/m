@@ -1,7 +1,7 @@
 #![warn(clippy::dbg_macro)]
 #![warn(rust_2018_idioms)]
 
-use std::{path::PathBuf, io};
+use std::{io, path::PathBuf};
 use thiserror::Error;
 
 #[cfg(feature = "downloads")]

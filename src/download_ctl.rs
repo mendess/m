@@ -22,11 +22,9 @@ use tokio::{
 
 fn socket_path() -> PathBuf {
     static PATH: Lazy<PathBuf> = Lazy::new(|| {
-        PathBuf::from_iter([
-            String::from("/tmp"),
-            whoami::username(),
-            String::from(ARG_0),
-        ])
+        let (path, e) = namespaced_tmp::blocking::in_user_tmp(ARG_0);
+        tracing::error!("failed to create tmp dir for download daemon: {:?}", e);
+        path
     });
     PATH.clone()
 }

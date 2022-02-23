@@ -28,6 +28,7 @@ dirs = "4.0.0"
 crossterm = "0.22.1"
 async-recursion = "0.3.2"
 whoami = "1.2.1"
+namespaced-tmp = { git = "https://github.com/mendess/namespaced-tmp", features = ["user"] }
 
 [workspace]
 members = ["mlib"]

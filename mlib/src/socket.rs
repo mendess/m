@@ -34,9 +34,9 @@ pub fn override_lattest(id: usize) {
 }
 
 static SOCKET_GLOB: Lazy<String> = Lazy::new(|| {
-    let s = format!("/tmp/{}", whoami::username());
-    let _ = std::fs::create_dir_all(&s);
-    s + "/.mpvsocket*"
+    let (path, e) = namespaced_tmp::blocking::in_user_tmp(".mpvsocket*");
+    tracing::error!("failed to create socket dir: {:?}", e);
+    path.display().to_string()
 });
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
@@ -265,7 +265,7 @@ impl MpvSocket<UnixStream> {
                 data: None,
             } => {
                 if TypeId::of::<O>() == TypeId::of::<DevNull>() {
-                    Ok(unsafe { std::mem::transmute_copy(&()) })
+                    Ok(unsafe { std::mem::transmute_copy(&DevNull::INST) })
                 } else {
                     Err(Error::IpcError(format!(
                         "Call was successful, but there was no data field: {:?}",
@@ -276,7 +276,7 @@ impl MpvSocket<UnixStream> {
 
             Payload { error, .. } => Err(Error::IpcError(format!(
                 "{} :: {:?} => {}",
-                error.to_string(),
+                error,
                 cmd,
                 std::any::type_name::<O>()
             ))),
@@ -348,8 +348,7 @@ impl MpvSocket<UnixStream> {
                 Err(e) => {
                     return Err(Error::IpcError(format!(
                         "failed to deserialize status from {:?}: {:?}",
-                        line,
-                        e
+                        line, e
                     )))
                 }
             }
@@ -372,14 +371,14 @@ impl MpvSocket<UnixStream> {
 
 #[derive(Debug)]
 struct DevNull {
-    _m: std::marker::PhantomData<()>,
+    _m: (),
 }
 
 impl DevNull {
-    const INST: Self = DevNull {
-        _m: std::marker::PhantomData,
-    };
+    const INST: Self = DevNull { _m: () };
 }
+
+const _: () = assert!(std::mem::size_of::<DevNull>() == 0);
 
 impl<'de> Deserialize<'de> for DevNull {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -408,5 +407,13 @@ impl<'de> Deserialize<'de> for DevNull {
             }
         }
         deserializer.deserialize_any(DVisitor)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn socket_glob_ends_in_asterisk() {
+        assert!(super::SOCKET_GLOB.ends_with('*'))
     }
 }

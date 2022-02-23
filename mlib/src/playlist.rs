@@ -99,8 +99,8 @@ impl Playlist {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Err(Error::PlaylistFileNotFound(playlist_path))
-            },
-            Err(e) => return Err(e.into())
+            }
+            Err(e) => return Err(e.into()),
         };
         let reader = READER_BUILDER.create_deserializer(file);
         Ok(Self(reader.into_deserialize().try_collect().await?))
@@ -112,8 +112,8 @@ impl Playlist {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Err(Error::PlaylistFileNotFound(playlist_path))
-            },
-            Err(e) => return Err(e.into())
+            }
+            Err(e) => return Err(e.into()),
         };
         let reader = READER_BUILDER.create_deserializer(file);
         Ok(reader.into_deserialize())

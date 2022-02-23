@@ -148,16 +148,19 @@ where
 {
     pub async fn search(self) -> Result<Ytdl<Y>, Error> {
         let n_fields = self.0.n_params();
-        request_impl::<_, T, _>(self.0.link().as_str().trim_start_matches("ytdl://"), n_fields)?
-            .next()
-            .await
-            .ok_or_else(|| {
-                Error::from(YtdlError::InsufisientFields {
-                    expected: n_fields,
-                    found: 0,
-                    fields: vec![],
-                })
-            })?
+        request_impl::<_, T, _>(
+            self.0.link().as_str().trim_start_matches("ytdl://"),
+            n_fields,
+        )?
+        .next()
+        .await
+        .ok_or_else(|| {
+            Error::from(YtdlError::InsufisientFields {
+                expected: n_fields,
+                found: 0,
+                fields: vec![],
+            })
+        })?
     }
 }
 
