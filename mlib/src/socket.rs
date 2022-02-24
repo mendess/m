@@ -35,7 +35,9 @@ pub fn override_lattest(id: usize) {
 
 static SOCKET_GLOB: Lazy<String> = Lazy::new(|| {
     let (path, e) = namespaced_tmp::blocking::in_user_tmp(".mpvsocket*");
-    tracing::error!("failed to create socket dir: {:?}", e);
+    if let Some(e) = e {
+        tracing::error!("failed to create socket dir: {:?}", e);
+    }
     path.display().to_string()
 });
 
