@@ -204,6 +204,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 .await
             )?;
         }
+        Command::Info { song } => playlist_ctl::info(song).await?,
         Command::AutoComplete { shell } => {
             Args::clap().gen_completions_to("m", shell, &mut TracedWriter(std::io::stdout().lock()))
         }
@@ -293,7 +294,7 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = run().await {
         let mut chain = e.chain().skip(1).peekable();
         let stringified = e.to_string();
-        let (header, rest) = match stringified.split_once("\n") {
+        let (header, rest) = match stringified.split_once('\n') {
             Some(x) => x,
             None => (stringified.as_str(), ""),
         };

@@ -147,6 +147,9 @@ pub enum Command {
         entity: EntityStatus,
     },
 
+    /// Info
+    Info { song: Vec<String> },
+
     /// Generate auto complete script
     AutoComplete { shell: Shell },
 }

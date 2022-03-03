@@ -5,7 +5,10 @@ use crate::util::selector;
 use anyhow::Context;
 use futures_util::TryStreamExt;
 use futures_util::{future::ready, Stream};
+use itertools::Itertools;
 use mlib::item::link::VideoLink;
+use mlib::playlist::PartialSearchResult;
+use mlib::Search;
 use mlib::{
     playlist::{self, Playlist, PlaylistIds, Song},
     queue::Queue,
@@ -149,5 +152,52 @@ async fn add_song(link: VideoLink, categories: HashSet<String>) -> anyhow::Resul
     };
     Playlist::add_song(&song).await?;
     notify!("Song added"; content: "{}", song);
+    Ok(())
+}
+
+pub(crate) async fn info(song: Vec<String>) -> anyhow::Result<()> {
+    let song = song
+        .iter()
+        .map(String::as_str)
+        .flat_map(|s| s.split_whitespace());
+    let playlist = playlist::Playlist::load().await?;
+    let item = playlist.partial_name_search(song.clone());
+
+    match item {
+        PartialSearchResult::None => {
+            let vid = match VideoLink::from_url(song.collect()) {
+                Ok(l) => YtdlBuilder::new(&l).get_title().request().await?,
+                Err(e) => {
+                    YtdlBuilder::new(&Search::new(e))
+                        .get_title()
+                        .search()
+                        .await?
+                }
+            };
+            notify!(
+                "song info:";
+                content:
+                    "§bname:§r {}\n§blink:§r http://youtu.be/{}",
+                    vid.title_ref(),
+                    vid.id().as_str(),
+            )
+        }
+        PartialSearchResult::One(s) => {
+            notify!(
+                "song info:";
+                content:
+                    "§bname:§r {}\n§blink:§r {}\n§bcategories:§r {}",
+                    s.name,
+                    s.link,
+                    s.categories.iter().format(" | ")
+            );
+        }
+        PartialSearchResult::Many(m) => {
+            notify!(
+                "too many matches:";
+                content: " - {}", m.iter().format("\n - ")
+            );
+        }
+    }
     Ok(())
 }
