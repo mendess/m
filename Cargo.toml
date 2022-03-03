@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 structopt = "0.3.25"
 mlib = { path = "./mlib", default-features = true }
+margs = { path = "./margs" }
 tokio = { version = "1.14.0", features = ["macros", "rt-multi-thread", "rt", "parking_lot"] }
 anyhow = "1.0.51"
 regex = "1.5.4"
@@ -31,6 +32,6 @@ whoami = "1.2.1"
 namespaced-tmp = { git = "https://github.com/mendess/namespaced-tmp", features = ["user"] }
 
 [workspace]
-members = ["mlib"]
+members = ["mlib", "margs"]
 
 [features]
