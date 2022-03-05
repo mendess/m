@@ -64,7 +64,7 @@ mod daemon {
 
     static STATUS: Lazy<Mutex<Status>> = Lazy::new(Mutex::default);
     static QUEUED_COUNT: AtomicUsize = AtomicUsize::new(0);
-    pub(super) const SEPERATOR: &str = "========";
+    pub(super) const SEPARATOR: &str = "========";
     pub(super) const TERMINATOR: &str = "<<<<<<<<";
 
     async fn handle_task(mut stream: UnixStream, tx: Sender<VideoLink>) {
@@ -91,7 +91,7 @@ mod daemon {
                     let mut status_lines = futures_util::stream::iter(
                         once(queued_count.as_str())
                             .chain(status.done.iter().map(|l| l.as_str()))
-                            .chain(once(SEPERATOR))
+                            .chain(once(SEPARATOR))
                             .chain(status.downloading.iter().map(|l| l.as_str()))
                             .chain(once(TERMINATOR)),
                     );
@@ -310,7 +310,7 @@ pub async fn daemon_status() -> anyhow::Result<()> {
     let mut done = vec![];
     while let Some(l) = rx.recv().await {
         tracing::debug!("read {} from channel", l);
-        if l == daemon::SEPERATOR {
+        if l == daemon::SEPARATOR {
             break;
         }
         done.push(l)

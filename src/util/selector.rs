@@ -130,7 +130,7 @@ type CustomKeybind<'c, E> = (
     Box<dyn for<'e> Fn(&'e E, usize) -> Pin<Box<dyn std::future::Future<Output = ()> + 'e>> + 'c>,
 );
 
-pub async fn interative_select<E: Display, const K: usize>(
+pub async fn interactive_select<E: Display, const K: usize>(
     table: &[E],
     custom_keybinds: [CustomKeybind<'_, E>; K],
 ) -> anyhow::Result<Option<usize>> {
@@ -145,7 +145,7 @@ pub async fn interative_select<E: Display, const K: usize>(
 
     if SessionKind::current().await == SessionKind::Gui {
         return Err(anyhow::anyhow!(
-            "interative select only works in terminal mode"
+            "interactive select only works in terminal mode"
         ));
     }
 

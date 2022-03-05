@@ -8,9 +8,9 @@ use crossterm::{
     terminal::{Clear, ClearType},
     QueueableCommand,
 };
-use futures_util::stream::StreamExt;
+use futures_util::TryFutureExt;
 use mlib::{
-    queue::{self, Queue},
+    queue::Queue,
     socket::{self, cmds, MpvSocket},
 };
 use structopt::StructOpt;
@@ -38,7 +38,7 @@ pub async fn toggle_video() -> anyhow::Result<()> {
 }
 
 pub async fn next_file(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
+    let mut socket = MpvSocket::current().await?;
     for _ in 0..amount.unwrap_or(1) {
         tracing::debug!("going to next file");
         socket.fire("playlist-next").await?;
@@ -47,7 +47,7 @@ pub async fn next_file(Amount { amount }: Amount) -> anyhow::Result<()> {
 }
 
 pub async fn prev_file(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
+    let mut socket = MpvSocket::current().await?;
     for _ in 0..amount.unwrap_or(1) {
         socket.fire("playlist-prev").await?;
     }
@@ -71,14 +71,14 @@ pub async fn prev(Amount { amount }: Amount) -> anyhow::Result<()> {
 }
 
 pub async fn shuffle() -> anyhow::Result<()> {
-    Ok(MpvSocket::lattest()
+    Ok(MpvSocket::current()
         .await?
         .execute(cmds::QueueShuffle)
         .await?)
 }
 
 pub async fn toggle_loop() -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
+    let mut socket = MpvSocket::current().await?;
     let looping = match socket.compute(cmds::QueueIsLooping).await? {
         cmds::LoopStatus::Inf => false,
         cmds::LoopStatus::No => true,
@@ -94,24 +94,25 @@ pub async fn toggle_loop() -> anyhow::Result<()> {
 }
 
 pub async fn status() -> anyhow::Result<()> {
-    let all = socket::all();
-    tokio::pin!(all);
-    while let Some(mut socket) = all.next().await {
+    let all = socket::all().await;
+    for mut socket in all {
         let current = Queue::current(&mut socket)
             .await
-            .with_context(|| format!("[{}] fetching current in queue", socket.path().display()))?;
+            .with_context(|| format!("[{}] fetching current in queue", socket))?;
 
         let queue_size = socket
             .compute(socket::cmds::QueueSize)
             .await
-            .with_context(|| format!("[{}] fetching queue size", socket.path().display()))?;
+            .with_context(|| format!("[{}] fetching queue size", socket))?;
 
-        let last_queue = queue::last::fetch(&socket)
+        let last_queue = socket
+            .last()
+            .and_then(|mut s| async move { s.fetch().await })
             .await
-            .with_context(|| format!("[{}] fetching last queue", socket.path().display()))?;
+            .with_context(|| format!("[{}] fetching last queue", socket))?;
 
         notify!(
-            "Player @ {}", socket.path().display();
+            "Player @ {}", socket;
             content: " §btitle:§r {}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}",
                 current.title,
                 current.progress.as_ref().map(ToString::to_string).unwrap_or_else(|| String::from("none")),
@@ -190,5 +191,5 @@ pub async fn interactive() -> anyhow::Result<()> {
 }
 
 async fn fire<S: AsRef<[u8]>>(c: S) -> anyhow::Result<()> {
-    Ok(MpvSocket::lattest().await?.fire(c).await?)
+    Ok(MpvSocket::current().await?.fire(c).await?)
 }

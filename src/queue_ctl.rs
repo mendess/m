@@ -14,7 +14,7 @@ use anyhow::Context;
 use futures_util::{
     future::ready,
     stream::{self, FuturesUnordered},
-    Stream, StreamExt, TryStreamExt,
+    Stream, StreamExt, TryFutureExt, TryStreamExt,
 };
 use itertools::Itertools;
 use mlib::{
@@ -39,7 +39,7 @@ use tokio::{io::BufReader, process::Command};
 use tokio_stream::wrappers::LinesStream;
 
 pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await.context("connecting to socket")?;
+    let mut socket = MpvSocket::current().await.context("connecting to socket")?;
     if link {
         let link = Queue::link(&mut socket)
             .await
@@ -105,7 +105,7 @@ pub async fn resolve_link(link: &VideoLink) -> String {
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest()
+    let mut socket = MpvSocket::current()
         .await
         .context("failed getting socket")?;
     let queue = Queue::now(&mut socket, amount.unwrap_or(10).abs() as _)
@@ -150,7 +150,7 @@ pub async fn queue(
     q: crate::arg_parse::QueueOpts,
     items: impl IntoIterator<Item = Item>,
 ) -> anyhow::Result<()> {
-    let mut socket = match MpvSocket::lattest().await {
+    let mut socket = match MpvSocket::current().await {
         Ok(sock) => sock,
         Err(mlib::Error::NoMpvInstance) => {
             tracing::debug!("no mpv instance, starting a new one");
@@ -167,7 +167,9 @@ pub async fn queue(
     }
     if q.reset || q.clear {
         notify!("Reseting queue...");
-        mlib::queue::last::reset(&socket)
+        socket
+            .last()
+            .and_then(|mut s| async move { s.reset().await })
             .await
             .context("resetting queue")?;
     }
@@ -203,7 +205,9 @@ pub async fn queue(
             let mut target = (current + 1) % count;
             tracing::debug!("first target: {}", target);
 
-            if let Some(last) = mlib::queue::last::fetch(&socket)
+            if let Some(last) = socket
+                .last()
+                .and_then(|mut s| async move { s.fetch().await })
                 .await
                 .context("fetching the last queue position")?
             {
@@ -226,14 +230,20 @@ pub async fn queue(
                     .with_context(|| format!("moving file from {} to {}", from, target))?;
                 println!("succcess");
             }
-            mlib::queue::last::set(&socket, target).await?;
+            socket
+                .last()
+                .and_then(|mut s| async move { s.set(target).await })
+                .await?;
             target
         };
         if q.notify {
             notify_tasks.push(tokio::spawn(notify(item, current, playlist_pos)));
         }
         if q.preemptive_download {
-            todo!("{}", playlist_pos);
+            todo!(
+                "preemptive_download download is not implemented {}",
+                playlist_pos
+            );
         }
         if notify_tasks.len() > 8 {
             if let Err(e) = notify_tasks.next().await.unwrap() {
@@ -250,7 +260,9 @@ pub async fn queue(
         .await;
     if n_targets > 5 {
         tracing::debug!("reseting queue because got {} targets", n_targets);
-        mlib::queue::last::reset(&socket)
+        socket
+            .last()
+            .and_then(|mut s| async move { s.reset().await })
             .await
             .context("reseting last queue")?;
     }
@@ -346,7 +358,7 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
 }
 
 pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
+    let mut socket = MpvSocket::current().await?;
     match d {
         DeQueue::Next => {
             let next = socket.compute(sock_cmds::QueuePos).await? + 1;
@@ -364,7 +376,11 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
             socket.execute(sock_cmds::QueueRemove(prev)).await?;
         }
         DeQueue::Pop => {
-            let last = match mlib::queue::last::fetch(&socket).await? {
+            let last = match socket
+                .last()
+                .and_then(|mut s| async move { s.fetch().await })
+                .await?
+            {
                 Some(l) => l,
                 None => return Err(anyhow::anyhow!("no last queue to pop from")),
             };
@@ -400,7 +416,8 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
                 .await;
-            let mut socket = MpvSocket::lattest().await.context("loading mpv socket")?;
+
+            let mut socket = MpvSocket::current().await?;
             let queue = Queue::load(&mut socket, None, None)
                 .await
                 .context("loading current queue")?;
@@ -425,7 +442,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
 }
 
 pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
+    let mut socket = MpvSocket::current().await?;
     let q = Queue::load(&mut socket, None, None).await?;
     let mut file = BufWriter::new(File::create(file).await?);
     for s in q.iter() {
@@ -465,7 +482,7 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     let mut items = items.into_iter().peekable();
     let first = items.by_ref().take(20);
 
-    if let Ok(mut socket) = MpvSocket::lattest().await {
+    if let Ok(mut socket) = MpvSocket::current().await {
         tracing::info!("pausing previous mpv instance");
         if let Err(e) = socket.execute(sock_cmds::Pause).await {
             crate::error!("failed to pause previous player"; content: "{:?}", e);
@@ -633,7 +650,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
     .await
     .context("queueing")?;
     if loop_list {
-        MpvSocket::lattest_cached()
+        MpvSocket::current()
             .await?
             .execute(sock_cmds::QueueLoop(true))
             .await?

@@ -54,4 +54,19 @@ pub enum Error {
     #[cfg(feature = "playlist")]
     #[error("playlist file not found at: {0}")]
     PlaylistFileNotFound(PathBuf),
+
+    #[cfg(feature = "socket")]
+    #[error("unexpected error: {0}")]
+    UnexpectedError(String),
+
+    #[cfg(feature = "socket")]
+    #[error("deserialization error: {0}")]
+    Deserialization(String),
+}
+
+#[cfg(feature = "socket")]
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Self::Deserialization(e.to_string())
+    }
 }

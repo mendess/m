@@ -14,7 +14,7 @@ use mlib::{
     item::link::VideoLink,
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
-    socket::MpvSocket,
+    socket::local::LocalMpvSocket,
     ytdl::YtdlBuilder,
     Error as SockErr, Link, Search,
 };
@@ -39,10 +39,18 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     tracing::debug!(?cmd, "running command");
     match cmd {
         Command::Socket { new } => {
+            notify!(
+                "DEPRECATION WARNING:";
+                content: "socket sub command is deprecated. Arg: {:?}", new.map(|_| "new");
+                force_notify: true
+            );
             if new.is_some() {
-                println!("{}", MpvSocket::new_unconnected().await?.path().display());
+                println!(
+                    "{}",
+                    LocalMpvSocket::new_unconnected().await?.path().display()
+                );
             } else {
-                match MpvSocket::lattest().await {
+                match LocalMpvSocket::lattest().await {
                     Ok(s) => println!("{}", s.path().display()),
                     Err(SockErr::NoMpvInstance) => println!("/dev/null"),
                     Err(e) => return Err(e.into()),
@@ -80,7 +88,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     .await?;
                 let titles = results.iter().map(|l| l.title_ref()).collect::<Vec<_>>();
                 let results_ref = &results;
-                match selector::interative_select(
+                match selector::interactive_select(
                     &titles,
                     [(
                         'p',
@@ -196,7 +204,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Interactive => player_ctl::interactive().await?,
         Command::Lyrics => {
             dbg!(
-                selector::interative_select(
+                selector::interactive_select(
                     &["option 1", "option 2"],
                     [(
                         'p',
@@ -268,7 +276,7 @@ async fn run() -> anyhow::Result<()> {
         }
     };
     if let Some(id) = args.socket {
-        mlib::socket::override_lattest(id);
+        mlib::socket::local::override_lattest(id);
     }
 
     if let Some(new_base) = config::CONFIG.socket_base_dir.as_ref() {

@@ -24,6 +24,8 @@ whoami = { version = "1.2.1", optional = true }
 async_once = { version = "0.2.1", optional = true }
 arc-swap = { version = "1.5.0", optional = true }
 pin-project = { version = "1.0.9", optional = true }
+#spark-protocol = { git = "https://github.com/mendess/blind-eternities", optional = true }
+spark-protocol = { path = "../../blind-eternities/spark-protocol", optional = true }
 
 [dependencies.namespaced-tmp]
 git = "https://github.com/mendess/namespaced-tmp"
@@ -69,6 +71,7 @@ socket = [
     "pin-project",
     "serde",
     "namespaced-tmp",
+    "spark-protocol",
 ]
 playlist = [
     "items",

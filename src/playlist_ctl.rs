@@ -90,7 +90,7 @@ pub async fn add_playlist(
 }
 
 pub async fn ch_cat() -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
+    let mut socket = MpvSocket::current().await?;
     let current = Queue::link(&mut socket).await?;
     let mut playlist = Playlist::load().await?;
     let current = current
@@ -120,7 +120,7 @@ pub async fn ch_cat() -> anyhow::Result<()> {
 pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Result<()> {
     let mut playlist = Playlist::load().await?;
     let idx = if current {
-        let mut socket = MpvSocket::lattest().await?;
+        let mut socket = MpvSocket::current().await?;
         let current = Queue::link(&mut socket).await?;
         let current = current
             .id()

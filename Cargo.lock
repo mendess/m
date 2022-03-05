@@ -866,6 +866,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "spark-protocol",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -880,6 +881,7 @@ name = "namespaced-tmp"
 version = "1.0.0"
 source = "git+https://github.com/mendess/namespaced-tmp#4c9e51debf3c149684d0dbdbd24b6523e1571a15"
 dependencies = [
+ "tokio",
  "whoami",
 ]
 
@@ -1560,6 +1562,17 @@ checksum = "66d72b759436ae32898a2af0a14218dbf55efde3feeb170eb623637db85ee1e0"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "spark-protocol"
+version = "0.1.0"
+dependencies = [
+ "namespaced-tmp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

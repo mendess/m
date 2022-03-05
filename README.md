@@ -1,5 +1,5 @@
 # m
-A music player written accidentaly in bash using mpv as a """backend""".
+A music player written accidentally in bash using mpv as a """backend""".
 
 ## Dependencies
 - dmenu
@@ -45,7 +45,7 @@ The following commands attempt to call this script at the end of their task:
 This is intended to be used mostly as a way to have keybinds for your window
 manager that control your music player.
 
-## Instalation
+## Installation
 ```
 cp path/to/m.sh /usr/bin/m
 chmod +x /usr/bin/m

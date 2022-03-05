@@ -14,7 +14,7 @@
 ## Simple file io
 
  - [x] socket             Get the socket in use
- - [x] songs              Get all songs in the playlist, optionaly filtered by category
+ - [x] songs              Get all songs in the playlist, optionally filtered by category
  - [x] cat                List all current categories
  - [x] clean-downloads    Deletes downloaded songs that are not in the playlist anymore
      - [x] decide on the file name format

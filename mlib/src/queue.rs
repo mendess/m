@@ -81,7 +81,7 @@ impl Queue {
             before,
             current: current.unwrap(),
             after,
-            last_queue: last::fetch(socket).await?,
+            last_queue: socket.last().await?.fetch().await?,
             playing: play_status,
         })
     }
@@ -191,5 +191,3 @@ pub struct Current {
     pub index: usize,
     pub next: Option<String>,
 }
-
-pub mod last;
