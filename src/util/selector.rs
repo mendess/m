@@ -2,6 +2,7 @@ use super::session_kind::SessionKind;
 use std::{
     fmt::Display,
     io::{stdout, Write},
+    os::unix::prelude::ExitStatusExt,
     pin::Pin,
     process::Stdio,
 };
@@ -63,6 +64,11 @@ where
     S: AsRef<str>,
     I: Iterator<Item = S>,
 {
+    tracing::debug!(
+        "running command {:?} with args {:?}",
+        command.as_std().get_program(),
+        command.as_std().get_args()
+    );
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -78,6 +84,20 @@ where
     let mut reader = BufReader::new(child.stdout.take().unwrap()).lines();
     while let Some(line) = reader.next_line().await? {
         last = Some(line)
+    }
+
+    let status = child.wait().await?;
+    if !status.success() {
+        if status.core_dumped() {
+            return Err(anyhow::anyhow!("core dumped :("));
+        } else if let Some(sig) = status.signal() {
+            return Err(anyhow::anyhow!("killed by signal: {sig}"));
+        } else {
+            return Err(anyhow::anyhow!(
+                "process exited with status: {:?}",
+                status.code()
+            ));
+        }
     }
 
     Ok(last)

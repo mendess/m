@@ -193,7 +193,7 @@ impl<'path> Notify<'path> {
                 cmd.arg(format!(
                     "{}{}",
                     if self.error { "Error: " } else { "" },
-                    triplets(&self.title.replace("\t", ""))
+                    triplets(&self.title.replace('\t', ""))
                         .map(|(s, _)| s)
                         .collect::<String>()
                 ));

@@ -30,9 +30,12 @@ impl SessionKind {
 
         lazy_static! {
             static ref CURRENT: AsyncOnce<SessionKind> = AsyncOnce::new(async {
-                if matches!(env::var_os("SESSION_KIND"), Some(v) if v == "gui")
-                    || matches!(called_from_gui().await, Ok(true))
-                {
+                let session_kind_var = env::var_os("SESSION_KIND");
+                if matches!(&session_kind_var, Some(v) if v == "gui") {
+                    SessionKind::Gui
+                } else if matches!(&session_kind_var, Some(v) if v == "cli" || v == "tui") {
+                    SessionKind::Cli
+                } else if matches!(called_from_gui().await, Ok(true)) {
                     SessionKind::Gui
                 } else {
                     SessionKind::Cli
