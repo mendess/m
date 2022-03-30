@@ -361,7 +361,8 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
         DeQueue::Cat { cat } => {
             let cat = &cat;
             let playlist = Playlist::stream()
-                .await?
+                .await
+                .context("getting playlist file")?
                 .filter_map(|s| async { s.ok() })
                 .filter_map(
                     |s| async move { s.categories.iter().any(|c| c.contains(cat)).then(|| s) },
@@ -369,8 +370,10 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
                 .await;
-            let mut socket = MpvSocket::lattest().await?;
-            let queue = Queue::load(&mut socket, None, None).await?;
+            let mut socket = MpvSocket::lattest().await.context("loading mpv socket")?;
+            let queue = Queue::load(&mut socket, None, None)
+                .await
+                .context("loading current queue")?;
 
             for index in queue.iter().rev().filter_map(|s| {
                 s.item
@@ -380,7 +383,10 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
             }) {
                 print!("removing {}... ", index);
                 std::io::stdout().flush()?;
-                socket.execute(sock_cmds::QueueRemove(index)).await?;
+                socket
+                    .execute(sock_cmds::QueueRemove(index))
+                    .await
+                    .context("removing from queue")?;
                 println!(" success");
             }
         }

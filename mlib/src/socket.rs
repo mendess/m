@@ -219,7 +219,7 @@ impl MpvSocket<UnixStream> {
             tracing::debug!("Waiting for the socket to become readable");
             self.socket.readable().await?;
             loop {
-                tracing::debug!("Trying to read from socket");
+                tracing::debug!("Trying to read from socket...");
                 match self.socket.try_read_buf(&mut buf) {
                     Ok(0) => break 'readloop,
                     Ok(_) => (),
@@ -229,15 +229,24 @@ impl MpvSocket<UnixStream> {
                         }
                         tracing::warn!("false positive read");
                     }
-                    Err(e) => return Err(e.into()),
+                    Err(e) => {
+                        tracing::error!(?e, buf_so_far=?buf, "error reading");
+                        return Err(e.into());
+                    }
                 };
             }
         }
 
+        tracing::debug!("finding the end of the buffer");
         let start_i = match buf.iter().position(|b| *b != b'\0') {
             Some(i) => i,
-            None => return Err(Error::Io(io::ErrorKind::UnexpectedEof.into())),
+            None => {
+                tracing::debug!(buf_len = buf.len(), "buffer did not contain a null byte");
+                return Err(Error::Io(io::ErrorKind::UnexpectedEof.into()));
+            }
         };
+
+        tracing::debug!(%start_i, "found the end of the buffer");
 
         let payload = match buf[start_i..]
             .split(|&b| b == b'\n')
@@ -255,6 +264,8 @@ impl MpvSocket<UnixStream> {
                 )));
             }
         };
+
+        tracing::debug!(?payload, "playload deserialized");
 
         match payload {
             Payload {

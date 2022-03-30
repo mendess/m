@@ -1,5 +1,9 @@
 use crate::{socket::MpvSocket, Error};
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 fn path<S>(socket: &MpvSocket<S>) -> PathBuf {
     let mut path = socket.path().to_owned();
@@ -14,17 +18,32 @@ fn path<S>(socket: &MpvSocket<S>) -> PathBuf {
 }
 
 pub async fn fetch<S>(socket: &MpvSocket<S>) -> Result<Option<usize>, Error> {
+    const THREE_HOURS: Duration = Duration::from_secs(60 * 60 * 3);
+
     let path = path(socket);
-    match tokio::fs::read_to_string(&path).await {
-        Ok(s) => match s.trim().parse() {
-            Ok(n) => Ok(Some(n)),
-            Err(_) => {
-                tracing::error!("failed to parse last queue, file corrupted? '{:?}'", path);
-                Ok(None)
-            }
-        },
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
+    let now = SystemTime::now();
+    tracing::debug!(?path, "getting m_time on last queue file");
+    let modified = match tokio::fs::metadata(&path).await.and_then(|r| r.modified()) {
+        Ok(m_time) => m_time,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    tracing::debug!(?modified, ?path, "got m_time on last queue file");
+    if (modified.duration_since(now).unwrap_or_default()) > THREE_HOURS {
+        reset(socket).await?;
+        Ok(None)
+    } else {
+        match tokio::fs::read_to_string(&path).await {
+            Ok(s) => match s.trim().parse() {
+                Ok(n) => Ok(Some(n)),
+                Err(_) => {
+                    tracing::error!("failed to parse last queue, file corrupted? '{:?}'", path);
+                    Ok(None)
+                }
+            },
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
