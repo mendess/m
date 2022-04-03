@@ -6,7 +6,8 @@ use crate::{
 };
 
 use std::{
-    collections::HashSet, io::Write, path::PathBuf, pin::Pin, process::Stdio, time::Duration,
+    collections::HashSet, io::Write, os::unix::prelude::ExitStatusExt, path::PathBuf, pin::Pin,
+    process::Stdio, time::Duration,
 };
 
 use anyhow::Context;
@@ -417,6 +418,7 @@ pub async fn load(file: PathBuf) -> anyhow::Result<()> {
 
 pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> anyhow::Result<()> {
     let mut items = items.into_iter().collect::<Vec<_>>();
+    tracing::info!("playing {:?}", items);
     // let to_download = stream::iter(items.iter_mut())
     //     .then(|i| async { check_cache_ref(dl_dir().ok()?, i).await })
     //     .buffered(16)
@@ -443,6 +445,8 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     let mut unconn_socket = MpvSocket::new_unconnected()
         .await
         .context("creating a new socket")?;
+    tracing::debug!(?unconn_socket, "created a new unconnected socket");
+
     let mut mpv = Command::new("mpv");
     mpv.args(["--geometry=820x466", "--no-terminal"]);
     mpv.arg(format!(
@@ -458,7 +462,9 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     mpv.args(first);
     mpv.stdout(Stdio::null());
 
-    mpv.spawn().context("spawning mpv")?;
+    tracing::debug!(args = ?mpv.as_std().get_args(), "spawning new mpv process");
+    let mut child = mpv.spawn().context("spawning mpv")?;
+    tracing::debug!(?child, "new mpv process spawned");
 
     if items.peek().is_some() {
         tracing::info!("queueing the leftover songs");
@@ -488,6 +494,22 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
         }
         if !connected {
             crate::error!("never managed to connect to queue the rest of the songs")
+        }
+    }
+    match tokio::time::timeout(Duration::from_secs(1), child.wait()).await {
+        Ok(status) => {
+            let status = status?;
+            if !status.success() {
+                crate::error!(
+                    "Error spawning mpv";
+                    content: "Exit code: {:?}, was killed: {:?}",
+                    status.code(),
+                    status.signal()
+                );
+            }
+        }
+        Err(_elapsed) => {
+            // success probably
         }
     }
 
