@@ -642,6 +642,8 @@ dependencies = [
  "rand",
  "regex",
  "reqwest",
+ "serde",
+ "serde_json",
  "structopt",
  "tempfile",
  "tokio",

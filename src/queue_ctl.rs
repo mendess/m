@@ -26,6 +26,7 @@ use mlib::{
     Error, Search,
 };
 use rand::{prelude::SliceRandom, rngs};
+use serde::Deserialize;
 use tempfile::NamedTempFile;
 use tokio::{
     fs::File,
@@ -283,15 +284,28 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
                 .arg(&img_path)
                 .kill_on_drop(true)
                 .spawn()?;
-            let output = Fork::new("ffprobe").arg(&f).output().await?;
-            let title = memchr::memmem::find(b"title", &output.stdout)
-                .and_then(|idx| memchr::memmem::find(b":", &output.stdout[idx..]))
-                .and_then(|idx| {
-                    memchr::memmem::find(b"\n", &output.stdout[idx..])
-                        .map(|end| &output.stdout[idx..end])
-                        .map(|s| String::from_utf8_lossy(s).into_owned())
-                })
-                .unwrap_or_else(|| f.display().to_string());
+            #[derive(Deserialize)]
+            struct GetTitle {
+                format: Format,
+            }
+            #[derive(Deserialize)]
+            struct Format {
+                tags: Tags,
+            }
+            #[derive(Deserialize)]
+            struct Tags {
+                title: String,
+            }
+            let output = Fork::new("ffprobe")
+                .arg(&f)
+                .args(["-v", "quiet", "-show_format", "-print_format", "json"])
+                .output()
+                .await?;
+            let title = serde_json::from_slice::<GetTitle>(&output.stdout)?
+                .format
+                .tags
+                .title;
+
             ffmpeg.wait().await?;
             title
         }
