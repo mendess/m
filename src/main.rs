@@ -289,22 +289,27 @@ pub fn init_logger() {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     init_logger();
-    if let Err(e) = run().await {
-        let mut chain = e.chain().skip(1).peekable();
-        let stringified = e.to_string();
-        let (header, rest) = match stringified.split_once('\n') {
-            Some(x) => x,
-            None => (stringified.as_str(), ""),
-        };
-        if chain.peek().is_some() {
-            error!("{}", header; content: "{}Caused by:\n\t{}", rest, chain.format("\n\t"));
+    let exit_code = {
+        if let Err(e) = run().await {
+            let mut chain = e.chain().skip(1).peekable();
+            let stringified = e.to_string();
+            let (header, rest) = match stringified.split_once('\n') {
+                Some(x) => x,
+                None => (stringified.as_str(), ""),
+            };
+            if chain.peek().is_some() {
+                error!("{}", header; content: "{}Caused by:\n\t{}", rest, chain.format("\n\t"));
+            } else {
+                error!("{}", header; content: "{}", rest);
+            }
+            1
         } else {
-            error!("{}", header; content: "{}", rest);
+            0
         }
-    }
-    Ok(())
+    };
+    std::process::exit(exit_code);
 }
 
 fn handle_search_result<T>(r: PartialSearchResult<T>) -> anyhow::Result<T> {
