@@ -352,7 +352,12 @@ impl SongQuery {
 }
 
 async fn search_params_to_items(Play { what, search }: Play) -> anyhow::Result<Vec<Item>> {
-    let SongQuery { mut items, words } = SongQuery::new(what).await;
+    let SongQuery { mut items, words } = {
+        tracing::debug!(?what, "parsing query");
+        let query = SongQuery::new(what).await;
+        tracing::debug!(?query, "created song query");
+        query
+    };
     let link = if words.is_empty() {
         return Ok(items);
     } else if search {
