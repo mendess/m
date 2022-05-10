@@ -1,6 +1,7 @@
 pub mod notify;
 pub mod selector;
 pub mod session_kind;
+pub mod with_video;
 
 use mlib::item::link::VideoLink;
 use mlib::VideoId;

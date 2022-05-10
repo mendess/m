@@ -28,7 +28,7 @@ use util::session_kind::SessionKind;
 
 use crate::{
     arg_parse::AddPlaylist,
-    util::{dl_dir, selector},
+    util::{dl_dir, selector, with_video::with_video_env},
 };
 
 use async_recursion::async_recursion;
@@ -156,7 +156,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         }
         Command::Dump { file } => queue_ctl::dump(file).await?,
         Command::Load { file } => queue_ctl::load(file).await?,
-        Command::Play(p) => queue_ctl::play(search_params_to_items(p).await?, false).await?,
+        Command::Play(p) => {
+            queue_ctl::play(search_params_to_items(p).await?, with_video_env()).await?
+        }
         Command::ChCat => playlist_ctl::ch_cat().await?,
         Command::DeleteSong(DeleteSong {
             current,

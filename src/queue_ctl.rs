@@ -2,7 +2,7 @@ use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
     download_ctl::check_cache_ref,
     notify,
-    util::{dl_dir, selector::selector},
+    util::{dl_dir, selector::selector, with_video::with_video_env},
 };
 
 use std::{
@@ -139,7 +139,7 @@ pub async fn queue(
         Ok(sock) => sock,
         Err(mlib::Error::NoMpvInstance) => {
             tracing::debug!("no mpv instance, starting a new one");
-            return play(items, false).await;
+            return play(items, with_video_env()).await;
         }
         Err(e) => return Err(e.into()),
     };
