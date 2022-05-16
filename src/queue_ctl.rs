@@ -22,8 +22,7 @@ use mlib::{
     playlist::Playlist,
     queue::{Item, Queue},
     socket::{cmds as sock_cmds, MpvSocket},
-    ytdl::YtdlBuilder,
-    Error, Search,
+    Error, ytdl::YtdlBuilder, Search,
 };
 use rand::{prelude::SliceRandom, rngs};
 use serde::Deserialize;
@@ -75,7 +74,18 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
             format!("\n\nCategories: | {} |", current.categories.iter().join(" | "))
         },
         if let Some(next) = current.next {
-            format!("\n\n=== UP NEXT ===\n{}", mlib::item::clean_up_path(&next).unwrap_or(&next))
+            format!("\n\n=== UP NEXT ===\n{}", match VideoLink::from_url(next) {
+                    Ok(l) => {
+                        match YtdlBuilder::new(&l).get_title().request().await {
+                            Ok(r) => r.title(),
+                            Err(_) => l.into_string()
+                        }
+                    },
+                    Err(next) => {
+                        mlib::item::clean_up_path(&next).unwrap_or(&next).to_owned()
+                    }
+                }
+            )
         } else {
             String::new()
         };

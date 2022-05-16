@@ -111,9 +111,13 @@ impl Search {
 }
 
 pub fn clean_up_path<P: AsRef<Path>>(p: &P) -> Option<&str> {
-    let path = p.as_ref().file_stem()?.to_str()?;
-    let range = id_range(path)?;
-    Some(&path[..(range.start - 1)])
+    if p.as_ref().starts_with("http") {
+        None
+    } else {
+        let path = p.as_ref().file_stem()?.to_str()?;
+        let range = id_range(path)?;
+        Some(&path[..(range.start - 1)])
+    }
 }
 
 #[cfg(test)]

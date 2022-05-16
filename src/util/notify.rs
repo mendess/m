@@ -199,9 +199,14 @@ impl<'path> Notify<'path> {
                 ));
                 if let Some(content) = &self.content {
                     cmd.arg(
-                        triplets(&content.replace("\t", ""))
-                            .map(|(s, _)| s)
-                            .collect::<String>(),
+                        triplets(
+                            &content
+                                .replace('\t', "")
+                                .replace('<', "&lt;")
+                                .replace('>', "&gt;"),
+                        )
+                        .map(|(s, _)| s)
+                        .collect::<String>(),
                     );
                 }
                 cmd.spawn()?.wait().await?;
