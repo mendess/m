@@ -46,7 +46,7 @@ fn forward_error(e: ProtocolError) -> Error {
 #[derive(Deserialize)]
 struct RemoteSocketRef {
     hostname: String,
-    index: u8,
+    player: u8,
 }
 
 pub(super) async fn all() -> Result<impl Stream<Item = RemoteMpvSocket>, Error> {
@@ -56,15 +56,15 @@ pub(super) async fn all() -> Result<impl Stream<Item = RemoteMpvSocket>, Error> 
         .and_then(forward_deserialize::<Vec<RemoteSocketRef>>)
         .map(|v| {
             stream::iter(v.into_iter()).filter_map(
-                |RemoteSocketRef { hostname, index }| async move {
+                |RemoteSocketRef { hostname, player: index }| async move {
                     match RemoteMpvSocket::new(hostname, index).await {
                         Ok(s) => Some(s),
                         Err((machine, index, e)) => {
                             tracing::debug!(
-                                "Error constructing remote socket: {} {}: {}",
-                                machine,
-                                index,
-                                e
+                                %machine,
+                                %index,
+                                ?e,
+                                "Error constructing remote socket",
                             );
                             None
                         }
@@ -89,10 +89,10 @@ impl RemoteMpvSocket {
         match response {
             ProtocolMsg::Unit => Err(Error::UnexpectedError("expected a value, got unit".into())),
             ProtocolMsg::ForwardValue(v) => {
-                let RemoteSocketRef { hostname, index } = serde_json::from_value(v)?;
+                let RemoteSocketRef { hostname, player } = serde_json::from_value(v)?;
                 Ok(Self {
                     machine: hostname,
-                    index,
+                    index: player,
                     client,
                 })
             }
