@@ -106,7 +106,9 @@ impl Queue {
     }
 
     pub async fn current(socket: &mut MpvSocket) -> Result<Current, Error> {
+        tracing::debug!("getting media title");
         let media_title = socket.compute(socket::cmds::MediaTitle).await?;
+        tracing::debug!(%media_title, "getting file name");
         let filename = Item::from(socket.compute(socket::cmds::Filename).await?);
         let id = filename.id();
         // TODO: this is wrong
@@ -116,13 +118,17 @@ impl Queue {
             media_title
         };
 
+        tracing::debug!(%title, "getting is paused");
         let playing = !socket.compute(socket::cmds::IsPaused).await?;
+        tracing::debug!(%playing, "getting volume");
         let volume = socket.compute(socket::cmds::Volume).await?;
+        tracing::debug!(%volume, "getting percent position");
         let progress = match socket.compute(socket::cmds::PercentPosition).await {
             Ok(progress) => Some(progress),
             Err(Error::IpcError(s)) if s.contains("property unavailable") => None,
             Err(e) => return Err(e),
         };
+        tracing::debug!(?progress, "getting categories");
         let categories = OptionFuture::from(id.map(playlist::find_song))
             .await
             .transpose()?
@@ -130,14 +136,19 @@ impl Queue {
             .map(|s| s.categories)
             .unwrap_or_default();
 
+        tracing::debug!(?categories, "getting chapter");
         let chapter = socket
             .compute(socket::cmds::ChapterMetadata)
             .await
             .ok()
             .map(|m| m.title);
 
+        tracing::debug!(?chapter, "getting queue size");
         let size = socket.compute(socket::cmds::QueueSize).await?;
+
+        tracing::debug!( %size, "getting current position");
         let current_idx = socket.compute(socket::cmds::QueuePos).await?;
+        tracing::debug!(%current_idx, "getting next name");
         let next = if size == 1 {
             None
         } else {
@@ -147,6 +158,7 @@ impl Queue {
                     .await?,
             )
         };
+        tracing::debug!(?next, "done calculating current");
         Ok(Current {
             title,
             chapter,
