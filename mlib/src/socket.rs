@@ -11,6 +11,7 @@ use std::{
 
 use futures_util::StreamExt;
 use serde::de::DeserializeOwned;
+use spark_protocol::{music::MpvMeta, Backend, Command};
 use tokio::net::UnixStream;
 
 use self::cmds::command::{Compute, Execute, Property};
@@ -23,18 +24,38 @@ pub enum MpvSocket {
 }
 
 #[derive(Debug)]
-pub struct UnconnectedMpvSocket(local::LocalMpvSocket<()>);
+pub struct UnconnectedMpvSocket {
+    socket: local::LocalMpvSocket<()>,
+    create_on_connect: bool,
+}
 
 impl UnconnectedMpvSocket {
     pub async fn connect(self) -> Result<MpvSocket, (io::Error, Self)> {
-        match self.0.connect().await {
-            Ok(o) => Ok(MpvSocket::Local(o)),
-            Err((e, s)) => Err((e, Self(s))),
+        match self.socket.connect().await {
+            Ok(o) => {
+                if self.create_on_connect {
+                    let e = spark_protocol::client::send(Command::Backend(Backend::Music(
+                        MpvMeta::CreatePlayer(o.index()),
+                    ))).await;
+                    if let Err(e) = e {
+                        tracing::error!(?e, "failed to communicate new socket");
+                    }
+                }
+                Ok(MpvSocket::Local(o))
+            }
+            Err((e, s)) => Err((e, Self { socket: s, ..self })),
+        }
+    }
+
+    pub fn create_on_connect(self) -> Self {
+        Self {
+            create_on_connect: true,
+            ..self
         }
     }
 
     pub fn path(&self) -> &Path {
-        self.0.path()
+        self.socket.path()
     }
 
     //     pub(crate) async fn created_at(&self) -> io::Result<SystemTime> {
@@ -44,7 +65,7 @@ impl UnconnectedMpvSocket {
 
 impl Display for UnconnectedMpvSocket {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Unconnected({})", self.0)
+        write!(f, "Unconnected({})", self.socket)
     }
 }
 
@@ -97,16 +118,17 @@ impl MpvSocket {
                 }
             }
             Err(e) => {
-                tracing::error!(?e, "failed to fetch remote current, using local");
+                tracing::warn!(?e, "failed to fetch remote current, using local");
                 Ok(Self::Local(local::LocalMpvSocket::lattest().await?))
             }
         }
     }
 
     pub async fn new_unconnected() -> Result<UnconnectedMpvSocket, Error> {
-        Ok(UnconnectedMpvSocket(
-            local::LocalMpvSocket::new_unconnected().await?,
-        ))
+        Ok(UnconnectedMpvSocket {
+            socket: local::LocalMpvSocket::new_unconnected().await?,
+            create_on_connect: false,
+        })
     }
 
     pub async fn fire<S: AsRef<[u8]>>(&mut self, msg: S) -> Result<(), Error> {

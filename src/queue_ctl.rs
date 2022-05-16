@@ -490,7 +490,8 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     }
     let mut unconn_socket = MpvSocket::new_unconnected()
         .await
-        .context("creating a new socket")?;
+        .context("creating a new socket")?
+        .create_on_connect();
     tracing::debug!(?unconn_socket, "created a new unconnected socket");
 
     let mut mpv = Command::new("mpv");
@@ -512,17 +513,17 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     let mut child = mpv.spawn().context("spawning mpv")?;
     tracing::debug!(?child, "new mpv process spawned");
 
-    if items.peek().is_some() {
-        tracing::info!("queueing the leftover songs");
-        let mut connected = false;
-        for i in 0..5 {
-            tracing::debug!("attempt {}", i + 1);
-            match unconn_socket.connect().await {
-                Err((_, s)) => {
-                    unconn_socket = s;
-                    sleep(Duration::from_secs(i * 2)).await;
-                }
-                Ok(mut socket) => {
+    let mut connected = false;
+    for i in 0..5 {
+        tracing::debug!("attempt {}", i + 1);
+        match unconn_socket.connect().await {
+            Err((_, s)) => {
+                unconn_socket = s;
+                sleep(Duration::from_secs(i * 2)).await;
+            }
+            Ok(mut socket) => {
+                if items.peek().is_some() {
+                    tracing::info!("queueing the leftover songs");
                     let (file, path) = NamedTempFile::new()?.into_parts();
                     let mut file = BufWriter::new(File::from_std(file));
                     for i in items {
@@ -533,14 +534,14 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
                     }
                     file.flush().await?;
                     socket.execute(sock_cmds::LoadList(&path)).await?;
-                    connected = true;
-                    break;
                 }
-            };
-        }
-        if !connected {
-            crate::error!("never managed to connect to queue the rest of the songs")
-        }
+                connected = true;
+                break;
+            }
+        };
+    }
+    if !connected {
+        crate::error!("never managed to connect to queue the rest of the songs")
     }
     match tokio::time::timeout(Duration::from_secs(1), child.wait()).await {
         Ok(status) => {

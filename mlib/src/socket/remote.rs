@@ -76,13 +76,16 @@ pub(super) async fn all() -> Result<impl Stream<Item = RemoteMpvSocket>, Error> 
 
 impl RemoteMpvSocket {
     pub async fn current() -> Result<Self, Error> {
+        tracing::info!("creating client");
         let mut client = ClientBuilder::new().build().await?;
+        tracing::info!("sending command");
         let response = client
             .send(Command::Backend(Backend::Music(
                 music::MpvMeta::GetCurrentPlayer,
             )))
             .await?
             .map_err(forward_error)?;
+        tracing::info!("command sent");
         match response {
             ProtocolMsg::Unit => Err(Error::UnexpectedError("expected a value, got unit".into())),
             ProtocolMsg::ForwardValue(v) => {

@@ -70,3 +70,14 @@ impl From<serde_json::Error> for Error {
         Self::Deserialization(e.to_string())
     }
 }
+
+#[cfg(feature = "socket")]
+impl From<spark_protocol::RecvError> for Error {
+    fn from(e: spark_protocol::RecvError) -> Self {
+        use spark_protocol::RecvError;
+        match e {
+            RecvError::Io(e) => Error::Io(e),
+            RecvError::Serde(e) => Error::Deserialization(e.to_string())
+        }
+    }
+}
