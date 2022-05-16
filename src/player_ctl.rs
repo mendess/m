@@ -18,23 +18,23 @@ use structopt::StructOpt;
 use crate::notify;
 
 pub async fn quit() -> anyhow::Result<()> {
-    Ok(fire("quit").await?)
+    fire("quit").await
 }
 
 pub async fn pause() -> anyhow::Result<()> {
-    Ok(fire("cycle pause").await?)
+    fire("cycle pause").await
 }
 
 pub async fn vu(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(fire(format!("add volume {}", amount.unwrap_or(2))).await?)
+    fire(format!("add volume {}", amount.unwrap_or(2))).await
 }
 
 pub async fn vd(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(fire(format!("add volume -{}", amount.unwrap_or(2))).await?)
+    fire(format!("add volume -{}", amount.unwrap_or(2))).await
 }
 
 pub async fn toggle_video() -> anyhow::Result<()> {
-    Ok(fire("cycle vid").await?)
+    fire("cycle vid").await
 }
 
 pub async fn next_file(Amount { amount }: Amount) -> anyhow::Result<()> {
@@ -54,19 +54,19 @@ pub async fn prev_file(Amount { amount }: Amount) -> anyhow::Result<()> {
 }
 
 pub async fn frwd(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(fire(format!("seek {}", amount.unwrap_or(10))).await?)
+    fire(format!("seek {}", amount.unwrap_or(10))).await
 }
 
 pub async fn back(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(fire(format!("seek -{}", amount.unwrap_or(10))).await?)
+    fire(format!("seek -{}", amount.unwrap_or(10))).await
 }
 
 pub async fn next(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(fire(format!("add chapter {}", amount.unwrap_or(1))).await?)
+    fire(format!("add chapter {}", amount.unwrap_or(1))).await
 }
 
 pub async fn prev(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(fire(format!("add chapter -{}", amount.unwrap_or(1))).await?)
+    fire(format!("add chapter -{}", amount.unwrap_or(1))).await
 }
 
 pub async fn shuffle() -> anyhow::Result<()> {
