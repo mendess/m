@@ -26,9 +26,8 @@ pub struct RemoteMpvSocket {
 
 fn forward_deserialize<T: DeserializeOwned>(r: ProtocolMsg) -> Result<T, Error> {
     match r {
-        ProtocolMsg::ForwardValue(r) => {
-            serde_json::from_value(r).map_err(|e| Error::IpcError(format!("{:?}", e)))
-        }
+        ProtocolMsg::ForwardValue(r) => serde_json::from_value(r)
+            .map_err(|e| Error::IpcError(format!("invalid forward {:?}", e))),
         _ => Err(Error::UnexpectedError(format!(
             "Unexpected response: {:?}",
             r
@@ -56,8 +55,8 @@ pub(super) async fn all() -> Result<impl Stream<Item = RemoteMpvSocket>, Error> 
         .and_then(forward_deserialize::<Vec<RemoteSocketRef>>)
         .map(|v| {
             stream::iter(v.into_iter()).filter_map(
-                |RemoteSocketRef { hostname, player: index }| async move {
-                    match RemoteMpvSocket::new(hostname, index).await {
+                |RemoteSocketRef { hostname, player }| async move {
+                    match RemoteMpvSocket::new(hostname, player).await {
                         Ok(s) => Some(s),
                         Err((machine, index, e)) => {
                             tracing::debug!(
@@ -125,7 +124,7 @@ impl RemoteMpvSocket {
     }
 
     pub async fn fire<S: AsRef<[u8]>>(&mut self, msg: S) -> Result<(), Error> {
-        self.mpv_do(MusicCmdKind::Fire(dbg!(msg.as_ref().into())))
+        self.mpv_do(MusicCmdKind::Fire(msg.as_ref().into()))
             .await
             .map(|_| ())
     }
