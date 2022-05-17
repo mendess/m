@@ -38,17 +38,21 @@ use tokio::{
 use tokio::{io::BufReader, process::Command};
 use tokio_stream::wrappers::LinesStream;
 
-pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::current().await.context("connecting to socket")?;
+pub async fn current_with_socket(
+    socket: &mut MpvSocket,
+    link: bool,
+    notify: bool,
+) -> anyhow::Result<()> {
     if link {
-        let link = Queue::link(&mut socket)
+        let link = Queue::link(socket)
             .await
             .context("loading the queue to fetch the link")?;
         tracing::debug!("{:?}", link);
         notify!("{}", link);
         return Ok(());
     }
-    let current = Queue::current(&mut socket)
+    tracing::info!(?socket, "getting current song");
+    let current = Queue::current(socket)
         .await
         .context("loading the current queue")?;
     let plus = match current.progress {
@@ -102,6 +106,11 @@ pub async fn resolve_link(link: &VideoLink) -> String {
             Err(_) => link.to_string(),
         },
     }
+}
+
+pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
+    let mut socket = MpvSocket::current().await.context("connecting to socket")?;
+    current_with_socket(&mut socket, link, notify).await
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {

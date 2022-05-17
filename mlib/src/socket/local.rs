@@ -436,7 +436,7 @@ impl LastReference<'_> {
     pub async fn fetch(&self) -> Result<Option<usize>, Error> {
         const THREE_HOURS: Duration = Duration::from_secs(60 * 60 * 3);
 
-        let path = self.socket.path();
+        let path = self.path();
         let now = SystemTime::now();
         tracing::debug!(?path, "getting m_time on last queue file");
         let modified = match tokio::fs::metadata(&path).await.and_then(|r| r.modified()) {

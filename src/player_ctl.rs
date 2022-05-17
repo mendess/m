@@ -133,27 +133,23 @@ pub async fn interactive() -> anyhow::Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
     let _guard = RawMode::enable()?;
-    let (column, row) = cursor::position()?;
-    let show_current = || async {
+    let position = cursor::position()?;
+    let mut socket = MpvSocket::current().await?;
+    async fn show_current((column, row): (u16, u16), socket: &mut MpvSocket) -> anyhow::Result<()> {
         let r = stdout()
             .lock()
             .queue(MoveTo(column, row))
             .and_then(|s| s.queue(Clear(ClearType::FromCursorDown)))
             .and_then(|s| s.flush());
         match r {
-            Ok(_) => {
-                super::process_cmd(crate::arg_parse::Command::Current {
-                    notify: false,
-                    link: false,
-                })
-                .await
-            }
+            Ok(_) => super::queue_ctl::current_with_socket(socket, false, false).await,
             Err(e) => Err(e.into()),
         }
-    };
+    }
     let mut error = None;
     loop {
-        show_current().await?;
+        tracing::info!(?socket, "showing current");
+        show_current(position, &mut socket).await?;
         if let Some(cmd) = error.take() {
             crate::error!("invalid command: {}", cmd);
         }
@@ -177,7 +173,7 @@ pub async fn interactive() -> anyhow::Result<()> {
                 let cmd = c.encode_utf8(&mut buf);
                 if let Ok(cmd) = crate::arg_parse::Command::from_iter_safe(["", &*cmd]) {
                     if matches!(cmd, crate::arg_parse::Command::Current { .. }) {
-                        show_current().await?;
+                        show_current(position, &mut socket).await?;
                     } else {
                         super::process_cmd(cmd).await?
                     }
