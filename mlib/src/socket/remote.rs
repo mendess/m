@@ -51,6 +51,7 @@ struct RemoteSocketRef {
 pub(super) async fn all() -> Result<impl Stream<Item = RemoteMpvSocket>, Error> {
     spark_protocol::client::send(Command::Backend(Backend::Music(MpvMeta::ListPlayers)))
         .await?
+        .ok_or_else(|| Error::IpcError("expected response, got EOF".into()))?
         .map_err(forward_error)
         .and_then(forward_deserialize::<Vec<RemoteSocketRef>>)
         .map(|v| {
@@ -83,6 +84,7 @@ impl RemoteMpvSocket {
                 music::MpvMeta::GetCurrentPlayer,
             )))
             .await?
+            .ok_or_else(|| Error::IpcError("expected response, got EOF".into()))?
             .map_err(forward_error)?;
         tracing::info!("command sent");
         match response {
@@ -120,6 +122,7 @@ impl RemoteMpvSocket {
                 }),
             }))
             .await?
+            .ok_or_else(|| Error::IpcError("expected response, got EOF".into()))?
             .map_err(forward_error)
     }
 
@@ -199,6 +202,7 @@ impl LastReference<'_> {
 pub async fn create_new_player(n: u8) -> Result<(), Error> {
     spark_protocol::client::send(Command::Backend(Backend::Music(MpvMeta::CreatePlayer(n))))
         .await?
+        .ok_or_else(|| Error::IpcError("expected response, got EOF".into()))?
         .map_err(forward_error)
         .map(|_| ())
 }
@@ -206,6 +210,7 @@ pub async fn create_new_player(n: u8) -> Result<(), Error> {
 pub async fn delete_player(n: u8) -> Result<(), Error> {
     spark_protocol::client::send(Command::Backend(Backend::Music(MpvMeta::DeletePlayer(n))))
         .await?
+        .ok_or_else(|| Error::IpcError("expected response, got EOF".into()))?
         .map_err(forward_error)
         .map(|_| ())
 }
@@ -215,6 +220,7 @@ pub async fn set_default_player(n: u8) -> Result<(), Error> {
         n,
     ))))
     .await?
+    .ok_or_else(|| Error::IpcError("expected response, got EOF".into()))?
     .map_err(forward_error)
     .map(|_| ())
 }

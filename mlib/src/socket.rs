@@ -36,7 +36,8 @@ impl UnconnectedMpvSocket {
                 if self.create_on_connect {
                     let e = spark_protocol::client::send(Command::Backend(Backend::Music(
                         MpvMeta::CreatePlayer(o.index()),
-                    ))).await;
+                    )))
+                    .await;
                     if let Err(e) = e {
                         tracing::error!(?e, "failed to communicate new socket");
                     }
