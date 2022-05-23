@@ -4,7 +4,7 @@ use std::{
     io::{stdout, Write},
     os::unix::prelude::ExitStatusExt,
     pin::Pin,
-    process::Stdio,
+    process::{ExitStatus, Stdio},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
@@ -39,11 +39,25 @@ where
     I: Iterator<Item = S>,
 {
     let mut command = Command::new("fzf");
-    feed_and_read(
+    let FeedAndRead { line, status, .. } = feed_and_read(
         items,
         command.args(["-i", "--prompt", &format!("{} ", prompt), "--print-query"]),
     )
-    .await
+    .await?;
+    match status.code() {
+        Some(0 | 1) => Ok(line),
+        Some(130) => Ok(None),
+        Some(n) => Err(anyhow::anyhow!("process exited with status: {n}")),
+        None => {
+            if status.core_dumped() {
+                return Err(anyhow::anyhow!("core dumped :("));
+            } else if let Some(sig) = status.signal() {
+                return Err(anyhow::anyhow!("killed by signal: {sig}"));
+            } else {
+                return Err(anyhow::anyhow!("process exited with status: {:?}", status));
+            }
+        }
+    }
 }
 
 async fn dmenu<I, S>(items: I, prompt: &str, list_len: usize) -> anyhow::Result<Option<String>>
@@ -52,14 +66,33 @@ where
     I: Iterator<Item = S>,
 {
     let mut command = Command::new("dmenu");
-    feed_and_read(
+    let FeedAndRead { line, status, .. } = feed_and_read(
         items,
         command.args(["-i", "-p", prompt, "-l", &list_len.to_string()]),
     )
-    .await
+    .await?;
+    if !status.success() {
+        if status.core_dumped() {
+            return Err(anyhow::anyhow!("core dumped :("));
+        } else if let Some(sig) = status.signal() {
+            return Err(anyhow::anyhow!("killed by signal: {sig}"));
+        } else {
+            return Err(anyhow::anyhow!(
+                "process exited with status: {:?}",
+                status.code()
+            ));
+        }
+    }
+
+    Ok(line)
 }
 
-async fn feed_and_read<I, S>(items: I, command: &mut Command) -> anyhow::Result<Option<String>>
+struct FeedAndRead {
+    line: Option<String>,
+    status: ExitStatus,
+}
+
+async fn feed_and_read<I, S>(items: I, command: &mut Command) -> anyhow::Result<FeedAndRead>
 where
     S: AsRef<str>,
     I: Iterator<Item = S>,
@@ -86,21 +119,10 @@ where
         last = Some(line)
     }
 
-    let status = child.wait().await?;
-    if !status.success() {
-        if status.core_dumped() {
-            return Err(anyhow::anyhow!("core dumped :("));
-        } else if let Some(sig) = status.signal() {
-            return Err(anyhow::anyhow!("killed by signal: {sig}"));
-        } else {
-            return Err(anyhow::anyhow!(
-                "process exited with status: {:?}",
-                status.code()
-            ));
-        }
-    }
-
-    Ok(last)
+    Ok(FeedAndRead {
+        line: last,
+        status: child.wait().await?,
+    })
 }
 
 type CustomKeybind<'c, E> = (
