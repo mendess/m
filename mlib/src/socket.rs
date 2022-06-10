@@ -12,12 +12,12 @@ use std::{
 
 use futures_util::{stream, Stream, StreamExt};
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
+    sync::Mutex,
 };
 
 use self::cmds::command::{Compute, Execute, Property};
@@ -25,6 +25,7 @@ use crate::Error;
 use arc_swap::ArcSwapOption;
 
 static OVERRIDE: ArcSwapOption<PathBuf> = ArcSwapOption::const_empty();
+static SOCKET_BASE_DIR_OVERRIDE: ArcSwapOption<PathBuf> = ArcSwapOption::const_empty();
 
 pub fn override_lattest(id: usize) {
     let mut path = SOCKET_GLOB.clone();
@@ -33,12 +34,19 @@ pub fn override_lattest(id: usize) {
     OVERRIDE.store(Some(Arc::new(PathBuf::from(path))))
 }
 
-static SOCKET_GLOB: Lazy<String> = Lazy::new(|| {
-    let (path, e) = namespaced_tmp::blocking::in_user_tmp(".mpvsocket*");
-    if let Some(e) = e {
-        tracing::error!("failed to create socket dir: {:?}", e);
+pub fn override_socket_base_dir(new_base: PathBuf) {
+    SOCKET_BASE_DIR_OVERRIDE.store(Some(Arc::new(new_base)));
+}
+
+static SOCKET_GLOB: Lazy<String> = Lazy::new(|| match &*SOCKET_BASE_DIR_OVERRIDE.load() {
+    Some(new_base) => new_base.display().to_string(),
+    None => {
+        let (path, e) = namespaced_tmp::blocking::in_user_tmp(".mpvsocket*");
+        if let Some(e) = e {
+            tracing::error!("failed to create socket dir: {:?}", e);
+        }
+        path.display().to_string()
     }
-    path.display().to_string()
 });
 
 static SOCKET_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.mpvsocket([0-9]+)$").unwrap());
@@ -152,7 +160,7 @@ impl MpvSocket<UnixStream> {
             ))
         });
 
-        let mut current = CURRENT.lock();
+        let mut current = CURRENT.lock().await;
         if current.1.elapsed() >= INVALID_THREASHOLD {
             let Self { path, socket } = Self::lattest().await?;
             tracing::debug!("Cache hit {}", path.display());

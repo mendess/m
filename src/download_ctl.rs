@@ -52,7 +52,7 @@ mod daemon {
         time::timeout,
     };
 
-    use crate::error;
+    use crate::{config::DownloadFormat, error};
 
     use super::socket_path;
 
@@ -150,7 +150,11 @@ mod daemon {
         while let Ok(Some(l)) = timeout(Duration::from_secs(60), rx.recv()).await {
             QUEUED_COUNT.fetch_sub(1, Ordering::Relaxed);
             STATUS.lock().await.downloading.push(l.clone());
-            task_set.push(tokio::spawn(downloaded::download(dl_dir.clone(), l)));
+            task_set.push(tokio::spawn(downloaded::download(
+                dl_dir.clone(),
+                l,
+                crate::config::CONFIG.download_format == DownloadFormat::Audio,
+            )));
 
             while task_set.len() >= 8 {
                 match task_set.next().await.unwrap() {

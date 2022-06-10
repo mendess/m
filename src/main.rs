@@ -1,4 +1,5 @@
 mod arg_parse;
+mod config;
 mod download_ctl;
 mod player_ctl;
 mod playlist_ctl;
@@ -267,6 +268,10 @@ async fn run() -> anyhow::Result<()> {
     };
     if let Some(id) = args.socket {
         mlib::socket::override_lattest(id);
+    }
+
+    if let Some(new_base) = config::CONFIG.socket_base_dir.as_ref() {
+        mlib::socket::override_socket_base_dir(new_base.clone());
     }
 
     process_cmd(args.cmd).await?;

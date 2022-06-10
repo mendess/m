@@ -294,7 +294,7 @@ pub async fn find_song(id: &VideoId) -> Result<Option<Song>, Error> {
         Some(i) => {
             let end = memchr::memmem::find(&buf[i..], b"\n")
                 .map(|new_line| new_line + i)
-                .unwrap_or_else(|| dbg!(buf.len()));
+                .unwrap_or_else(|| buf.len());
             let start = memchr::memmem::rfind(&buf[..i], b"\n")
                 .map(|i| i + 1)
                 .unwrap_or(0);

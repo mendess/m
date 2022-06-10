@@ -122,19 +122,26 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
     CheckCacheDecision::Skip
 }
 
-pub async fn download(dl_dir: PathBuf, link: VideoLink) -> Result<VideoLink, Error> {
+pub async fn download(
+    dl_dir: PathBuf,
+    link: VideoLink,
+    just_audio: bool,
+) -> Result<VideoLink, Error> {
     let mut output_format = dl_dir;
     output_format.push("%(title)s=%(id)s=m.%(ext)s");
-    Command::new("youtube-dl")
-        .args([
-            "-o",
-            &*output_format.to_string_lossy(),
-            "--add-metadata",
-            link.as_str(),
-        ])
-        .stdout(Stdio::null())
-        .spawn()?
-        .wait()
-        .await?;
+    let mut cmd = Command::new("youtube-dl");
+    if just_audio {
+        cmd.arg("-x");
+    }
+    cmd.args([
+        "-o",
+        &*output_format.to_string_lossy(),
+        "--add-metadata",
+        link.as_str(),
+    ])
+    .stdout(Stdio::null())
+    .spawn()?
+    .wait()
+    .await?;
     Ok(link)
 }
