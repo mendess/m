@@ -39,7 +39,7 @@ pub fn override_socket_base_dir(new_base: PathBuf) {
 }
 
 static SOCKET_GLOB: Lazy<String> = Lazy::new(|| match &*SOCKET_BASE_DIR_OVERRIDE.load() {
-    Some(new_base) => new_base.display().to_string(),
+    Some(new_base) => new_base.join(".mpvsocket*").display().to_string(),
     None => {
         let (path, e) = namespaced_tmp::blocking::in_user_tmp(".mpvsocket*");
         if let Some(e) = e {
