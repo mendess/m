@@ -95,6 +95,10 @@ impl Playlist {
 
     pub async fn load() -> Result<Self, Error> {
         let playlist_path = Self::path()?;
+        Self::load_from(playlist_path).await
+    }
+
+    pub async fn load_from(playlist_path: PathBuf) -> Result<Self, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -108,6 +112,12 @@ impl Playlist {
 
     pub async fn stream() -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
         let playlist_path = Self::path()?;
+        Self::stream_from(playlist_path).await
+    }
+
+    pub async fn stream_from(
+        playlist_path: PathBuf,
+    ) -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
