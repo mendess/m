@@ -127,7 +127,7 @@ mod daemon {
         let socket = UnixListener::bind(&socket_path)
             .with_context(|| format!("path: {}", socket_path.display()))?;
 
-        let (tx, mut rx) = mpsc::channel(100);
+        let (tx, mut rx) = mpsc::channel(500);
         let dl_dir = crate::util::dl_dir()?;
 
         tokio::spawn(async move {
