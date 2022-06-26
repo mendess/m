@@ -22,7 +22,8 @@ use mlib::{
     playlist::Playlist,
     queue::{Item, Queue},
     socket::{cmds as sock_cmds, MpvSocket},
-    Error, ytdl::YtdlBuilder, Search,
+    ytdl::YtdlBuilder,
+    Error, Search,
 };
 use rand::{prelude::SliceRandom, rngs};
 use serde::Deserialize;
@@ -31,6 +32,7 @@ use tokio::{
     fs::File,
     io::{AsyncBufReadExt, AsyncWriteExt, BufWriter},
     process::Command as Fork,
+    sync::OnceCell,
     time::sleep,
 };
 use tokio::{io::BufReader, process::Command};
@@ -74,24 +76,32 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
             format!("\n\nCategories: | {} |", current.categories.iter().join(" | "))
         },
         if let Some(next) = current.next {
-            format!("\n\n=== UP NEXT ===\n{}", match VideoLink::from_url(next) {
-                    Ok(l) => {
-                        match YtdlBuilder::new(&l).get_title().request().await {
-                            Ok(r) => r.title(),
-                            Err(_) => l.into_string()
-                        }
-                    },
-                    Err(next) => {
-                        mlib::item::clean_up_path(&next).unwrap_or(&next).to_owned()
-                    }
-                }
-            )
+            let up_next = match VideoLink::from_url(next) {
+                Ok(l) => resolve_link(&l).await,
+                Err(next) => mlib::item::clean_up_path(&next).unwrap_or(&next).to_owned(),
+            };
+            format!("\n\n=== UP NEXT ===\n{up_next}")
         } else {
             String::new()
         };
         force_notify: notify
     );
     Ok(())
+}
+
+pub async fn resolve_link(link: &VideoLink) -> String {
+    static LIST: OnceCell<Result<Playlist, mlib::Error>> = OnceCell::const_new();
+    let name = match LIST.get_or_init(Playlist::load).await {
+        Ok(list) => Ok(list.find_by_link(link).await.map(|s| s.name.clone())),
+        Err(e) => Err(e),
+    };
+    match name {
+        Ok(Some(name)) => name,
+        _ => match YtdlBuilder::new(link).get_title().request().await {
+            Ok(r) => r.title(),
+            Err(_) => link.to_string(),
+        },
+    }
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
@@ -107,12 +117,7 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
             let s = match &i.item {
                 // TODO: should be able to move here
                 Item::Link(l) => match l.as_video() {
-                    Ok(l) => YtdlBuilder::new(l)
-                        .get_title()
-                        .request()
-                        .await
-                        .map(|b| b.title())
-                        .unwrap_or_else(|l| l.to_string()),
+                    Ok(l) => resolve_link(l).await,
                     Err(_) => l.to_string(),
                 },
                 Item::File(f) => mlib::item::clean_up_path(&f)

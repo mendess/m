@@ -179,6 +179,15 @@ impl VideoLink {
 
         s.starts_with("http") && (s.contains(Self::QUERY_PARAM) || SHORT_LINK_PAT.is_match(s))
     }
+
+    pub fn shorten(&mut self) {
+        if self.0.contains("youtube") {
+            use std::fmt::Write;
+            let id = self.id().as_str().to_owned();
+            self.0.clear();
+            let _ = write!(self.0, "https://youtu.be/{id}");
+        }
+    }
 }
 
 impl FromStr for VideoLink {

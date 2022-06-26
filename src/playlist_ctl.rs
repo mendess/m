@@ -137,13 +137,13 @@ pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Re
     Ok(())
 }
 
-async fn add_song(link: VideoLink, categories: HashSet<String>) -> anyhow::Result<()> {
+async fn add_song(mut link: VideoLink, categories: HashSet<String>) -> anyhow::Result<()> {
     let b = YtdlBuilder::new(&link)
         .get_title()
         .get_duration()
         .request()
         .await?;
-
+    link.shorten();
     let song = Song {
         time: b.duration().as_secs(),
         link,
