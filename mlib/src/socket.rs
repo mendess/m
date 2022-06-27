@@ -16,6 +16,7 @@ use tokio::net::UnixStream;
 
 use self::cmds::command::{Compute, Execute, Property};
 use crate::Error;
+pub use local::override_socket_base_dir;
 
 #[derive(Debug)]
 pub enum MpvSocket {
@@ -58,10 +59,6 @@ impl UnconnectedMpvSocket {
     pub fn path(&self) -> &Path {
         self.socket.path()
     }
-
-    //     pub(crate) async fn created_at(&self) -> io::Result<SystemTime> {
-    //         tokio::fs::metadata(&self.path).await?.created()
-    //     }
 }
 
 impl Display for UnconnectedMpvSocket {
