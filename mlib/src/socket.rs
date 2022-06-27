@@ -7,7 +7,7 @@ use std::{
     io::{self, IoSlice},
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use futures_util::{stream, Stream, StreamExt};
@@ -80,6 +80,10 @@ impl<S> Ord for MpvSocket<S> {
 impl<S> MpvSocket<S> {
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub(crate) async fn created_at(&self) -> io::Result<SystemTime> {
+        tokio::fs::metadata(&self.path).await?.created()
     }
 }
 

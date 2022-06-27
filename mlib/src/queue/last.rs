@@ -29,7 +29,9 @@ pub async fn fetch<S>(socket: &MpvSocket<S>) -> Result<Option<usize>, Error> {
         Err(e) => return Err(e.into()),
     };
     tracing::debug!(?modified, ?path, "got m_time on last queue file");
-    if (modified.duration_since(now).unwrap_or_default()) > THREE_HOURS {
+    if (modified.duration_since(now).unwrap_or_default()) > THREE_HOURS
+        || modified < socket.created_at().await?
+    {
         reset(socket).await?;
         Ok(None)
     } else {

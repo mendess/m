@@ -36,6 +36,7 @@ use async_recursion::async_recursion;
 
 #[async_recursion(?Send)]
 async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
+    tracing::debug!(?cmd, "running command");
     match cmd {
         Command::Socket { new } => {
             if new.is_some() {

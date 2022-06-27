@@ -40,6 +40,7 @@ pub async fn toggle_video() -> anyhow::Result<()> {
 pub async fn next_file(Amount { amount }: Amount) -> anyhow::Result<()> {
     let mut socket = MpvSocket::lattest().await?;
     for _ in 0..amount.unwrap_or(1) {
+        tracing::debug!("going to next file");
         socket.fire("playlist-next").await?;
     }
     Ok(())
