@@ -108,7 +108,7 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     let mut socket = MpvSocket::lattest()
         .await
         .context("failed getting socket")?;
-    let queue = Queue::now(&mut socket, amount.unwrap_or(10).abs() as _)
+    let queue = Queue::now(&mut socket, amount.unwrap_or(10).unsigned_abs())
         .await
         .context("failed getting queue")?;
     let current = queue.current_idx();
@@ -477,6 +477,15 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     tracing::debug!(?unconn_socket, "created a new unconnected socket");
 
     let mut mpv = Command::new("mpv");
+
+    #[cfg(debug_assertions)]
+    mpv.args([
+        "--msg-level=all=debug",
+        &format!(
+            "--log-file={}.log",
+            unconn_socket.path().to_str().unwrap_or("fallback")
+        ),
+    ]);
     mpv.args(["--geometry=820x466", "--no-terminal"]);
     mpv.arg(format!(
         "--input-ipc-server={}",
