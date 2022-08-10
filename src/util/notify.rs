@@ -121,7 +121,7 @@ impl<'path> Notify<'path> {
             if crossterm::terminal::is_raw_mode_enabled()? {
                 for line in s.split_inclusive('\n') {
                     if line.ends_with('\n') {
-                        stdout.queue(Print(&line[..(line.len().saturating_sub(2))]))?;
+                        stdout.queue(Print(&line[..(line.len().saturating_sub(1))]))?;
                         stdout.queue(MoveToNextLine(1))?;
                     } else {
                         stdout.queue(Print(line))?;
