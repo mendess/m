@@ -191,6 +191,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cli-daemon"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "namespaced-tmp",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "clipboard"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -754,6 +767,7 @@ dependencies = [
  "anyhow",
  "async-recursion",
  "async_once",
+ "cli-daemon",
  "clipboard",
  "config",
  "crossterm",
@@ -880,6 +894,7 @@ name = "namespaced-tmp"
 version = "1.0.0"
 source = "git+https://github.com/mendess/namespaced-tmp#4c9e51debf3c149684d0dbdbd24b6523e1571a15"
 dependencies = [
+ "tokio",
  "whoami",
 ]
 

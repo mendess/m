@@ -19,7 +19,7 @@ use mlib::{
     Error as SockErr, Link, Search,
 };
 use rand::seq::SliceRandom;
-use std::{env::args, io::Write};
+use std::io::Write;
 use structopt::StructOpt;
 use tokio::io;
 use tracing::dispatcher::set_global_default;
@@ -255,9 +255,8 @@ fn log_if_err<T, E: std::fmt::Debug>(r: Result<T, E>) -> Result<T, E> {
 }
 
 async fn run() -> anyhow::Result<()> {
-    if args().next().as_deref() == Some(download_ctl::ARG_0) {
-        return download_ctl::download_daemon().await;
-    }
+    download_ctl::start_daemon_if_running_as_daemon().await?;
+
     let args = match Args::from_args_safe() {
         Ok(args) => args,
         Err(e) => {

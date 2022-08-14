@@ -6,6 +6,7 @@ use std::{
     ops::Range,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
+    str::Utf8Error,
 };
 
 pub use link::{Link, PlaylistId, PlaylistLink, VideoId};
@@ -31,6 +32,18 @@ impl Item {
             Item::Link(l) => l.as_str().as_bytes(),
             Item::File(f) => f.as_os_str().as_bytes(),
             Item::Search(s) => s.as_str().as_bytes(),
+        }
+    }
+}
+
+impl<'s> TryFrom<&'s Item> for &'s str {
+    type Error = Utf8Error;
+
+    fn try_from(value: &'s Item) -> Result<Self, Self::Error> {
+        match value {
+            Item::Link(l) => Ok(l.as_str()),
+            Item::File(f) => std::str::from_utf8(f.as_os_str().as_bytes()),
+            Item::Search(s) => Ok(s.as_str()),
         }
     }
 }
