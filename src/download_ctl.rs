@@ -18,7 +18,7 @@ mod daemon {
 
     use cli_daemon::Daemon;
     use futures_util::{stream::FuturesUnordered, StreamExt};
-    use mlib::{downloaded, item::link::VideoLink};
+    use mlib::{downloaded, item::link::VideoLink, playlist::Playlist};
     use once_cell::sync::Lazy;
     use serde::{Deserialize, Serialize};
     use tokio::{
@@ -37,9 +37,10 @@ mod daemon {
 
     #[derive(Serialize, Deserialize, Debug, Default, Clone)]
     pub struct Status {
-        pub done: HashSet<VideoLink>,
         pub downloading: HashSet<VideoLink>,
         pub queued: HashSet<VideoLink>,
+        pub done: Vec<VideoLink>,
+        pub errored: Vec<VideoLink>,
     }
     impl Status {
         fn move_to_downloading(&mut self, l: &VideoLink) {
@@ -55,7 +56,15 @@ mod daemon {
                 .downloading
                 .take(l)
                 .expect("I expected to find this value downloading");
-            self.done.insert(v);
+            self.done.push(v);
+        }
+
+        fn move_to_errored(&mut self, l: &VideoLink) {
+            let v = self
+                .downloading
+                .take(l)
+                .expect("I expected to find this value downloading");
+            self.errored.push(v);
         }
     }
 
@@ -93,16 +102,26 @@ mod daemon {
                             async move {
                                 let result = downloaded::download(
                                     dl_dir.clone(),
-                                    l,
+                                    &l,
                                     crate::config::CONFIG.download_format == DownloadFormat::Audio,
                                 )
                                 .await;
                                 match result {
-                                    Ok(l) => {
+                                    Ok(_) => {
                                         info!(?l, "downloaded");
                                         STATUS.lock().await.move_to_done(&l);
                                     }
-                                    Err(e) => error!(?e, "error downloading link"),
+                                    Err(e) => {
+                                        let playlist = Playlist::load().await;
+
+                                        let song = playlist.as_ref().ok().map(|pl| {
+                                            pl.find_by_link(&l)
+                                                .map(|s| s.name.as_str())
+                                                .unwrap_or(l.as_str())
+                                        });
+                                        error!(?e, ?song, "error downloading link");
+                                        STATUS.lock().await.move_to_errored(&l);
+                                    }
                                 }
                             }
                         }));
@@ -143,13 +162,23 @@ pub async fn daemon_status() -> anyhow::Result<()> {
         done,
         downloading,
         queued,
+        errored,
     } = daemon::DAEMON
         .exchange(Message::Status)
         .await?
         .expect("daemon should have given me status");
-    crate::notify!("Queued"; content: "{}", queued.iter().format("\n"));
-    crate::notify!("Downloaded"; content: "{}", done.iter().format("\n"));
-    crate::notify!("Downloading"; content: "{}", downloading.iter().format("\n"));
+    if !queued.is_empty() {
+        crate::notify!("Queued"; content: "{}", queued.iter().format("\n"));
+    }
+    if !done.is_empty() {
+        crate::notify!("Done"; content: "{}", done.iter().format("\n"));
+    }
+    if !downloading.is_empty() {
+        crate::notify!("Downloading"; content: "{}", downloading.iter().format("\n"));
+    }
+    if !errored.is_empty() {
+        crate::notify!("Errored"; content: "{}", errored.iter().format("\n"));
+    }
     Ok(())
 }
 

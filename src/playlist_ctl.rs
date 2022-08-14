@@ -7,12 +7,12 @@ use futures_util::TryStreamExt;
 use futures_util::{future::ready, Stream};
 use itertools::Itertools;
 use mlib::item::link::VideoLink;
+use mlib::player::PlayerIndex;
 use mlib::playlist::PartialSearchResult;
 use mlib::Search;
 use mlib::{
     playlist::{self, Playlist, PlaylistIds, Song},
     queue::Queue,
-    socket::MpvSocket,
     ytdl::YtdlBuilder,
     Link,
 };
@@ -90,8 +90,7 @@ pub async fn add_playlist(
 }
 
 pub async fn ch_cat() -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
-    let current = Queue::link(&mut socket).await?;
+    let current = Queue::link(PlayerIndex::CURRENT).await?;
     let mut playlist = Playlist::load().await?;
     let current = current
         .id()
@@ -120,8 +119,7 @@ pub async fn ch_cat() -> anyhow::Result<()> {
 pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Result<()> {
     let mut playlist = Playlist::load().await?;
     let idx = if current {
-        let mut socket = MpvSocket::lattest().await?;
-        let current = Queue::link(&mut socket).await?;
+        let current = Queue::link(PlayerIndex::CURRENT).await?;
         let current = current
             .id()
             .ok_or_else(|| anyhow::anyhow!("current song is not identified"))?;

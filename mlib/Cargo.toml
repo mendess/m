@@ -24,6 +24,8 @@ whoami = { version = "1.2.1", optional = true }
 async_once = { version = "0.2.6", optional = true }
 arc-swap = { version = "1.5.1", optional = true }
 pin-project = { version = "1.0.11", optional = true }
+libmpv = "2.0.1"
+cli-daemon = { path = "../cli-daemon" }
 
 [dependencies.namespaced-tmp]
 git = "https://github.com/mendess/namespaced-tmp"
@@ -51,6 +53,7 @@ default = [
     "downloads",
     "items",
     "queue",
+    "player",
 ]
 socket = [
     "items",
@@ -109,4 +112,7 @@ items = [
 ]
 queue = [
     "socket",
+]
+player = [
+
 ]

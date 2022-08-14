@@ -25,14 +25,14 @@ use tracing::{debug, error, info};
 use crate::Daemon;
 
 /// A builder for a daemon process.
-pub struct DaemonProcess<M, R> {
-    socket_path: &'static Path,
+pub struct DaemonProcess<'s, M, R> {
+    socket_path: &'s Path,
     shutdown: Option<oneshot::Receiver<()>>,
     _marker: PhantomData<(M, R)>,
 }
 
-impl<M, R> DaemonProcess<M, R> {
-    pub async fn new(daemon: &Daemon<M, R>) -> Self {
+impl<'s, M, R> DaemonProcess<'s, M, R> {
+    pub async fn new(daemon: &'s Daemon<M, R>) -> DaemonProcess<'s, M, R> {
         Self {
             socket_path: daemon.socket_path().await,
             shutdown: None,
@@ -41,7 +41,7 @@ impl<M, R> DaemonProcess<M, R> {
     }
 }
 
-impl<M, R> DaemonProcess<M, R> {
+impl<'s, M, R> DaemonProcess<'s, M, R> {
     /// Provide a means of gracefully shuting down the daemon. Sending on this channel causes the
     /// daemon to terminate.
     pub fn with_shutdown(self, shutdown: oneshot::Receiver<()>) -> Self {
@@ -114,8 +114,13 @@ where
         match lines.next_line().await {
             Ok(Some(line)) => {
                 debug!(?line, "received message");
-                let response = handler(serde_json::from_str(&line).unwrap()).await;
-                let response = serde_json::to_string(&response).unwrap();
+                let response = match serde_json::from_str(&line) {
+                    Ok(m) => {
+                        let response = handler(m).await;
+                        serde_json::to_string(&response).unwrap()
+                    }
+                    Err(e) => serde_json::to_string(&e.to_string()).unwrap(),
+                };
                 debug!(?response, "sending response");
                 let vector = [IoSlice::new(response.as_bytes()), IoSlice::new(b"\n")];
                 if let Err(e) = send.write_vectored(&vector).await {

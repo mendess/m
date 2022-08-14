@@ -8,12 +8,12 @@ use thiserror::Error;
 pub mod downloaded;
 #[cfg(feature = "items")]
 pub mod item;
+#[cfg(feature = "player")]
+pub mod player;
 #[cfg(feature = "playlist")]
 pub mod playlist;
 #[cfg(feature = "queue")]
 pub mod queue;
-#[cfg(feature = "socket")]
-pub mod socket;
 #[cfg(feature = "ytdl")]
 pub mod ytdl;
 
@@ -38,6 +38,10 @@ pub enum Error {
     #[error("ipc error: {0}")]
     IpcError(String),
 
+    #[error("libmpv error: {0}")]
+    #[cfg(feature = "player")]
+    MpvError(player::error::MpvError),
+
     #[error("can't find music directory")]
     MusicDirNotFound,
 
@@ -54,4 +58,13 @@ pub enum Error {
     #[cfg(feature = "playlist")]
     #[error("playlist file not found at: {0}")]
     PlaylistFileNotFound(PathBuf),
+}
+
+impl From<player::error::Error> for Error {
+    fn from(e: player::error::Error) -> Self {
+        match e {
+            player::error::Error::Io(e) => Self::Io(e),
+            player::error::Error::Mpv(e) => Self::MpvError(e),
+        }
+    }
 }

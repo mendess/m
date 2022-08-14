@@ -305,7 +305,7 @@ pub struct DeleteSong {
 #[derive(Debug, StructOpt, Serialize, Deserialize)]
 #[structopt(global_settings = &[DisableVersion])]
 pub struct Amount {
-    pub amount: Option<isize>,
+    pub amount: Option<i32>,
 }
 
 #[derive(Debug, StructOpt, Serialize, Deserialize)]

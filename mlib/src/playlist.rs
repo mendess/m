@@ -231,7 +231,7 @@ impl Playlist {
         Ok(())
     }
 
-    pub async fn find_by_link(&self, link: &VideoLink) -> Option<&Song> {
+    pub fn find_by_link(&self, link: &VideoLink) -> Option<&Song> {
         self.0.iter().find(|s| s.link.id() == link.id())
     }
 }

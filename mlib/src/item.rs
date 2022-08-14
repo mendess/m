@@ -4,14 +4,15 @@ use std::{
     ffi::OsStr,
     fmt::Display,
     ops::Range,
-    os::unix::ffi::OsStrExt,
+    os::unix::{ffi::OsStrExt, prelude::OsStringExt},
     path::{Path, PathBuf},
-    str::Utf8Error,
+    str::Utf8Error, string::FromUtf8Error,
 };
 
 pub use link::{Link, PlaylistId, PlaylistLink, VideoId};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Item {
     Link(Link),
     File(PathBuf),
@@ -44,6 +45,18 @@ impl<'s> TryFrom<&'s Item> for &'s str {
             Item::Link(l) => Ok(l.as_str()),
             Item::File(f) => std::str::from_utf8(f.as_os_str().as_bytes()),
             Item::Search(s) => Ok(s.as_str()),
+        }
+    }
+}
+
+impl TryFrom<Item> for String {
+    type Error = FromUtf8Error;
+
+    fn try_from(value: Item) -> Result<Self, Self::Error> {
+        match value {
+            Item::Link(l) => Ok(l.into_string()),
+            Item::File(f) => String::from_utf8(f.into_os_string().into_vec()),
+            Item::Search(s) => Ok(s.into_string()),
         }
     }
 }
@@ -102,7 +115,7 @@ pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
     Some(VideoId::new(&name[range]))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Search(String);
 
@@ -120,6 +133,10 @@ impl Search {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    fn into_string(self) -> String {
+        self.0
     }
 }
 

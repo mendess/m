@@ -2,6 +2,8 @@ mod link;
 mod process;
 
 use std::{
+    any::Any,
+    fmt::Debug,
     io,
     path::{Path, PathBuf},
 };
@@ -20,6 +22,7 @@ use tracing::error;
 pub struct Daemon<M, R> {
     name: &'static str,
     channels: OnceCell<io::Result<Mutex<DaemonLink<M, R>>>>,
+    socket_path: OnceCell<PathBuf>,
 }
 
 impl<M, R> Daemon<M, R> {
@@ -27,12 +30,12 @@ impl<M, R> Daemon<M, R> {
         Daemon {
             name,
             channels: OnceCell::const_new(),
+            socket_path: OnceCell::const_new(),
         }
     }
 
-    async fn socket_path(&self) -> &'static Path {
-        static PATH: OnceCell<PathBuf> = OnceCell::const_new();
-        PATH.get_or_init(|| async {
+    async fn socket_path(&self) -> &Path {
+        self.socket_path.get_or_init(|| async {
             let (path, e) = namespaced_tmp::async_impl::in_user_tmp(self.name).await;
             if let Some(e) = e {
                 error!("failed to create tmp dir for {} daemon: {:?}", self.name, e);
@@ -53,7 +56,7 @@ impl<M, R> Daemon<M, R> {
 
 impl<M, R> Daemon<M, R>
 where
-    M: Serialize,
+    M: Serialize + Any + Debug,
     R: DeserializeOwned,
 {
     pub async fn exchange(&self, message: M) -> io::Result<R> {

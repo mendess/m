@@ -1,4 +1,6 @@
 use std::{
+    any::Any,
+    fmt::Debug,
     io::{self, IoSlice},
     marker::PhantomData,
     os::unix::prelude::CommandExt,
@@ -24,7 +26,7 @@ pub struct DaemonLink<M, R> {
 }
 
 impl<M, R> DaemonLink<M, R> {
-    pub async fn new(name: &str, socket_path: &'static Path) -> io::Result<Self> {
+    pub async fn new(name: &str, socket_path: &Path) -> io::Result<Self> {
         let try_connect = || async {
             debug!(?socket_path, "attempt to connect");
             UnixStream::connect(socket_path).await.map(|sock| {
@@ -57,13 +59,17 @@ impl<M, R> DaemonLink<M, R> {
 
 impl<M, R> DaemonLink<M, R>
 where
-    M: Serialize,
+    M: Serialize + Any + Debug,
     R: DeserializeOwned,
 {
     pub async fn exchange(&mut self, message: M) -> Result<R, io::Error> {
+        debug!(
+            ?message,
+            "sending message to daemon, type: {}",
+            std::any::type_name::<M>()
+        );
         let message = serde_json::to_vec(&message).unwrap();
         let vector = [IoSlice::new(&message), IoSlice::new(b"\n")];
-        debug!("sending message to daemon");
         let len = self.writer.write_vectored(&vector).await?;
         let expected_len = vector[0].len() + vector[1].len();
         if len < expected_len {
@@ -78,6 +84,6 @@ where
         self.reader.read_line(&mut response).await?;
         response.pop(); // trim newline
         debug!(?response, "got");
-        Ok(serde_json::from_str(&response).unwrap())
+        Ok(serde_json::from_str(&response)?)
     }
 }

@@ -5,10 +5,7 @@ use crate::{
     util::{dl_dir, selector::selector, with_video::with_video_env},
 };
 
-use std::{
-    collections::HashSet, io::Write, os::unix::prelude::ExitStatusExt, path::PathBuf, pin::Pin,
-    process::Stdio, time::Duration,
-};
+use std::{collections::HashSet, io::Write, path::PathBuf, pin::Pin};
 
 use anyhow::Context;
 use futures_util::{
@@ -19,36 +16,33 @@ use futures_util::{
 use itertools::Itertools;
 use mlib::{
     item::{link::VideoLink, PlaylistLink},
+    player::{self, error::MpvError, PlayerIndex},
     playlist::Playlist,
     queue::{Item, Queue},
-    socket::{cmds as sock_cmds, MpvSocket},
     ytdl::YtdlBuilder,
     Error, Search,
 };
 use rand::{prelude::SliceRandom, rngs};
 use serde::Deserialize;
-use tempfile::NamedTempFile;
+use tokio::io::BufReader;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, AsyncWriteExt, BufWriter},
     process::Command as Fork,
     sync::OnceCell,
-    time::sleep,
 };
-use tokio::{io::BufReader, process::Command};
 use tokio_stream::wrappers::LinesStream;
 
 pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await.context("connecting to socket")?;
     if link {
-        let link = Queue::link(&mut socket)
+        let link = Queue::link(PlayerIndex::CURRENT)
             .await
             .context("loading the queue to fetch the link")?;
         tracing::debug!("{:?}", link);
         notify!("{}", link);
         return Ok(());
     }
-    let current = Queue::current(&mut socket)
+    let current = Queue::current(PlayerIndex::CURRENT)
         .await
         .context("loading the current queue")?;
     let plus = match current.progress {
@@ -92,7 +86,7 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
 pub async fn resolve_link(link: &VideoLink) -> String {
     static LIST: OnceCell<Result<Playlist, mlib::Error>> = OnceCell::const_new();
     let name = match LIST.get_or_init(Playlist::load).await {
-        Ok(list) => Ok(list.find_by_link(link).await.map(|s| s.name.clone())),
+        Ok(list) => Ok(list.find_by_link(link).map(|s| s.name.clone())),
         Err(e) => Err(e),
     };
     match name {
@@ -105,10 +99,7 @@ pub async fn resolve_link(link: &VideoLink) -> String {
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest()
-        .await
-        .context("failed getting socket")?;
-    let queue = Queue::now(&mut socket, amount.unwrap_or(10).unsigned_abs())
+    let queue = Queue::now(PlayerIndex::CURRENT, amount.unwrap_or(10).unsigned_abs())
         .await
         .context("failed getting queue")?;
     let current = queue.current_idx();
@@ -150,26 +141,21 @@ pub async fn queue(
     q: crate::arg_parse::QueueOpts,
     items: impl IntoIterator<Item = Item>,
 ) -> anyhow::Result<()> {
-    let mut socket = match MpvSocket::lattest().await {
-        Ok(sock) => sock,
-        Err(mlib::Error::NoMpvInstance) => {
+    let player = match player::current().await? {
+        Some(index) => player::get(PlayerIndex::of(index)),
+        None => {
             tracing::debug!("no mpv instance, starting a new one");
             return play(items, with_video_env()).await;
         }
-        Err(e) => return Err(e.into()),
     };
+    tracing::debug!("found a player: {player:?}");
     if q.clear {
         notify!("Clearing playlist...");
-        socket
-            .execute(sock_cmds::QueueClear)
-            .await
-            .context("clearing queue")?;
+        player.queue_clear().await.context("clearing queue")?;
     }
     if q.reset || q.clear {
         notify!("Reseting queue...");
-        mlib::queue::last::reset(&socket)
-            .await
-            .context("resetting queue")?;
+        player.last_queue_clear().await.context("resetting queue")?;
     }
     let mut n_targets = 0;
     let mut notify_tasks = FuturesUnordered::new();
@@ -178,17 +164,17 @@ pub async fn queue(
         check_cache_ref(dl_dir()?, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
-        socket
-            .execute(sock_cmds::LoadFile(&item))
+        player
+            .load_file(item.clone())
             .await
             .context("loading the file")?;
         println!("success");
-        let count = socket
-            .compute(sock_cmds::QueueSize)
+        let count = player
+            .queue_size()
             .await
             .context("getting the queue size")?;
-        let current = socket
-            .compute(sock_cmds::QueuePos)
+        let current = player
+            .queue_pos()
             .await
             .context("getting the queue position")?;
         let playlist_pos = if q.no_move {
@@ -203,7 +189,8 @@ pub async fn queue(
             let mut target = (current + 1) % count;
             tracing::debug!("first target: {}", target);
 
-            if let Some(last) = mlib::queue::last::fetch(&socket)
+            if let Some(last) = player
+                .last_queue()
                 .await
                 .context("fetching the last queue position")?
             {
@@ -220,20 +207,23 @@ pub async fn queue(
                     from, target, current
                 );
                 std::io::stdout().flush()?;
-                socket
-                    .execute(sock_cmds::QueueMove { from, to: target })
+                player
+                    .queue_move(from, target)
                     .await
                     .with_context(|| format!("moving file from {} to {}", from, target))?;
                 println!("succcess");
             }
-            mlib::queue::last::set(&socket, target).await?;
+            player
+                .last_queue_set(target)
+                .await
+                .context("setting last queue")?;
             target
         };
         if q.notify {
             notify_tasks.push(tokio::spawn(notify(item, current, playlist_pos)));
         }
         if q.preemptive_download {
-            todo!("{}", playlist_pos);
+            todo!("preemptive download {}", playlist_pos);
         }
         if notify_tasks.len() > 8 {
             if let Err(e) = notify_tasks.next().await.unwrap() {
@@ -250,7 +240,8 @@ pub async fn queue(
         .await;
     if n_targets > 5 {
         tracing::debug!("reseting queue because got {} targets", n_targets);
-        mlib::queue::last::reset(&socket)
+        player
+            .last_queue_clear()
             .await
             .context("reseting last queue")?;
     }
@@ -346,14 +337,13 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
 }
 
 pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
+    let player = player::get(PlayerIndex::CURRENT);
     match d {
         DeQueue::Next => {
-            let next = socket.compute(sock_cmds::QueuePos).await? + 1;
-            socket.execute(sock_cmds::QueueRemove(next)).await?;
+            player.queue_remove(player.queue_pos().await? + 1).await?;
         }
         DeQueue::Prev => {
-            let prev = match socket.compute(sock_cmds::QueuePos).await?.checked_sub(1) {
+            let prev = match player.queue_pos().await?.checked_sub(1) {
                 Some(i) => i,
                 None => {
                     return Err(anyhow::anyhow!(
@@ -361,33 +351,33 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                     ))
                 }
             };
-            socket.execute(sock_cmds::QueueRemove(prev)).await?;
+            player.queue_remove(prev).await?;
         }
         DeQueue::Pop => {
-            let last = match mlib::queue::last::fetch(&socket).await? {
+            let last = match player.last_queue().await? {
                 Some(l) => l,
                 None => return Err(anyhow::anyhow!("no last queue to pop from")),
             };
-            socket.execute(sock_cmds::QueueRemove(last)).await?;
+            player.queue_remove(last).await?;
         }
         DeQueue::N {
             i: DeQueueIndex(kind, n),
-        } => match kind {
-            crate::arg_parse::DeQueueIndexKind::Plus => {
-                let current = socket.compute(sock_cmds::QueuePos).await?;
-                socket.execute(sock_cmds::QueueRemove(current + n)).await?;
-            }
-            crate::arg_parse::DeQueueIndexKind::Minus => {
-                let current = socket.compute(sock_cmds::QueuePos).await?;
-                let i = current
-                    .checked_sub(n)
-                    .ok_or_else(|| anyhow::anyhow!("i > {}", n))?;
-                socket.execute(sock_cmds::QueueRemove(i)).await?;
-            }
-            crate::arg_parse::DeQueueIndexKind::Exact => {
-                socket.execute(sock_cmds::QueueRemove(n)).await?;
-            }
-        },
+        } => {
+            let to_remove = match kind {
+                crate::arg_parse::DeQueueIndexKind::Plus => {
+                    let current = player.queue_pos().await?;
+                    current + n
+                }
+                crate::arg_parse::DeQueueIndexKind::Minus => {
+                    let current = player.queue_pos().await?;
+                    current
+                        .checked_sub(n)
+                        .ok_or_else(|| anyhow::anyhow!("i > {}", n))?
+                }
+                crate::arg_parse::DeQueueIndexKind::Exact => n,
+            };
+            player.queue_remove(to_remove).await?;
+        }
         DeQueue::Cat { cat } => {
             let cat = &cat;
             let playlist = Playlist::stream()
@@ -400,8 +390,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
                 .await;
-            let mut socket = MpvSocket::lattest().await.context("loading mpv socket")?;
-            let queue = Queue::load(&mut socket, None, None)
+            let queue = Queue::load(player.as_index(), None, None)
                 .await
                 .context("loading current queue")?;
 
@@ -413,10 +402,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
             }) {
                 print!("removing {}... ", index);
                 std::io::stdout().flush()?;
-                socket
-                    .execute(sock_cmds::QueueRemove(index))
-                    .await
-                    .context("removing from queue")?;
+                player.queue_remove(index).await?;
                 println!(" success");
             }
         }
@@ -425,8 +411,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
 }
 
 pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
-    let mut socket = MpvSocket::lattest().await?;
-    let q = Queue::load(&mut socket, None, None).await?;
+    let q = Queue::load(PlayerIndex::CURRENT, None, None).await?;
     let mut file = BufWriter::new(File::create(file).await?);
     for s in q.iter() {
         file.write_all(s.item.as_bytes()).await?;
@@ -462,95 +447,16 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
         })
         .await;
 
-    let mut items = items.into_iter().peekable();
-    let first = items.by_ref().take(20);
-
-    if let Ok(mut socket) = MpvSocket::lattest().await {
-        tracing::info!("pausing previous mpv instance");
-        if let Err(e) = socket.execute(sock_cmds::Pause).await {
+    tracing::info!("pausing previous mpv instance");
+    match player::pause(PlayerIndex::CURRENT).await {
+        Err(player::Error::Mpv(MpvError::NoMpvInstance)) => {}
+        Err(e) => {
             crate::error!("failed to pause previous player"; content: "{:?}", e);
         }
-    }
-    let mut unconn_socket = MpvSocket::new_unconnected()
-        .await
-        .context("creating a new socket")?;
-    tracing::debug!(?unconn_socket, "created a new unconnected socket");
-
-    let mut mpv = Command::new("mpv");
-
-    #[cfg(debug_assertions)]
-    mpv.args([
-        "--msg-level=all=debug",
-        &format!(
-            "--log-file={}.log",
-            unconn_socket.path().to_str().unwrap_or("fallback")
-        ),
-    ]);
-    mpv.args(["--geometry=820x466", "--no-terminal"]);
-    mpv.arg(format!(
-        "--input-ipc-server={}",
-        unconn_socket.path().display()
-    ));
-    if !with_video {
-        mpv.arg("--no-video");
-    }
-    if first.len() > 1 {
-        mpv.arg("--loop-playlist");
-    }
-    mpv.args(first);
-    mpv.stdout(Stdio::null());
-
-    tracing::debug!(args = ?mpv.as_std().get_args(), "spawning new mpv process");
-    let mut child = mpv.spawn().context("spawning mpv")?;
-    tracing::debug!(?child, "new mpv process spawned");
-
-    if items.peek().is_some() {
-        tracing::info!("queueing the leftover songs");
-        let mut connected = false;
-        for i in 0..5 {
-            tracing::debug!("attempt {}", i + 1);
-            match unconn_socket.connect().await {
-                Err((_, s)) => {
-                    unconn_socket = s;
-                    sleep(Duration::from_secs(i * 2)).await;
-                }
-                Ok(mut socket) => {
-                    let (file, path) = NamedTempFile::new()?.into_parts();
-                    let mut file = BufWriter::new(File::from_std(file));
-                    for i in items {
-                        file.write_all(i.as_bytes())
-                            .await
-                            .context("writing bytes")?;
-                        file.write_all(b"\n").await.context("writing bytes")?;
-                    }
-                    file.flush().await?;
-                    socket.execute(sock_cmds::LoadList(&path)).await?;
-                    connected = true;
-                    break;
-                }
-            };
-        }
-        if !connected {
-            crate::error!("never managed to connect to queue the rest of the songs")
-        }
-    }
-    match tokio::time::timeout(Duration::from_secs(1), child.wait()).await {
-        Ok(status) => {
-            let status = status?;
-            if !status.success() {
-                crate::error!(
-                    "Error spawning mpv";
-                    content: "Exit code: {:?}, was killed: {:?}",
-                    status.code(),
-                    status.signal()
-                );
-            }
-        }
-        Err(_elapsed) => {
-            // success probably
-        }
+        Ok(_) => {}
     }
 
+    player::create(items.iter(), with_video).await?;
     Ok(())
 }
 
@@ -642,10 +548,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
     .await
     .context("queueing")?;
     if loop_list {
-        MpvSocket::lattest_cached()
-            .await?
-            .execute(sock_cmds::QueueLoop(true))
-            .await?
+        player::queue_loop(PlayerIndex::CURRENT, true).await?;
     }
     Ok(())
 }

@@ -11,7 +11,7 @@ pub trait IntoVideo {
     fn into_video(self) -> VideoLink;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Link {
     Video(VideoLink),
     Playlist(PlaylistLink),

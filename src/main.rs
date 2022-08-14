@@ -12,14 +12,14 @@ use itertools::Itertools;
 use mlib::{
     downloaded::clean_downloads,
     item::link::VideoLink,
+    player::{self, PlayerIndex},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
-    socket::MpvSocket,
     ytdl::YtdlBuilder,
-    Error as SockErr, Link, Search,
+    Link, Search,
 };
 use rand::seq::SliceRandom;
-use std::io::Write;
+use std::{io::Write, sync::Mutex};
 use structopt::StructOpt;
 use tokio::io;
 use tracing::dispatcher::set_global_default;
@@ -40,12 +40,15 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     match cmd {
         Command::Socket { new } => {
             if new.is_some() {
-                println!("{}", MpvSocket::new_unconnected().await?.path().display());
+                println!(
+                    "{}",
+                    player::legacy_socket_for(player::current().await?.unwrap_or_default() + 1)
+                        .await
+                );
             } else {
-                match MpvSocket::lattest().await {
-                    Ok(s) => println!("{}", s.path().display()),
-                    Err(SockErr::NoMpvInstance) => println!("/dev/null"),
-                    Err(e) => return Err(e.into()),
+                match player::current().await? {
+                    Some(i) => println!("{}", player::legacy_socket_for(i).await),
+                    None => println!("/dev/null"),
                 }
             }
         }
@@ -254,8 +257,14 @@ fn log_if_err<T, E: std::fmt::Debug>(r: Result<T, E>) -> Result<T, E> {
     r
 }
 
+static CHOSEN_INDEX: Mutex<PlayerIndex> = Mutex::new(PlayerIndex::CURRENT);
+pub fn chosen_index() -> PlayerIndex {
+    *CHOSEN_INDEX.lock().unwrap()
+}
+
 async fn run() -> anyhow::Result<()> {
     download_ctl::start_daemon_if_running_as_daemon().await?;
+    player::start_daemon_if_running_as_daemon().await?;
 
     let args = match Args::from_args_safe() {
         Ok(args) => args,
@@ -267,11 +276,11 @@ async fn run() -> anyhow::Result<()> {
         }
     };
     if let Some(id) = args.socket {
-        mlib::socket::override_lattest(id);
+        *CHOSEN_INDEX.lock().unwrap() = PlayerIndex::of(id);
     }
 
     if let Some(new_base) = config::CONFIG.socket_base_dir.as_ref() {
-        mlib::socket::override_socket_base_dir(new_base.clone());
+        player::override_legacy_socket_base_dir(new_base.clone());
     }
 
     process_cmd(args.cmd).await?;

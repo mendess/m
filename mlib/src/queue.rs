@@ -1,8 +1,11 @@
 use crate::{
     item::id_from_path,
-    playlist,
-    socket::{self, cmds::QueueItemStatus, MpvSocket},
-    Error, Link,
+    player::{
+        self,
+        error::{Error as PlayerError, MpvError, MpvErrorCode},
+        PlayerIndex, QueueItemStatus,
+    },
+    playlist, Error, Link,
 };
 
 use std::collections::VecDeque;
@@ -27,27 +30,27 @@ pub use crate::Item;
 
 impl Queue {
     pub async fn load(
-        socket: &mut MpvSocket,
-        before_len: Option<usize>,
-        after_len: Option<usize>,
+        index: PlayerIndex,
+        before_len: Option<u32>,
+        after_len: Option<u32>,
     ) -> Result<Self, Error> {
         let mut play_status = false;
-        let mut iter = socket.compute(socket::cmds::Queue).await?.into_iter();
+        let mut iter = player::queue(index).await?.into_iter();
 
         let mut before = match before_len {
-            Some(cap) => VecDeque::with_capacity(cap),
+            Some(cap) => VecDeque::with_capacity(cap as usize),
             None => VecDeque::new(),
         };
-        let mut index = 0;
-        let mut index = || {
-            let i = index;
-            index += 1;
+        let mut next_index = 0;
+        let mut next_index = || {
+            let i = next_index;
+            next_index += 1;
             i
         };
         let mut current = None;
         for i in iter.by_ref() {
             let item = SongIdent {
-                index: index(),
+                index: next_index(),
                 item: Item::from(i.filename),
             };
             match i.status {
@@ -60,7 +63,7 @@ impl Queue {
                     break;
                 }
                 None => {
-                    if matches!(before_len, Some(cap) if cap == before.len()) {
+                    if matches!(before_len, Some(cap) if cap as usize == before.len()) {
                         before.pop_front();
                     }
                     before.push_back(item);
@@ -68,12 +71,18 @@ impl Queue {
             }
         }
         let after_len = after_len
-            .map(|a| a + (before_len.unwrap_or(0).saturating_sub(before.len())))
+            .map(|a| {
+                a as usize
+                    + (before_len
+                        .map(|x| x as usize)
+                        .unwrap_or(0)
+                        .saturating_sub(before.len()))
+            })
             .unwrap_or(usize::MAX);
         let after = iter
             .take(after_len)
             .map(|i| SongIdent {
-                index: index(),
+                index: next_index(),
                 item: Item::from(i.filename),
             })
             .collect();
@@ -81,20 +90,20 @@ impl Queue {
             before,
             current: current.unwrap(),
             after,
-            last_queue: last::fetch(socket).await?,
+            last_queue: player::last_queue(index).await?,
             playing: play_status,
         })
     }
 
-    pub async fn now(socket: &mut MpvSocket, len: usize) -> Result<Self, Error> {
+    pub async fn now(index: PlayerIndex, len: u32) -> Result<Self, Error> {
         let before = len / 5;
         let after = len - before - 1;
-        Self::load(socket, Some(before), Some(after)).await
+        Self::load(index, Some(before), Some(after)).await
     }
 
-    pub async fn link(socket: &mut MpvSocket) -> Result<Item, Error> {
-        let current_idx = socket.compute(socket::cmds::QueuePos).await?;
-        let current = socket.compute(socket::cmds::QueueN(current_idx)).await?;
+    pub async fn link(index: PlayerIndex) -> Result<Item, Error> {
+        let current_idx = player::queue_pos(index).await?;
+        let current = player::queue_at(index, current_idx).await?;
         match Item::from(current.filename) {
             Item::Link(l) => Ok(Item::Link(l)),
             Item::File(p) => Ok(id_from_path(&p)
@@ -105,9 +114,9 @@ impl Queue {
         }
     }
 
-    pub async fn current(socket: &mut MpvSocket) -> Result<Current, Error> {
-        let media_title = socket.compute(socket::cmds::MediaTitle).await?;
-        let filename = Item::from(socket.compute(socket::cmds::Filename).await?);
+    pub async fn current(index: PlayerIndex) -> Result<Current, Error> {
+        let media_title = player::media_title(index).await?;
+        let filename = Item::from(player::filename(index).await?);
         let id = filename.id();
         // TODO: this is wrong
         let title = if media_title.is_empty() {
@@ -116,12 +125,12 @@ impl Queue {
             media_title
         };
 
-        let playing = !socket.compute(socket::cmds::IsPaused).await?;
-        let volume = socket.compute(socket::cmds::Volume).await?;
-        let progress = match socket.compute(socket::cmds::PercentPosition).await {
+        let playing = !player::is_paused(index).await?;
+        let volume = player::volume(index).await?;
+        let progress = match player::percent_position(index).await {
             Ok(progress) => Some(progress),
-            Err(Error::IpcError(s)) if s.contains("property unavailable") => None,
-            Err(e) => return Err(e),
+            Err(PlayerError::Mpv(MpvError::Raw(MpvErrorCode::PropertyUnavailable))) => None,
+            Err(e) => return Err(e.into()),
         };
         let categories = OptionFuture::from(id.map(playlist::find_song))
             .await
@@ -130,21 +139,17 @@ impl Queue {
             .map(|s| s.categories)
             .unwrap_or_default();
 
-        let chapter = socket
-            .compute(socket::cmds::ChapterMetadata)
-            .await
-            .ok()
-            .map(|m| m.title);
+        let chapter = player::chapter_metadata(index).await.ok().map(|m| m.title);
 
-        let size = socket.compute(socket::cmds::QueueSize).await?;
-        let current_idx = socket.compute(socket::cmds::QueuePos).await?;
+        let size = player::queue_size(index).await?;
+        let current_idx = player::queue_pos(index).await?;
         let next = if size == 1 {
             None
         } else {
             Some(
-                socket
-                    .compute(socket::cmds::QueueNFilename((current_idx + 1) % size))
-                    .await?,
+                player::queue_at(index, (current_idx + 1) % size)
+                    .await?
+                    .filename,
             )
         };
         Ok(Current {
@@ -191,5 +196,3 @@ pub struct Current {
     pub index: usize,
     pub next: Option<String>,
 }
-
-pub mod last;
