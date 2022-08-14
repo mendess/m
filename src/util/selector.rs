@@ -50,11 +50,11 @@ where
         Some(n) => Err(anyhow::anyhow!("process exited with status: {n}")),
         None => {
             if status.core_dumped() {
-                return Err(anyhow::anyhow!("core dumped :("));
+                Err(anyhow::anyhow!("core dumped :("))
             } else if let Some(sig) = status.signal() {
-                return Err(anyhow::anyhow!("killed by signal: {sig}"));
+                Err(anyhow::anyhow!("killed by signal: {sig}"))
             } else {
-                return Err(anyhow::anyhow!("process exited with status: {:?}", status));
+                Err(anyhow::anyhow!("process exited with status: {:?}", status))
             }
         }
     }

@@ -322,13 +322,11 @@ async fn main() {
 fn handle_search_result<T>(r: PartialSearchResult<T>) -> anyhow::Result<T> {
     match r {
         PartialSearchResult::One(t) => Ok(t),
-        PartialSearchResult::None => return Err(anyhow::anyhow!("song not in playlist")),
-        PartialSearchResult::Many(too_many_matches) => {
-            return Err(anyhow::anyhow!(
-                "too many matches:\n  {}",
-                too_many_matches.into_iter().format("\n  ")
-            ))
-        }
+        PartialSearchResult::None => Err(anyhow::anyhow!("song not in playlist")),
+        PartialSearchResult::Many(too_many_matches) => Err(anyhow::anyhow!(
+            "too many matches:\n  {}",
+            too_many_matches.into_iter().format("\n  ")
+        )),
     }
 }
 
