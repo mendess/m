@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 structopt = "0.3.26"
 mlib = { path = "./mlib", default-features = true }
-margs = { path = "./margs" }
 cli-daemon = { path = "./cli-daemon" }
 tokio = { version = "1.20.1", features = ["macros", "rt-multi-thread", "rt", "parking_lot"] }
 anyhow = "1.0.60"
@@ -36,6 +35,6 @@ serde_json = "1.0.83"
 config = "0.13.2"
 
 [workspace]
-members = ["mlib", "margs", "cli-daemon"]
+members = ["mlib", "cli-daemon"]
 
 [features]
