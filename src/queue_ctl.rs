@@ -137,10 +137,11 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn queue(
-    q: crate::arg_parse::QueueOpts,
-    items: impl IntoIterator<Item = Item>,
-) -> anyhow::Result<()> {
+pub async fn queue<I>(q: crate::arg_parse::QueueOpts, items: I) -> anyhow::Result<()>
+where
+    I: IntoIterator<Item = Item>,
+    I::IntoIter: ExactSizeIterator,
+{
     let player = match player::current().await? {
         Some(index) => player::get(PlayerIndex::of(index)),
         None => {
@@ -159,8 +160,10 @@ pub async fn queue(
     }
     let mut n_targets = 0;
     let mut notify_tasks = FuturesUnordered::new();
-    let mut items = expand_playlists(items).inspect(|_| n_targets += 1);
-    while let Some(mut item) = items.next().await {
+    let items = items.into_iter();
+    let item_count = items.len();
+    let mut expanded_items = expand_playlists(items).inspect(|_| n_targets += 1);
+    while let Some(mut item) = expanded_items.next().await {
         check_cache_ref(dl_dir()?, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
@@ -219,7 +222,7 @@ pub async fn queue(
                 .context("setting last queue")?;
             target
         };
-        if q.notify {
+        if q.notify && item_count < 30 {
             notify_tasks.push(tokio::spawn(notify(item, current, playlist_pos)));
         }
         if q.preemptive_download {
@@ -249,7 +252,7 @@ pub async fn queue(
 }
 
 async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()> {
-    let img = tempfile::NamedTempFile::new()?;
+    let img = tempfile::Builder::new().suffix(".png").tempfile()?;
     let (img_file, img_path) = img.into_parts();
     tracing::debug!("image tmp path: {}", img_path.display());
     let title = match item {

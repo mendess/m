@@ -227,6 +227,7 @@ fn parse_queue_item_status(node: MpvNode) -> MpvResult<QueueItemStatus> {
             }
         })
 }
+
 fn parse_queue_item(node: MpvNode) -> MpvResult<QueueItem> {
     let mk_err = |error: &'static str| {
         || MpvError::InvalidData {
@@ -343,7 +344,9 @@ impl Players {
             .collect::<Vec<_>>();
         let legacy_socket = legacy_socket_for(index).await;
         let mpv = Mpv::with_initializer(|mpv| {
-            mpv.set_property("video", with_video)?;
+            if let Err(e) = mpv.set_property("video", with_video) {
+                tracing::error!(error = ?e, "failed to set video to true");
+            }
             #[cfg(debug_assertions)]
             {
                 mpv.set_property("msg-level", "all=debug")?;
@@ -372,7 +375,7 @@ impl Players {
                     loop {
                         match events.wait_event(-1.0) {
                             Some(Ok(Event::Shutdown)) => {
-                                tracing::debug!(?index, "got shutdown event");
+                                tracing::info!(?index, "got shutdown event");
                                 break;
                             }
                             Some(Ok(Event::PropertyChange {
@@ -518,7 +521,10 @@ impl Players {
         from: usize,
         to: usize,
     ) -> MpvResult<()> {
-        self.current_player(index)?.playlist_move(from, to)?;
+        let indices = format!("{from} {to}");
+        let (from, to) = indices.split_once(' ').unwrap();
+        self.current_player(index)?
+            .command("playlist-move", &[from, to])?;
         Ok(())
     }
 
@@ -549,7 +555,8 @@ impl Players {
             .or(self.current_default)
             .ok_or(MpvError::NoMpvInstance)?;
 
-        self.players
+        let player = self
+            .players
             .get_mut(index)
             .and_then(Option::take)
             .ok_or(MpvError::NoMpvInstance)?;
@@ -563,6 +570,8 @@ impl Players {
                 .chain(self.players[0..index].iter().enumerate())
                 .find_map(|(i, p)| p.is_some().then(|| i));
         }
+        player.handle.command("quit", &[])?;
+
         Ok(())
     }
 
