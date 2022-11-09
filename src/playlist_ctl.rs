@@ -71,12 +71,12 @@ pub async fn add_playlist(
     let id_stream = YtdlBuilder::new(link).request_playlist()?;
     Ok(id_stream
         .map_err(anyhow::Error::from)
-        .and_then(move |b| ready(Ok((playlist.contains(b.id().as_str()), b))))
+        .and_then(move |b| ready(Ok((!playlist.contains(b.id().as_str()), b))))
         .try_filter_map(move |(success, b)| async move {
             if success {
                 Ok(Some(VideoLink::from_id(b.id())))
             } else {
-                notify!("song already in playlist"; content: "{}", ";");
+                notify!("song already in playlist");
                 Ok(None)
             }
         })
