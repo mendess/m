@@ -114,7 +114,7 @@ fn id_from_link<'s>(s: &'s str, param: &'static str) -> Option<&'s str> {
             let x = &s[(i + param.len())..];
             let end = x
                 .char_indices()
-                .find_map(|(i, c)| (c == '&').then(|| i))
+                .find_map(|(i, c)| (c == '&').then_some(i))
                 .unwrap_or(x.len());
             Some(&x[..end])
         }

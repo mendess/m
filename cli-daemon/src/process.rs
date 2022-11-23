@@ -61,7 +61,7 @@ impl<'s, M, R> DaemonProcess<'s, M, R> {
         R: DeserializeOwned + Serialize + Send,
     {
         let _ = tokio::fs::remove_file(&self.socket_path).await;
-        let socket = UnixListener::bind(&self.socket_path)?;
+        let socket = UnixListener::bind(self.socket_path)?;
         debug!(socket_path = ?self.socket_path, "listening on");
 
         let mut term = signal(SignalKind::terminate()).ok();

@@ -568,7 +568,7 @@ impl Players {
                 .enumerate()
                 .skip(index)
                 .chain(self.players[0..index].iter().enumerate())
-                .find_map(|(i, p)| p.is_some().then(|| i));
+                .find_map(|(i, p)| p.as_ref().map(|_| i));
         }
         player.handle.command("quit", &[])?;
 
@@ -873,16 +873,7 @@ macro_rules! commands {(
             $(#[$docs])*
             pub async fn $name(self, $($($param: $type),*)?)
                 -> Result<or_else!($(($r_ty))? (())), $crate::player::Error> {
-                let response = PLAYERS.exchange(
-                    Message::new(
-                        self.0,
-                        MessageKind::$kind $({ $($param),* })*,
-                    )
-                ).await??;
-                match_or_else_pat!(response {
-                    $(($resp => Ok($res),))?
-                    (Response::Unit => Ok(()),)
-                })
+                $crate::player::$name(self.0, $($($param),*)*).await
             }
             )*
         }

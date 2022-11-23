@@ -178,7 +178,10 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     .await?
                     .filter_map(|s| async { s.ok() })
                     .filter_map(|s| async move {
-                        s.categories.iter().any(|c| c.contains(cat)).then(|| s.link)
+                        s.categories
+                            .iter()
+                            .any(|c| c.contains(cat))
+                            .then_some(s.link)
                     })
                     .map(Link::Video)
                     .map(Item::Link)

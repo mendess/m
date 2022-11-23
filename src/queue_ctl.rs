@@ -388,7 +388,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .context("getting playlist file")?
                 .filter_map(|s| async { s.ok() })
                 .filter_map(
-                    |s| async move { s.categories.iter().any(|c| c.contains(cat)).then(|| s) },
+                    |s| async move { s.categories.iter().any(|c| c.contains(cat)).then_some(s) },
                 )
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
