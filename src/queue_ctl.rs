@@ -16,7 +16,7 @@ use futures_util::{
 use itertools::Itertools;
 use mlib::{
     item::{link::VideoLink, PlaylistLink},
-    player::{self, error::MpvError, PlayerIndex},
+    players::{self, error::MpvError, PlayerIndex},
     playlist::Playlist,
     queue::{Item, Queue},
     ytdl::YtdlBuilder,
@@ -142,8 +142,8 @@ where
     I: IntoIterator<Item = Item>,
     I::IntoIter: ExactSizeIterator,
 {
-    let player = match player::current().await? {
-        Some(index) => player::get(PlayerIndex::of(index)),
+    let player = match players::current().await? {
+        Some(index) => PlayerIndex::of(index),
         None => {
             tracing::debug!("no mpv instance, starting a new one");
             return play(items, with_video_env()).await;
@@ -340,7 +340,7 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
 }
 
 pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
-    let player = player::get(PlayerIndex::CURRENT);
+    let player = PlayerIndex::CURRENT;
     match d {
         DeQueue::Next => {
             player.queue_remove(player.queue_pos().await? + 1).await?;
@@ -393,7 +393,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
                 .await;
-            let queue = Queue::load(player.as_index(), None, None)
+            let queue = Queue::load(player, None, None)
                 .await
                 .context("loading current queue")?;
 
@@ -451,15 +451,15 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
         .await;
 
     tracing::info!("pausing previous mpv instance");
-    match player::pause(PlayerIndex::CURRENT).await {
-        Err(player::Error::Mpv(MpvError::NoMpvInstance)) => {}
+    match players::pause().await {
+        Err(players::Error::Mpv(MpvError::NoMpvInstance)) => {}
         Err(e) => {
             crate::error!("failed to pause previous player"; content: "{:?}", e);
         }
         Ok(_) => {}
     }
 
-    player::create(items.iter(), with_video).await?;
+    players::create(items.iter(), with_video).await?;
     Ok(())
 }
 
@@ -551,7 +551,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
     .await
     .context("queueing")?;
     if loop_list {
-        player::queue_loop(PlayerIndex::CURRENT, true).await?;
+        players::queue_loop(true).await?;
     }
     Ok(())
 }

@@ -8,82 +8,77 @@ use crossterm::{
     terminal::{Clear, ClearType},
     QueueableCommand,
 };
-use mlib::{
-    player::{self, PlayerIndex},
-    queue::Queue,
-};
+use mlib::{players, queue::Queue};
 use structopt::StructOpt;
 
 use crate::{chosen_index, notify};
 
 pub async fn quit() -> anyhow::Result<()> {
-    Ok(player::quit(chosen_index()).await?)
+    Ok(chosen_index().quit().await?)
 }
 
 pub async fn pause() -> anyhow::Result<()> {
-    Ok(player::cycle_pause(chosen_index()).await?)
+    Ok(chosen_index().cycle_pause().await?)
 }
 
 pub async fn vu(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(player::change_volume(chosen_index(), amount.unwrap_or(2)).await?)
+    Ok(chosen_index().change_volume(amount.unwrap_or(2)).await?)
 }
 
 pub async fn vd(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(player::change_volume(chosen_index(), -amount.unwrap_or(2)).await?)
+    Ok(chosen_index().change_volume(-amount.unwrap_or(2)).await?)
 }
 
 pub async fn toggle_video() -> anyhow::Result<()> {
-    Ok(player::toggle_video(chosen_index()).await?)
+    Ok(chosen_index().toggle_video().await?)
 }
 
 pub async fn next_file(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let player = player::get(chosen_index());
+    let player = chosen_index();
     for _ in 0..amount.unwrap_or(1) {
         tracing::debug!("going to next file");
-        player.change_file(player::Direction::Next).await?;
+        player.change_file(players::Direction::Next).await?;
     }
     Ok(())
 }
 
 pub async fn prev_file(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let player = player::get(chosen_index());
+    let player = chosen_index();
     for _ in 0..amount.unwrap_or(1) {
-        player.change_file(player::Direction::Prev).await?;
+        player.change_file(players::Direction::Prev).await?;
     }
     Ok(())
 }
 
 pub async fn frwd(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(player::seek(chosen_index(), amount.unwrap_or(10) as f64).await?)
+    Ok(chosen_index().seek(amount.unwrap_or(10) as f64).await?)
 }
 
 pub async fn back(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(player::seek(chosen_index(), -(amount.unwrap_or(10) as f64)).await?)
+    Ok(chosen_index().seek(-(amount.unwrap_or(10) as f64)).await?)
 }
 
 pub async fn next(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(
-        player::change_chapter(chosen_index(), player::Direction::Next, amount.unwrap_or(1))
-            .await?,
-    )
+    Ok(chosen_index()
+        .change_chapter(players::Direction::Next, amount.unwrap_or(1))
+        .await?)
 }
 
 pub async fn prev(Amount { amount }: Amount) -> anyhow::Result<()> {
-    Ok(
-        player::change_chapter(chosen_index(), player::Direction::Prev, amount.unwrap_or(1))
-            .await?,
-    )
+    Ok(chosen_index()
+        .change_chapter(players::Direction::Prev, amount.unwrap_or(1))
+        .await?)
 }
 
 pub async fn shuffle() -> anyhow::Result<()> {
-    Ok(player::queue_shuffle(PlayerIndex::CURRENT).await?)
+    Ok(players::queue_shuffle().await?)
 }
 
 pub async fn toggle_loop() -> anyhow::Result<()> {
-    let player = player::get(chosen_index());
+    let player = chosen_index();
     let looping = match player.queue_is_looping().await? {
-        player::LoopStatus::Inf => false,
-        player::LoopStatus::No => true,
+        players::LoopStatus::Inf => false,
+        players::LoopStatus::No => true,
         _ => false,
     };
     player.queue_loop(looping).await?;
@@ -96,24 +91,23 @@ pub async fn toggle_loop() -> anyhow::Result<()> {
 }
 
 pub async fn status() -> anyhow::Result<()> {
-    let all = player::all().await?;
-    for index in all {
-        let current = Queue::current(index)
+    let all = players::all().await?;
+    for player in all {
+        let current = Queue::current(player)
             .await
-            .with_context(|| format!("[{}] fetching current in queue", index))?;
-        let player = player::get(index);
+            .with_context(|| format!("[{player}] fetching current in queue"))?;
         let queue_size = player
             .queue_size()
             .await
-            .with_context(|| format!("[{}] fetching queue size", index))?;
+            .with_context(|| format!("[{player}] fetching queue size"))?;
 
         let last_queue = player
             .last_queue()
             .await
-            .with_context(|| format!("[{}] fetching last queue", index))?;
+            .with_context(|| format!("[{player}] fetching last queue"))?;
 
         notify!(
-            "{}", index;
+            "{player}";
             content: " §btitle:§r {}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}",
                 current.title,
                 current.progress.as_ref().map(ToString::to_string).unwrap_or_else(|| String::from("none")),

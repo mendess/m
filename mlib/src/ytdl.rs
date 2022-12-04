@@ -20,6 +20,7 @@ use crate::{
     item::{link::VideoLink, PlaylistLink},
     Error, Link, Search, VideoId,
 };
+use thiserror::Error;
 
 mod sealed {
     pub trait Sealed {}

@@ -3,42 +3,40 @@ name = "mlib"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-csv-async = { version = "1.2.4", features = ["tokio"], optional = true }
-dirs = { version = "4.0.0", optional = true }
-futures-util = { version = "0.3.21", optional = true }
-glob = { version = "0.3.0", optional = true }
-memchr = { version = "2.5.0", optional = true }
-once_cell = { version = "1.13.0", optional = true }
-parking_lot = { version = "0.12.1", optional = true }
-regex = { version = "1.6.0", optional = true }
-serde = { version = "1.0.142", features = ["derive"], optional = true }
-serde_json = { version = "1.0.83", optional = true }
-thiserror = "1.0.32"
-tokio = { version = "1.20.1", features = ["net", "fs", "process", "rt", "io-util"], optional = true }
-tokio-stream = { version = "0.1.9", features = ["fs", "io-util"], optional = true }
-tracing = { version = "0.1.36", optional = true }
-whoami = { version = "1.2.1", optional = true }
-async_once = { version = "0.2.6", optional = true }
-arc-swap = { version = "1.5.1", optional = true }
-pin-project = { version = "1.0.11", optional = true }
-libmpv = "2.0.1"
-cli-daemon = { path = "../cli-daemon" }
+regex.workspace = true
+once_cell.workspace = true
 
-[dependencies.namespaced-tmp]
-git = "https://github.com/mendess/namespaced-tmp"
+tracing = { workspace = true, optional = true }
+cli-daemon = { workspace = true, optional = true }
+thiserror = { version = "1.0.32", optional = true }
+arc-swap = { version = "1.5.1", optional = true }
+async_once = { workspace = true , optional = true }
+csv-async = { version = "1.2.4", features = ["tokio"], optional = true }
+dirs = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+glob = { version = "0.3.0", optional = true }
+libmpv = { version = "2.0.1", optional = true }
+memchr = { workspace = true, optional = true }
+namespaced-tmp = { workspace = true, optional = true }
+parking_lot = { version = "0.12.1", optional = true }
+pin-project = { version = "1.0.11", optional = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
+tokio-stream = { workspace = true, features = ["fs", "io-util"], optional = true }
+whoami = { workspace = true, optional = true }
+
+[dependencies.tokio]
+workspace = true
+features = ["process"]
 optional = true
-features = ["user"]
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3.15", features = ["registry", "env-filter", "fmt"] }
 tracing-log = "0.1.3"
-tracing = "0.1.36"
 
 [dev-dependencies.tokio]
-version = "1.20.1"
+workspace = true
 features = ["net", "fs", "process", "rt", "io-util", "macros", "rt-multi-thread"]
 
 [[example]]
@@ -47,72 +45,47 @@ required-features = ["socket"]
 
 [features]
 default = [
-    "socket",
-    "playlist",
     "ytdl",
-    "downloads",
-    "items",
-    "queue",
     "player",
-]
-socket = [
-    "items",
-
-    "futures-util",
-    "whoami",
-    "tracing",
-    "tokio",
-    "regex",
-    "parking_lot",
-    "once_cell",
-    "glob",
-    "serde_json",
-    "async_once",
-    "arc-swap",
-    "pin-project",
-    "serde",
-    "namespaced-tmp",
-]
-playlist = [
-    "items",
-
-    "once_cell",
-    "csv-async",
-    "serde",
-    "dirs",
-    "tokio",
-    "futures-util",
-    "memchr",
-    "regex",
+    "playlist",
+    "queue",
+    "downloads",
 ]
 ytdl = [
-    "items",
-
-    "once_cell",
     "tokio",
     "tokio-stream",
     "pin-project",
     "futures-util",
-    "regex",
-]
-downloads = [
-    "items",
-    "queue",
-
-    "tokio",
-    "tokio-stream",
-    "futures-util",
-    "glob"
-]
-items = [
-    "playlist",
-
     "serde",
-    "once_cell",
-]
-queue = [
-    "socket",
+    "player",
+    "thiserror",
+    "tracing"
 ]
 player = [
+    "arc-swap",
+    "serde",
+    "tokio",
+    "futures-util",
+    "namespaced-tmp",
+    "libmpv",
+    "cli-daemon",
+    "thiserror",
+    "tracing"
+]
+playlist = [
+    "player",
 
+    "csv-async",
+    "dirs",
+    "memchr",
+]
+queue = [
+    "playlist",
+    "player",
+]
+downloads = [
+    "queue",
+    "ytdl",
+
+    "glob"
 ]

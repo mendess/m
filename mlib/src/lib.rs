@@ -1,15 +1,11 @@
 #![warn(clippy::dbg_macro)]
 #![warn(rust_2018_idioms)]
 
-use std::{io, path::PathBuf};
-use thiserror::Error;
-
 #[cfg(feature = "downloads")]
 pub mod downloaded;
-#[cfg(feature = "items")]
 pub mod item;
 #[cfg(feature = "player")]
-pub mod player;
+pub mod players;
 #[cfg(feature = "playlist")]
 pub mod playlist;
 #[cfg(feature = "queue")]
@@ -17,34 +13,28 @@ pub mod queue;
 #[cfg(feature = "ytdl")]
 pub mod ytdl;
 
-#[cfg(feature = "items")]
 pub use item::{Item, Link, Search, VideoId};
 
-#[derive(Error, Debug)]
+#[cfg(any(feature = "ytdl", feature = "player", feature = "playlist"))]
+#[derive(Debug)]
+#[cfg_attr(
+    any(feature = "ytdl", feature = "player", feature = "playlist"),
+    derive(thiserror::Error)
+)]
 pub enum Error {
+    #[cfg(any(feature = "ytdl", feature = "player"))]
     #[error("io: {0}")]
-    Io(#[from] io::Error),
+    Io(#[from] std::io::Error),
 
     #[cfg(feature = "playlist")]
     #[error("csv: {0}")]
     Csv(#[from] csv_async::Error),
 
-    #[error("no mpv instance running")]
-    NoMpvInstance,
-
-    #[error("invalid socket path: {0}")]
-    InvalidPath(&'static str),
-
-    #[error("ipc error: {0}")]
-    IpcError(String),
-
-    #[error("libmpv error: {0}")]
     #[cfg(feature = "player")]
-    MpvError(player::error::MpvError),
+    #[error("libmpv error: {0}")]
+    MpvError(players::error::MpvError),
 
-    #[error("can't find music directory")]
-    MusicDirNotFound,
-
+    #[cfg(feature = "playlist")]
     #[error("failed to read playlist file: {0}")]
     PlaylistFile(String),
 
@@ -52,19 +42,17 @@ pub enum Error {
     #[error("{0}")]
     YtdlError(#[from] ytdl::YtdlError),
 
-    #[error("invalid utf8 {0}")]
-    Utf8Error(#[from] std::string::FromUtf8Error),
-
     #[cfg(feature = "playlist")]
     #[error("playlist file not found at: {0}")]
-    PlaylistFileNotFound(PathBuf),
+    PlaylistFileNotFound(std::path::PathBuf),
 }
 
-impl From<player::error::Error> for Error {
-    fn from(e: player::error::Error) -> Self {
+#[cfg(feature = "player")]
+impl From<players::error::Error> for Error {
+    fn from(e: players::error::Error) -> Self {
         match e {
-            player::error::Error::Io(e) => Self::Io(e),
-            player::error::Error::Mpv(e) => Self::MpvError(e),
+            players::error::Error::Io(e) => Self::Io(e),
+            players::error::Error::Mpv(e) => Self::MpvError(e),
         }
     }
 }

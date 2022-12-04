@@ -12,7 +12,7 @@ use itertools::Itertools;
 use mlib::{
     downloaded::clean_downloads,
     item::link::VideoLink,
-    player::{self, PlayerIndex},
+    players::{self, PlayerIndex},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
     ytdl::YtdlBuilder,
@@ -42,12 +42,12 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             if new.is_some() {
                 println!(
                     "{}",
-                    player::legacy_socket_for(player::current().await?.unwrap_or_default() + 1)
+                    players::legacy_socket_for(players::current().await?.unwrap_or_default() + 1)
                         .await
                 );
             } else {
-                match player::current().await? {
-                    Some(i) => println!("{}", player::legacy_socket_for(i).await),
+                match players::current().await? {
+                    Some(i) => println!("{}", players::legacy_socket_for(i).await),
                     None => println!("/dev/null"),
                 }
             }
@@ -267,7 +267,7 @@ pub fn chosen_index() -> PlayerIndex {
 
 async fn run() -> anyhow::Result<()> {
     download_ctl::start_daemon_if_running_as_daemon().await?;
-    player::start_daemon_if_running_as_daemon().await?;
+    players::start_daemon_if_running_as_daemon().await?;
 
     let args = match Args::from_args_safe() {
         Ok(args) => args,
@@ -283,7 +283,7 @@ async fn run() -> anyhow::Result<()> {
     }
 
     if let Some(new_base) = config::CONFIG.socket_base_dir.as_ref() {
-        player::override_legacy_socket_base_dir(new_base.clone());
+        players::override_legacy_socket_base_dir(new_base.clone());
     }
 
     process_cmd(args.cmd).await?;

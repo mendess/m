@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::{ffi::OsStr, fmt::Display, ops::Deref, str::FromStr};
 
@@ -11,7 +12,8 @@ pub trait IntoVideo {
     fn into_video(self) -> VideoLink;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Link {
     Video(VideoLink),
     Playlist(PlaylistLink),
@@ -140,8 +142,9 @@ impl AsRef<OsStr> for Link {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct VideoLink(String);
 
 impl VideoLink {
@@ -246,8 +249,9 @@ impl Deref for VideoId {
  * https://www.youtube.com/watch?v=UpIBKNxSeZU&list=PL17PSucW5L7nEPyX3tqEzq_wmyYk2IkXr
  * https://www.youtube.com/watch?v=UpIBKNxSeZU
  */
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct PlaylistLink(String);
 
 impl PlaylistLink {

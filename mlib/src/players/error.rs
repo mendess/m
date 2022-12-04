@@ -11,13 +11,13 @@ pub enum Error {
     Mpv(#[from] MpvError),
 }
 
-#[derive(thiserror::Error, Debug, Serialize, Deserialize)]
+#[derive(thiserror::Error, Debug, Clone, Serialize, Deserialize)]
 pub enum MpvError {
     #[error("mpv error. code: {0}")]
     Raw(MpvErrorCode),
     #[error("load files. index: {0} code: {1}")]
     Loadfiles(usize, libmpv::MpvError),
-    #[error("No Instance Running")]
+    #[error("No player running")]
     NoMpvInstance,
     #[error("invalid utf8")]
     InvalidUtf8,
