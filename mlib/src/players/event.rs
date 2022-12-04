@@ -220,7 +220,11 @@ impl EventSubscriber {
     }
 }
 
-pub(super) fn event_listener<S, Fut>(mpv: Arc<Mpv>, index: usize, shutdown: S) -> EventSubscriber
+pub(super) fn event_listener<S, Fut>(
+    mpv: Arc<Mpv>,
+    player_index: usize,
+    shutdown: S,
+) -> EventSubscriber
 where
     S: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send,
@@ -231,7 +235,7 @@ where
         move || {
             let task = move || -> MpvResult<()> {
                 let mut events = mpv.create_event_context();
-                tracing::debug!(?index, "setting up event listener");
+                tracing::debug!(?player_index, "setting up event listener");
                 events.enable_all_events()?;
                 events.disable_deprecated_events()?;
                 events.observe_property("playlist-pos", Format::Int64, 0)?;
@@ -252,7 +256,7 @@ where
                     };
                     match &ev {
                         Event::Shutdown => {
-                            tracing::info!(?index, "got shutdown event");
+                            tracing::info!(?player_index, "got shutdown event");
                             break;
                         }
                         Event::PropertyChange {
@@ -265,17 +269,24 @@ where
                         }
                         Event::Deprecated(_) => continue,
                         e => {
-                            tracing::debug!(?index, event = ?e, "got event");
+                            tracing::debug!(?player_index, event = ?e, "got event");
                         }
                     }
-                    let _ = tx.send(PlayerEvent { player_index: index, event: ev.into() });
+                    let _ = tx.send(PlayerEvent {
+                        player_index,
+                        event: ev.into(),
+                    });
                 }
                 tokio::spawn(async move { shutdown().await });
-                tracing::debug!(?index, "player shutting down");
+                let _ = tx.send(PlayerEvent {
+                    player_index,
+                    event: Event::Shutdown.into(),
+                });
+                tracing::debug!(?player_index, "player shutting down");
                 Ok(())
             };
             if let Err(e) = task() {
-                tracing::error!(?index, ?e, "player listener failed");
+                tracing::error!(?player_index, ?e, "player listener failed");
             }
         }
     });
