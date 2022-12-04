@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
@@ -41,7 +41,7 @@ features = ["net", "fs", "process", "rt", "io-util", "macros", "rt-multi-thread"
 
 [[example]]
 name = "observe_volume"
-required-features = ["socket"]
+required-features = ["player"]
 
 [features]
 default = [

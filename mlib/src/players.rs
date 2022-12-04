@@ -275,7 +275,7 @@ impl PlayersDaemon {
             .map(|i| (i, FileState::AppendPlay, None))
             .collect::<Vec<_>>();
         let legacy_socket = legacy_socket_for(index).await;
-        let mpv = Mpv::with_initializer(|mpv| {
+        let mpv = Arc::new(Mpv::with_initializer(|mpv| {
             if let Err(e) = mpv.set_property("video", with_video) {
                 tracing::error!(error = ?e, "failed to set video to true");
             }
@@ -289,17 +289,15 @@ impl PlayersDaemon {
             mpv.set_property("loop-playlist", items.len() > 1)?;
 
             Ok(())
-        })?;
-
-        mpv.playlist_load_files(&items)?;
-
-        let mpv = Arc::new(mpv);
+        })?);
 
         let events = event_listener(mpv.clone(), index, move || async move {
             if let Err(e) = this.lock().await.quit(PlayerIndex::of(index)).await {
                 tracing::error!(?index, ?e, "failed to quit from player");
             }
         });
+
+        mpv.playlist_load_files(&items)?;
 
         let index = this_ref.players.add(Player::new(mpv, events)).await;
         let _ = this_ref.current_default.send(Some(index));
@@ -447,16 +445,20 @@ impl PlayersDaemon {
             .await
             .ok_or(MpvError::NoMpvInstance)?;
 
-        if *self.current_default.borrow() == Some(index) {
-            let _ = self.current_default.send(
-                self.players
+        self.current_default.send_if_modified(|cur| {
+            if *cur == Some(index) {
+                *cur = self
+                    .players
                     .iter()
                     .enumerate()
                     .skip(index)
                     .chain(self.players[0..index].iter().enumerate())
-                    .find_map(|(i, p)| p.as_ref().map(|_| i)),
-            );
-        }
+                    .find_map(|(i, p)| p.as_ref().map(|_| i));
+                true
+            } else {
+                false
+            }
+        });
         player.handle.command("quit", &[])?;
 
         Ok(())
@@ -668,7 +670,9 @@ async fn handle_messages(
             .await
             .last_queue_set(index, to)
             .map(|_| Response::Unit),
-        MessageKind::Current => Ok(Response::MaybeInteger(*players.lock().await.current_default.borrow())),
+        MessageKind::Current => Ok(Response::MaybeInteger(
+            *players.lock().await.current_default.borrow(),
+        )),
         MessageKind::CyclePause => call!(players.cycle_pause(index)),
         MessageKind::Pause => call!(players.pause(index)),
         MessageKind::QueueClear => call!(players.queue_clear(index)),
@@ -727,7 +731,10 @@ async fn handle_messages(
 async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = OwnedLibMpvEvent> {
     let (current_default, events) = {
         let daemon = daemon.lock().await;
-        (daemon.current_default.subscribe(), daemon.subscribe_to_current())
+        (
+            daemon.current_default.subscribe(),
+            daemon.subscribe_to_current(),
+        )
     };
     stream::unfold(
         (current_default, events, daemon),

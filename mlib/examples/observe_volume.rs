@@ -1,5 +1,5 @@
 use futures_util::StreamExt;
-use mlib::players::{self, event::OwnedLibMpvEvent};
+use mlib::players;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
@@ -23,7 +23,6 @@ fn init() {
 #[tokio::main]
 async fn main() -> Result<(), mlib::Error> {
     init();
-    let events = ["volume", "title", "paused"];
     players::start_daemon_if_running_as_daemon().await?;
     players::subscribe()
         .await?
