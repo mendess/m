@@ -28,7 +28,7 @@ pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir}
 
 use self::{
     error::{MpvError, MpvErrorCode, MpvResult},
-    event::{event_listener, OwnedLibMpvEvent},
+    event::{event_listener, PlayerEvent},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -172,7 +172,7 @@ impl FromStr for LoopStatus {
     }
 }
 
-static PLAYERS: Daemon<Message, MpvResult<Response>, OwnedLibMpvEvent> = Daemon::new("m-players");
+static PLAYERS: Daemon<Message, MpvResult<Response>, PlayerEvent> = Daemon::new("m-players");
 
 #[derive(Default)]
 struct Players {
@@ -213,7 +213,7 @@ struct PlayersDaemon {
 }
 
 impl PlayersDaemon {
-    fn subscribe_to_current(&self) -> Option<broadcast::Receiver<OwnedLibMpvEvent>> {
+    fn subscribe_to_current(&self) -> Option<broadcast::Receiver<PlayerEvent>> {
         self.current_default
             .borrow()
             .and_then(|i| self.players[i].as_ref())
@@ -728,7 +728,7 @@ async fn handle_messages(
     .map_err(From::from)
 }
 
-async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = OwnedLibMpvEvent> {
+async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = PlayerEvent> {
     let (current_default, events) = {
         let daemon = daemon.lock().await;
         (
@@ -837,7 +837,7 @@ macro_rules! commands {(
     };
 }
 
-pub async fn subscribe() -> Result<impl Stream<Item = io::Result<OwnedLibMpvEvent>>, Error> {
+pub async fn subscribe() -> Result<impl Stream<Item = io::Result<PlayerEvent>>, Error> {
     Ok(PLAYERS.subscribe().await?)
 }
 

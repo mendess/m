@@ -10,6 +10,12 @@ use tokio::sync::broadcast;
 use super::error::MpvResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerEvent {
+    pub player_index: usize,
+    pub event: OwnedLibMpvEvent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OwnedLibMpvEvent {
     Shutdown,
     LogMessage {
@@ -206,10 +212,10 @@ impl From<Event<'_>> for OwnedLibMpvEvent {
     }
 }
 
-pub(super) struct EventSubscriber(broadcast::Sender<OwnedLibMpvEvent>);
+pub(super) struct EventSubscriber(broadcast::Sender<PlayerEvent>);
 
 impl EventSubscriber {
-    pub fn subscribe(&self) -> broadcast::Receiver<OwnedLibMpvEvent> {
+    pub fn subscribe(&self) -> broadcast::Receiver<PlayerEvent> {
         self.0.subscribe()
     }
 }
@@ -262,7 +268,7 @@ where
                             tracing::debug!(?index, event = ?e, "got event");
                         }
                     }
-                    let _ = tx.send(ev.into());
+                    let _ = tx.send(PlayerEvent { player_index: index, event: ev.into() });
                 }
                 tokio::spawn(async move { shutdown().await });
                 tracing::debug!(?index, "player shutting down");
