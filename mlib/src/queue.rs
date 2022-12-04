@@ -1,6 +1,6 @@
 use crate::{
     item::id_from_path,
-    player::{
+    players::{
         self,
         error::{Error as PlayerError, MpvError, MpvErrorCode},
         PlayerIndex, QueueItemStatus,
@@ -35,7 +35,7 @@ impl Queue {
         after_len: Option<u32>,
     ) -> Result<Self, Error> {
         let mut play_status = false;
-        let mut iter = player::queue(index).await?.into_iter();
+        let mut iter = players::queue(index).await?.into_iter();
 
         let mut before = match before_len {
             Some(cap) => VecDeque::with_capacity(cap as usize),
@@ -90,7 +90,7 @@ impl Queue {
             before,
             current: current.unwrap(),
             after,
-            last_queue: player::last_queue(index).await?,
+            last_queue: players::last_queue(index).await?,
             playing: play_status,
         })
     }
@@ -102,8 +102,8 @@ impl Queue {
     }
 
     pub async fn link(index: PlayerIndex) -> Result<Item, Error> {
-        let current_idx = player::queue_pos(index).await?;
-        let current = player::queue_at(index, current_idx).await?;
+        let current_idx = players::queue_pos(index).await?;
+        let current = players::queue_at(index, current_idx).await?;
         match Item::from(current.filename) {
             Item::Link(l) => Ok(Item::Link(l)),
             Item::File(p) => Ok(id_from_path(&p)
@@ -115,8 +115,8 @@ impl Queue {
     }
 
     pub async fn current(index: PlayerIndex) -> Result<Current, Error> {
-        let media_title = player::media_title(index).await?;
-        let filename = Item::from(player::filename(index).await?);
+        let media_title = players::media_title(index).await?;
+        let filename = Item::from(players::filename(index).await?);
         let id = filename.id();
         // TODO: this is wrong
         let title = if media_title.is_empty() {
@@ -125,9 +125,9 @@ impl Queue {
             media_title
         };
 
-        let playing = !player::is_paused(index).await?;
-        let volume = player::volume(index).await?;
-        let progress = match player::percent_position(index).await {
+        let playing = !players::is_paused(index).await?;
+        let volume = players::volume(index).await?;
+        let progress = match players::percent_position(index).await {
             Ok(progress) => Some(progress),
             Err(PlayerError::Mpv(MpvError::Raw(MpvErrorCode::PropertyUnavailable))) => None,
             Err(e) => return Err(e.into()),
@@ -139,15 +139,15 @@ impl Queue {
             .map(|s| s.categories)
             .unwrap_or_default();
 
-        let chapter = player::chapter_metadata(index).await.ok().map(|m| m.title);
+        let chapter = players::chapter_metadata(index).await.ok().map(|m| m.title);
 
-        let size = player::queue_size(index).await?;
-        let current_idx = player::queue_pos(index).await?;
+        let size = players::queue_size(index).await?;
+        let current_idx = players::queue_pos(index).await?;
         let next = if size == 1 {
             None
         } else {
             Some(
-                player::queue_at(index, (current_idx + 1) % size)
+                players::queue_at(index, (current_idx + 1) % size)
                     .await?
                     .filename,
             )

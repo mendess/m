@@ -1,32 +1,35 @@
 pub mod error;
+pub mod event;
+mod legacy_back_compat;
+mod libmpv_parsing;
 
 use core::fmt;
 use std::{
     any::type_name,
     convert::TryInto,
     io,
+    ops::Deref,
     path::PathBuf,
     str::FromStr,
     sync::Arc,
     time::{Duration, SystemTime},
 };
 
-use arc_swap::ArcSwapOption;
 use cli_daemon::Daemon;
-use libmpv::{
-    events::{self, Event, PropertyData},
-    FileState, Format, GetData, Mpv, MpvNode,
-};
+use futures_util::{stream, Stream, StreamExt};
+use libmpv::{FileState, GetData, Mpv, MpvNode};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 
 use crate::Item;
 
 pub use error::Error;
+pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir};
 
-use error::{MpvError, MpvResult};
-
-use self::error::MpvErrorCode;
+use self::{
+    error::{MpvError, MpvErrorCode, MpvResult},
+    event::{event_listener, OwnedLibMpvEvent},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -168,153 +171,94 @@ impl FromStr for LoopStatus {
         }
     }
 }
-static PLAYERS: Daemon<Message, MpvResult<Response>> = Daemon::new("m-players");
 
-#[derive(Default)]
+static PLAYERS: Daemon<Message, MpvResult<Response>, OwnedLibMpvEvent> = Daemon::new("m-players");
+
 struct Players {
-    current_default: Option<usize>,
     players: Vec<Option<Player>>,
+    players_changed: broadcast::Sender<()>,
+}
+
+impl Players {
+    async fn add(&mut self, player: Player) -> usize {
+        for (i, slot) in self.players.iter_mut().enumerate() {
+            if slot.is_none() {
+                *slot = Some(player);
+                return i;
+            }
+        }
+        self.players.push(Some(player));
+        let _ = self.players_changed.send(());
+        self.players.len() - 1
+    }
+
+    async fn quit(&mut self, index: usize) -> Option<Player> {
+        let removed = self.players.get_mut(index).and_then(Option::take);
+        if removed.is_some() {
+            let _ = self.players_changed.send(());
+        }
+        removed
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<()> {
+        self.players_changed.subscribe()
+    }
+
+    fn get_mut(&mut self, index: usize) -> Option<&mut Player> {
+        self.players.get_mut(index).and_then(|p| p.as_mut())
+    }
+}
+
+impl Deref for Players {
+    type Target = [Option<Player>];
+    fn deref(&self) -> &Self::Target {
+        &self.players
+    }
+}
+
+struct PlayersDaemon {
+    current_default: Option<usize>,
+    players: Players,
+}
+
+impl PlayersDaemon {
+    fn subscribe_to_current(&self) -> Option<broadcast::Receiver<OwnedLibMpvEvent>> {
+        self.current_default
+            .and_then(|i| self.players[i].as_ref())
+            .map(|p| p.events.subscribe())
+    }
+}
+
+impl Default for PlayersDaemon {
+    fn default() -> Self {
+        let (tx, _) = broadcast::channel(1);
+        Self {
+            current_default: Default::default(),
+            players: Players {
+                players: Default::default(),
+                players_changed: tx,
+            },
+        }
+    }
 }
 
 struct Player {
     handle: Arc<Mpv>,
+    events: event::EventSubscriber,
     last_queue: Option<(usize, SystemTime)>,
 }
 
-impl From<Arc<Mpv>> for Player {
-    fn from(handle: Arc<Mpv>) -> Self {
+impl Player {
+    fn new(handle: Arc<Mpv>, events: event::EventSubscriber) -> Self {
         Self {
             handle,
+            events,
             last_queue: None,
         }
     }
 }
 
-fn parse_queue_item_status(node: MpvNode) -> MpvResult<QueueItemStatus> {
-    let mk_err = |error: &'static str| {
-        || MpvError::InvalidData {
-            expected: type_name::<QueueItemStatus>().to_string(),
-            got: format!("{node:?}"),
-            error: error.to_string(),
-        }
-    };
-    node.to_map()
-        .ok_or_else(mk_err("wrong node type, expected map"))
-        .and_then(|m| {
-            let mut current = None;
-            let mut playing = None;
-            for (k, v) in m {
-                match k {
-                    "current" => {
-                        current = Some(
-                            v.to_bool()
-                                .ok_or_else(mk_err("wrong node type, expected bool"))?,
-                        )
-                    }
-                    "playing" => {
-                        playing = Some(
-                            v.to_bool()
-                                .ok_or_else(mk_err("wrong node type, expected bool"))?,
-                        )
-                    }
-                    _ => {}
-                };
-            }
-            if let (Some(current), Some(playing)) = (current, playing) {
-                Ok(QueueItemStatus { current, playing })
-            } else {
-                Err(mk_err("missing current or playing from node")())
-            }
-        })
-}
-
-fn parse_queue_item(node: MpvNode) -> MpvResult<QueueItem> {
-    let mk_err = |error: &'static str| {
-        || MpvError::InvalidData {
-            expected: type_name::<QueueItem>().to_string(),
-            got: format!("{node:?}"),
-            error: error.to_string(),
-        }
-    };
-    node.to_map()
-        .ok_or_else(mk_err("wrong node type, expected map"))
-        .and_then(|i| {
-            let mut filename = None;
-            let mut status = None;
-            let mut current = None;
-            let mut playing = None;
-            let mut id = None;
-            for (k, v) in i {
-                match k {
-                    "filename" => {
-                        filename = Some(
-                            v.to_str()
-                                .ok_or_else(mk_err("wrong node type, expected string"))?
-                                .to_string(),
-                        )
-                    }
-                    "status" => status = Some(parse_queue_item_status(v)?),
-                    "current" => {
-                        current = Some(
-                            v.to_bool()
-                                .ok_or_else(mk_err("wrong node type, expected bool"))?,
-                        )
-                    }
-                    "playing" => {
-                        playing = Some(
-                            v.to_bool()
-                                .ok_or_else(mk_err("wrong node type, expected bool"))?,
-                        )
-                    }
-                    "id" => {
-                        id = Some(
-                            v.to_i64()
-                                .ok_or_else(mk_err("wrong node type, expected i64"))?
-                                as usize,
-                        )
-                    }
-                    _ => {}
-                };
-            }
-            status = status.or_else(|| {
-                Some(QueueItemStatus {
-                    current: current?,
-                    playing: playing?,
-                })
-            });
-            if let (Some(filename), status, Some(id)) = (filename, status, id) {
-                Ok(QueueItem {
-                    filename,
-                    status,
-                    id,
-                })
-            } else {
-                Err(mk_err("missing fields filename or status or id")())
-            }
-        })
-}
-
-static SOCKET_BASE_DIR_OVERRIDE: ArcSwapOption<PathBuf> = ArcSwapOption::const_empty();
-
-pub async fn legacy_socket_for(index: usize) -> String {
-    let socket_name = format!(".mpvsocket{index}");
-    match &*SOCKET_BASE_DIR_OVERRIDE.load() {
-        Some(base) => base.join(socket_name).display().to_string(),
-        None => {
-            let (path, e) = namespaced_tmp::async_impl::in_user_tmp(&socket_name).await;
-            if let Some(e) = e {
-                tracing::error!("failed to create socket dir: {:?}", e);
-            }
-            path.display().to_string()
-        }
-    }
-}
-
-pub fn override_legacy_socket_base_dir(new_base: PathBuf) {
-    SOCKET_BASE_DIR_OVERRIDE.store(Some(Arc::new(new_base)));
-}
-
-impl Players {
+impl PlayersDaemon {
     pub(crate) async fn create(
         this: Arc<Mutex<Self>>,
         items: Vec<Item>,
@@ -322,14 +266,13 @@ impl Players {
     ) -> MpvResult<PlayerIndex> {
         let this_ref = this.clone();
         let mut this_ref = this_ref.lock().await;
-        #[allow(clippy::never_loop)]
-        let index = 'calc: loop {
-            for (i, slot) in this_ref.players.iter_mut().enumerate() {
+        let index = 'calc: {
+            for (i, slot) in this_ref.players.iter().enumerate() {
                 if slot.is_none() {
                     break 'calc i;
                 }
             }
-            break this_ref.players.len();
+            this_ref.players.len()
         };
         let items = items
             .iter()
@@ -363,56 +306,13 @@ impl Players {
 
         let mpv = Arc::new(mpv);
 
-        tokio::task::spawn_blocking({
-            let mpv = mpv.clone();
-            move || {
-                let task = move || -> MpvResult<()> {
-                    let mut events = mpv.create_event_context();
-                    events.disable_all_events()?;
-                    events.disable_deprecated_events()?;
-                    events.observe_property("playlist-pos", Format::Int64, 0)?;
-                    events.enable_event(events::mpv_event_id::Shutdown)?;
-                    loop {
-                        match events.wait_event(-1.0) {
-                            Some(Ok(Event::Shutdown)) => {
-                                tracing::info!(?index, "got shutdown event");
-                                break;
-                            }
-                            Some(Ok(Event::PropertyChange {
-                                name,
-                                change: PropertyData::Int64(-1),
-                                reply_userdata: _,
-                            })) => {
-                                tracing::debug!("{name} => -1");
-                                break;
-                            }
-                            Some(e) => {
-                                tracing::debug!(?index, event = ?e, "got event");
-                            }
-                            None => {}
-                        }
-                    }
-                    tokio::spawn(
-                        async move { this.lock().await.quit(PlayerIndex::of(index)).await },
-                    );
-                    tracing::debug!(?index, "player shutting down");
-                    Ok(())
-                };
-                if let Err(e) = task() {
-                    tracing::error!(?index, ?e, "player listener failed");
-                }
+        let events = event_listener(mpv.clone(), index, move || async move {
+            if let Err(e) = this.lock().await.quit(PlayerIndex::of(index)).await {
+                tracing::error!(?index, ?e, "failed to quit from player");
             }
         });
 
-        for (i, slot) in this_ref.players.iter_mut().enumerate() {
-            if slot.is_none() {
-                *slot = Some(mpv.into());
-                this_ref.current_default = Some(i);
-                return Ok(PlayerIndex::of(i));
-            }
-        }
-        this_ref.players.push(Some(mpv.into()));
-        let index = this_ref.players.len() - 1;
+        let index = this_ref.players.add(Player::new(mpv, events)).await;
         this_ref.current_default = Some(index);
         Ok(PlayerIndex::of(index))
     }
@@ -433,7 +333,6 @@ impl Players {
             .0
             .or(self.current_default)
             .and_then(|index| self.players.get_mut(index))
-            .and_then(|pl| pl.as_mut())
             .ok_or(MpvError::NoMpvInstance)?;
 
         let (idx, set) = match pl.last_queue.as_ref() {
@@ -454,7 +353,6 @@ impl Players {
             .0
             .or(self.current_default)
             .and_then(|index| self.players.get_mut(index))
-            .and_then(|pl| pl.as_mut())
             .ok_or(MpvError::NoMpvInstance)?;
 
         pl.last_queue = None;
@@ -467,7 +365,6 @@ impl Players {
             .0
             .or(self.current_default)
             .and_then(|index| self.players.get_mut(index))
-            .and_then(|pl| pl.as_mut())
             .ok_or(MpvError::NoMpvInstance)?;
 
         pl.last_queue = Some((to, SystemTime::now()));
@@ -557,8 +454,8 @@ impl Players {
 
         let player = self
             .players
-            .get_mut(index)
-            .and_then(Option::take)
+            .quit(index)
+            .await
             .ok_or(MpvError::NoMpvInstance)?;
 
         if self.current_default == Some(index) {
@@ -685,7 +582,7 @@ impl Players {
                 got: format!("{node:?}"),
                 error: "wrong node type".into(),
             })?
-            .map(parse_queue_item)
+            .map(libmpv_parsing::parse_queue_item)
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -720,7 +617,9 @@ impl Players {
     }
 
     pub(super) async fn queue_at(&self, index: PlayerIndex, at: usize) -> MpvResult<QueueItem> {
-        parse_queue_item(self.simple_prop::<MpvNode>(index, &format!("playlist/{at}"))?)
+        libmpv_parsing::parse_queue_item(
+            self.simple_prop::<MpvNode>(index, &format!("playlist/{at}"))?,
+        )
     }
 }
 
@@ -745,101 +644,137 @@ fn log_property_errors<T: GetData>(mpv: &Mpv, prop: &str) -> MpvResult<T> {
     })
 }
 
+async fn handle_messages(
+    Message { index, kind }: Message,
+    players: Arc<Mutex<PlayersDaemon>>,
+) -> MpvResult<Response> {
+    macro_rules! call {
+        ($pl:ident.$method:ident($($param:ident),*$(,)?)) => {
+            $pl.lock().await.$method($($param),*).await.map(|_| Response::Unit)
+        };
+        ($pl:ident.$method:ident($($param:ident),*$(,)?) => $ctor:ident) => {
+            $pl.lock().await.$method($($param),*).await.map(|v| Response::$ctor(v))
+        };
+    }
+    match kind {
+        MessageKind::Create { items, with_video } => {
+            PlayersDaemon::create(players, items, with_video)
+                .await
+                .map(Response::Create)
+        }
+        MessageKind::PlayerList => Ok(Response::PlayerList(players.lock().await.list())),
+        MessageKind::LastQueue => players
+            .lock()
+            .await
+            .last_queue(index)
+            .map(Response::MaybeInteger),
+        MessageKind::LastClear => players
+            .lock()
+            .await
+            .last_queue_clear(index)
+            .map(|_| Response::Unit),
+        MessageKind::LastQueueSet { to } => players
+            .lock()
+            .await
+            .last_queue_set(index, to)
+            .map(|_| Response::Unit),
+        MessageKind::Current => Ok(Response::MaybeInteger(players.lock().await.current_default)),
+        MessageKind::CyclePause => call!(players.cycle_pause(index)),
+        MessageKind::Pause => call!(players.pause(index)),
+        MessageKind::QueueClear => call!(players.queue_clear(index)),
+        MessageKind::LoadFile { item } => call!(players.load_file(index, item)),
+        MessageKind::LoadList { path } => call!(players.load_list(index, path)),
+        MessageKind::QueueMove { from, to } => {
+            call!(players.queue_move(index, from, to))
+        }
+        MessageKind::QueueRemove { to_remove } => {
+            call!(players.queue_remove(index, to_remove))
+        }
+        MessageKind::QueueLoop { start_looping } => {
+            call!(players.queue_loop(index, start_looping))
+        }
+        MessageKind::QueueShuffle => call!(players.queue_shuffle(index)),
+        MessageKind::Quit => call!(players.quit(index)),
+        MessageKind::ChangeVolume { delta } => {
+            call!(players.change_volume(index, delta))
+        }
+        MessageKind::CycleVideo => call!(players.cycle_video(index)),
+        MessageKind::ChangeFile { direction } => {
+            call!(players.change_file(index, direction))
+        }
+        MessageKind::Seek { seconds } => call!(players.seek(index, seconds)),
+        MessageKind::ChangeChapter { direction, amount } => {
+            call!(players.change_chapter(index, direction, amount))
+        }
+        MessageKind::ChapterMetadata => {
+            call!(players.chapter_metadata(index) => Metadata)
+        }
+        MessageKind::Filename => call!(players.filename(index) => Text),
+        MessageKind::IsPaused => call!(players.is_paused(index) => Bool),
+        MessageKind::MediaTitle => call!(players.media_title(index) => Text),
+        MessageKind::PercentPosition => {
+            call!(players.percent_position(index) => Real)
+        }
+        MessageKind::Queue => call!(players.queue(index) => Items),
+        MessageKind::QueueIsLooping => {
+            call!(players.queue_is_looping(index) => LoopStatus)
+        }
+        MessageKind::QueuePos => {
+            call!(players.queue_position(index) => Integer)
+        }
+        MessageKind::QueueSize => call!(players.queue_size(index) => Integer),
+        MessageKind::Volume => call!(players.volume(index) => Real),
+        MessageKind::QueueNFilename { at } => {
+            call!(players.queue_at_filename(index, at) => Text)
+        }
+        MessageKind::QueueN { at } => {
+            call!(players.queue_at(index, at) => Item)
+        }
+    }
+    .map_err(From::from)
+}
+
+async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = OwnedLibMpvEvent> {
+    let (players_changed, events) = {
+        let daemon = daemon.lock().await;
+        (daemon.players.subscribe(), daemon.subscribe_to_current())
+    };
+    stream::unfold(
+        (players_changed, events, daemon),
+        move |(mut players_changed, mut events, daemon)| async move {
+            let player_events = async {
+                match &mut events {
+                    Some(e) => e.recv().await,
+                    None => std::future::pending().await,
+                }
+            };
+            let evs = tokio::select! {
+                _ = players_changed.recv() => {
+                    events = daemon.lock().await.subscribe_to_current();
+                    None
+                },
+                Ok(e) = player_events => {
+                    Some(e)
+                }
+            };
+
+            Some((stream::iter(evs), (players_changed, events, daemon)))
+        },
+    )
+    .flatten()
+}
+
 pub async fn start_daemon_if_running_as_daemon() -> io::Result<()> {
     if let Some(builder) = PLAYERS.build_daemon_process().await {
-        let players = Arc::new(Mutex::new(Players::default()));
+        let players = Arc::new(Mutex::new(PlayersDaemon::default()));
         builder
-            .run(move |Message { index, kind }| {
-                macro_rules! call {
-                    ($pl:ident.$method:ident($($param:ident),*$(,)?)) => {
-                        $pl.lock().await.$method($($param),*).await.map(|_| Response::Unit)
-                    };
-                    ($pl:ident.$method:ident($($param:ident),*$(,)?) => $ctor:ident) => {
-                        $pl.lock().await.$method($($param),*).await.map(|v| Response::$ctor(v))
-                    };
-                }
-                let players = players.clone();
-                async move {
-                    match kind {
-                        MessageKind::Create { items, with_video } => {
-                            Players::create(players, items, with_video)
-                                .await
-                                .map(Response::Create)
-                        }
-                        MessageKind::PlayerList => {
-                            Ok(Response::PlayerList(players.lock().await.list()))
-                        }
-                        MessageKind::LastQueue => players
-                            .lock()
-                            .await
-                            .last_queue(index)
-                            .map(Response::MaybeInteger),
-                        MessageKind::LastClear => players
-                            .lock()
-                            .await
-                            .last_queue_clear(index)
-                            .map(|_| Response::Unit),
-                        MessageKind::LastQueueSet { to } => players
-                            .lock()
-                            .await
-                            .last_queue_set(index, to)
-                            .map(|_| Response::Unit),
-                        MessageKind::Current => {
-                            Ok(Response::MaybeInteger(players.lock().await.current_default))
-                        }
-                        MessageKind::CyclePause => call!(players.cycle_pause(index)),
-                        MessageKind::Pause => call!(players.pause(index)),
-                        MessageKind::QueueClear => call!(players.queue_clear(index)),
-                        MessageKind::LoadFile { item } => call!(players.load_file(index, item)),
-                        MessageKind::LoadList { path } => call!(players.load_list(index, path)),
-                        MessageKind::QueueMove { from, to } => {
-                            call!(players.queue_move(index, from, to))
-                        }
-                        MessageKind::QueueRemove { to_remove } => {
-                            call!(players.queue_remove(index, to_remove))
-                        }
-                        MessageKind::QueueLoop { start_looping } => {
-                            call!(players.queue_loop(index, start_looping))
-                        }
-                        MessageKind::QueueShuffle => call!(players.queue_shuffle(index)),
-                        MessageKind::Quit => call!(players.quit(index)),
-                        MessageKind::ChangeVolume { delta } => {
-                            call!(players.change_volume(index, delta))
-                        }
-                        MessageKind::CycleVideo => call!(players.cycle_video(index)),
-                        MessageKind::ChangeFile { direction } => {
-                            call!(players.change_file(index, direction))
-                        }
-                        MessageKind::Seek { seconds } => call!(players.seek(index, seconds)),
-                        MessageKind::ChangeChapter { direction, amount } => {
-                            call!(players.change_chapter(index, direction, amount))
-                        }
-                        MessageKind::ChapterMetadata => {
-                            call!(players.chapter_metadata(index) => Metadata)
-                        }
-                        MessageKind::Filename => call!(players.filename(index) => Text),
-                        MessageKind::IsPaused => call!(players.is_paused(index) => Bool),
-                        MessageKind::MediaTitle => call!(players.media_title(index) => Text),
-                        MessageKind::PercentPosition => {
-                            call!(players.percent_position(index) => Real)
-                        }
-                        MessageKind::Queue => call!(players.queue(index) => Items),
-                        MessageKind::QueueIsLooping => {
-                            call!(players.queue_is_looping(index) => LoopStatus)
-                        }
-                        MessageKind::QueuePos => call!(players.queue_position(index) => Integer),
-                        MessageKind::QueueSize => call!(players.queue_size(index) => Integer),
-                        MessageKind::Volume => call!(players.volume(index) => Real),
-                        MessageKind::QueueNFilename { at } => {
-                            call!(players.queue_at_filename(index, at) => Text)
-                        }
-                        MessageKind::QueueN { at } => {
-                            call!(players.queue_at(index, at) => Item)
-                        }
-                    }
-                    .map_err(From::from)
-                }
-            })
+            .run_with_events(
+                {
+                    let players = players.clone();
+                    move |message| handle_messages(message, players.clone())
+                },
+                move || handle_events(players),
+            )
             .await?;
     }
     Ok(())
@@ -868,19 +803,18 @@ macro_rules! commands {(
             $(/ $resp:pat => $res:expr => $r_ty:ty)?
     );* $(;)?
 ) => {
-        impl $crate::player::PlayerProxy {
+        impl $crate::players::PlayerProxy {
             $(
             $(#[$docs])*
             pub async fn $name(self, $($($param: $type),*)?)
-                -> Result<or_else!($(($r_ty))? (())), $crate::player::Error> {
-                $crate::player::$name(self.0, $($($param),*)*).await
-            }
+                -> Result<or_else!($(($r_ty))? (())), $crate::players::Error> {
+                $crate::players::$name(self.0, $($($param),*)*).await }
             )*
         }
         $(
         $(#[$docs])*
         pub async fn $name(index: PlayerIndex, $($($param: $type),*)?)
-            -> Result<or_else!($(($r_ty))? (())), $crate::player::Error> {
+            -> Result<or_else!($(($r_ty))? (())), $crate::players::Error> {
             let response = PLAYERS.exchange(
                 Message::new(
                     index,
@@ -901,6 +835,10 @@ pub struct PlayerProxy(PlayerIndex);
 
 pub fn get(index: PlayerIndex) -> PlayerProxy {
     PlayerProxy(index)
+}
+
+pub async fn subscribe() -> Result<impl Stream<Item = io::Result<OwnedLibMpvEvent>>, Error> {
+    Ok(PLAYERS.subscribe().await?)
 }
 
 impl PlayerProxy {

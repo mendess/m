@@ -7,7 +7,7 @@ use futures_util::TryStreamExt;
 use futures_util::{future::ready, Stream};
 use itertools::Itertools;
 use mlib::item::link::VideoLink;
-use mlib::player::PlayerIndex;
+use mlib::players::PlayerIndex;
 use mlib::playlist::PartialSearchResult;
 use mlib::Search;
 use mlib::{

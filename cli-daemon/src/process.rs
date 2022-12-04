@@ -4,16 +4,16 @@
 use std::{
     convert::Infallible,
     future::{pending, Future},
-    io::{self, IoSlice},
+    io,
     marker::PhantomData,
     path::Path,
 };
 
-use futures_util::future::OptionFuture;
+use futures_util::{future::OptionFuture, stream, Stream, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{UnixListener, UnixStream},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
+    net::{unix::WriteHalf, UnixListener, UnixStream},
     signal::{
         unix::SignalKind,
         unix::{signal, Signal},
@@ -22,17 +22,17 @@ use tokio::{
 };
 use tracing::{debug, error, info};
 
-use crate::Daemon;
+use crate::{link::EventSubscription, Daemon};
 
 /// A builder for a daemon process.
-pub struct DaemonProcess<'s, M, R> {
+pub struct DaemonProcess<'s, M, R, E = Infallible> {
     socket_path: &'s Path,
     shutdown: Option<oneshot::Receiver<()>>,
-    _marker: PhantomData<(M, R)>,
+    _marker: PhantomData<(M, R, E)>,
 }
 
-impl<'s, M, R> DaemonProcess<'s, M, R> {
-    pub async fn new(daemon: &'s Daemon<M, R>) -> DaemonProcess<'s, M, R> {
+impl<'s, M, R, E> DaemonProcess<'s, M, R, E> {
+    pub async fn new(daemon: &'s Daemon<M, R, E>) -> DaemonProcess<'s, M, R, E> {
         Self {
             socket_path: daemon.socket_path().await,
             shutdown: None,
@@ -41,7 +41,7 @@ impl<'s, M, R> DaemonProcess<'s, M, R> {
     }
 }
 
-impl<'s, M, R> DaemonProcess<'s, M, R> {
+impl<'s, M, R, E> DaemonProcess<'s, M, R, E> {
     /// Provide a means of gracefully shuting down the daemon. Sending on this channel causes the
     /// daemon to terminate.
     pub fn with_shutdown(self, shutdown: oneshot::Receiver<()>) -> Self {
@@ -53,12 +53,47 @@ impl<'s, M, R> DaemonProcess<'s, M, R> {
 
     /// Start the daemon process with a handler. This functions returns error if initialization
     /// fails. If initialization does not fail this function never returns.
-    pub async fn run<H, Fut>(mut self, handler: H) -> io::Result<Infallible>
+    pub async fn run<H, Fut>(self, handler: H) -> io::Result<Infallible>
     where
         M: DeserializeOwned + Serialize + Send + 'static,
         H: FnMut(M) -> Fut + Clone + Send + 'static,
         Fut: Future<Output = R> + Send + 'static,
-        R: DeserializeOwned + Serialize + Send,
+        R: DeserializeOwned + Serialize + Send + Sync,
+    {
+        let DaemonProcess {
+            socket_path,
+            shutdown,
+            ..
+        } = self;
+        DaemonProcess {
+            socket_path,
+            shutdown,
+            _marker: PhantomData::<(M, R, ())>,
+        }
+        .run_with_events(handler, || async { stream::iter([]) })
+        .await
+    }
+}
+
+impl<'s, M, R, E> DaemonProcess<'s, M, R, E>
+where
+    E: Serialize + Send + Sync + 'static,
+    M: DeserializeOwned + Serialize + Send + 'static,
+    R: DeserializeOwned + Serialize + Send + Sync,
+{
+    /// Start the daemon process with a handler. This functions returns error if initialization
+    /// fails. If initialization does not fail this function never returns.
+    pub async fn run_with_events<H, Fut, EH, EHFut>(
+        mut self,
+        handler: H,
+        events: EH,
+    ) -> io::Result<Infallible>
+    where
+        EH: FnOnce() -> EHFut + Clone + Send + 'static,
+        EHFut: Future + Send + 'static,
+        EHFut::Output: Stream<Item = E> + Send + 'static,
+        H: FnMut(M) -> Fut + Clone + Send + 'static,
+        Fut: Future<Output = R> + Send + 'static,
     {
         let _ = tokio::fs::remove_file(&self.socket_path).await;
         let socket = UnixListener::bind(self.socket_path)?;
@@ -83,7 +118,7 @@ impl<'s, M, R> DaemonProcess<'s, M, R> {
                 accept = socket.accept() => match accept {
                     Ok((stream, addr)) => {
                         info!("got a new connection from {:?}", addr);
-                        tokio::spawn(handle_task(stream, handler.clone()));
+                        tokio::spawn(handle_task(stream, handler.clone(), events.clone()));
                     },
                     Err(e) => {
                         error!("failed to accept connection: {:?}", e);
@@ -101,30 +136,45 @@ impl<'s, M, R> DaemonProcess<'s, M, R> {
     }
 }
 
-async fn handle_task<M, H, Fut>(mut stream: UnixStream, mut handler: H)
+async fn handle_task<M, H, Fut, E, EFut>(mut stream: UnixStream, mut handler: H, events: E)
 where
+    E: FnOnce() -> EFut,
+    EFut: Future,
+    EFut::Output: Stream,
+    <EFut::Output as Stream>::Item: Serialize,
     H: FnMut(M) -> Fut,
     Fut: Future,
     M: DeserializeOwned,
     Fut::Output: Serialize,
 {
-    let (recv, mut send) = stream.split();
+    let (recv, send) = stream.split();
     let mut lines = BufReader::new(recv).lines();
+    let mut send = BufWriter::new(send);
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
                 debug!(?line, "received message");
-                let response = match serde_json::from_str(&line) {
-                    Ok(m) => {
-                        let response = handler(m).await;
-                        serde_json::to_string(&response).unwrap()
+                match serde_json::from_str(&line) {
+                    Ok(EventSubscription) => {
+                        let stream = events().await;
+                        tokio::pin!(stream);
+                        while let Some(e) = stream.next().await {
+                            if let Err(e) = send_msg(&mut send, &e).await {
+                                error!(?e, "failed to send event to client");
+                                break;
+                            }
+                        }
+                        break;
                     }
-                    Err(e) => serde_json::to_string(&e.to_string()).unwrap(),
-                };
-                debug!(?response, "sending response");
-                let vector = [IoSlice::new(response.as_bytes()), IoSlice::new(b"\n")];
-                if let Err(e) = send.write_vectored(&vector).await {
-                    error!("failed to respond to client: {:?}", e)
+                    Err(_) => {
+                        let e = match serde_json::from_str(&line) {
+                            Ok(m) => send_msg(&mut send, &handler(m).await).await,
+                            Err(e) => send_msg(&mut send, &e.to_string()).await,
+                        };
+                        if let Err(e) = e {
+                            error!(?e, "failed to respond to client");
+                        }
+                    }
                 }
             }
             Ok(None) => break,
@@ -133,5 +183,14 @@ where
                 break;
             }
         }
+    }
+
+    async fn send_msg<M: Serialize>(sink: &mut BufWriter<WriteHalf<'_>>, m: &M) -> io::Result<()> {
+        let response = serde_json::to_vec(m).unwrap();
+        debug!(?response, "sending response");
+        sink.write_all(&response).await?;
+        sink.write_all(b"\n").await?;
+        sink.flush().await?;
+        Ok(())
     }
 }

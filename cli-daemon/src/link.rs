@@ -1,17 +1,19 @@
 use std::{
     any::Any,
+    convert::Infallible,
     fmt::Debug,
-    io::{self, IoSlice},
+    io,
     marker::PhantomData,
     os::unix::prelude::CommandExt,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     time::Duration,
 };
 
-use serde::{de::DeserializeOwned, Serialize};
+use futures_util::{stream, Stream};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{
         unix::{OwnedReadHalf, OwnedWriteHalf},
         UnixStream,
@@ -19,13 +21,15 @@ use tokio::{
 };
 use tracing::debug;
 
-pub struct DaemonLink<M, R> {
+pub struct DaemonLink<M, R, E = Infallible> {
     reader: BufReader<OwnedReadHalf>,
-    writer: OwnedWriteHalf,
-    _marker: PhantomData<(M, R)>,
+    writer: BufWriter<OwnedWriteHalf>,
+    socket_path: PathBuf,
+    name: String,
+    _marker: PhantomData<(M, R, E)>,
 }
 
-impl<M, R> DaemonLink<M, R> {
+impl<M, R, E> DaemonLink<M, R, E> {
     pub async fn new(name: &str, socket_path: &Path) -> io::Result<Self> {
         let try_connect = || async {
             debug!(?socket_path, "attempt to connect");
@@ -33,7 +37,9 @@ impl<M, R> DaemonLink<M, R> {
                 let (reader, writer) = sock.into_split();
                 DaemonLink {
                     reader: BufReader::new(reader),
-                    writer,
+                    writer: BufWriter::new(writer),
+                    socket_path: socket_path.into(),
+                    name: name.into(),
                     _marker: PhantomData,
                 }
             })
@@ -55,9 +61,13 @@ impl<M, R> DaemonLink<M, R> {
         }
         try_connect().await
     }
+
+    pub(super) async fn try_clone(&self) -> io::Result<Self> {
+        Self::new(&self.name, &self.socket_path).await
+    }
 }
 
-impl<M, R> DaemonLink<M, R>
+impl<M, R, E> DaemonLink<M, R, E>
 where
     M: Serialize + Any + Debug,
     R: DeserializeOwned,
@@ -69,21 +79,38 @@ where
             std::any::type_name::<M>()
         );
         let message = serde_json::to_vec(&message).unwrap();
-        let vector = [IoSlice::new(&message), IoSlice::new(b"\n")];
-        let len = self.writer.write_vectored(&vector).await?;
-        let expected_len = vector[0].len() + vector[1].len();
-        if len < expected_len {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("message to daemon process was truncated: {len} < {expected_len}"),
-            ));
-        }
-
+        self.writer.write_all(&message).await?;
+        self.writer.write_all(b"\n").await?;
+        self.writer.flush().await?;
         let mut response = String::new();
         debug!("getting response message from daemon");
         self.reader.read_line(&mut response).await?;
         response.pop(); // trim newline
         debug!(?response, "got");
         Ok(serde_json::from_str(&response)?)
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct EventSubscription;
+
+impl<M, R, E> DaemonLink<M, R, E>
+where
+    E: DeserializeOwned,
+{
+    pub async fn subscribe(mut self) -> Result<impl Stream<Item = io::Result<E>>, io::Error> {
+        let message = serde_json::to_vec(&EventSubscription).unwrap();
+        self.writer.write_all(&message).await?;
+        self.writer.write_all(b"\n").await?;
+        self.writer.flush().await?;
+        Ok(stream::try_unfold(
+            (self, String::new()),
+            move |(mut this, mut buf)| async {
+                buf.clear();
+                this.reader.read_line(&mut buf).await?;
+                let ev = serde_json::from_str(&buf)?;
+                Ok(Some((ev, (this, buf))))
+            },
+        ))
     }
 }

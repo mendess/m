@@ -6,13 +6,16 @@ use std::{
     ops::Range,
     os::unix::{ffi::OsStrExt, prelude::OsStringExt},
     path::{Path, PathBuf},
-    str::Utf8Error, string::FromUtf8Error,
+    str::Utf8Error,
+    string::FromUtf8Error,
 };
 
 pub use link::{Link, PlaylistId, PlaylistLink, VideoId};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Item {
     Link(Link),
     File(PathBuf),
@@ -115,8 +118,9 @@ pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
     Some(VideoId::new(&name[range]))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Search(String);
 
 impl Search {
