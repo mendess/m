@@ -58,6 +58,57 @@ pub enum OwnedMpvNode {
     Invalid(super::error::MpvError),
 }
 
+impl OwnedMpvNode {
+    pub fn into_string(self) -> Result<String, super::error::MpvError> {
+        match self {
+            Self::String(s) => Ok(s),
+            Self::OsdString(s) => Ok(s),
+            Self::Invalid(e) => Err(e),
+            _ => panic!("{self:?} is not a string"),
+        }
+    }
+
+    pub fn into_bool(self) -> Result<bool, super::error::MpvError> {
+        match self {
+            Self::Flag(flag) => Ok(flag),
+            Self::Invalid(e) => Err(e),
+            _ => panic!("{self:?} is not a bool"),
+        }
+    }
+
+    pub fn into_int(self) -> Result<i64, super::error::MpvError> {
+        match self {
+            Self::Int64(i) => Ok(i),
+            Self::Invalid(e) => Err(e),
+            _ => panic!("{self:?} is not an int"),
+        }
+    }
+
+    pub fn into_double(self) -> Result<f64, super::error::MpvError> {
+        match self {
+            Self::Double(d) => Ok(d),
+            Self::Invalid(e) => Err(e),
+            _ => panic!("{self:?} is not a double"),
+        }
+    }
+
+    pub fn into_array(self) -> Result<Vec<Self>, super::error::MpvError> {
+        match self {
+            Self::Array(a) => Ok(a),
+            Self::Invalid(e) => Err(e),
+            _ => panic!("{self:?} is not an array"),
+        }
+    }
+
+    pub fn into_map(self) -> Result<HashMap<String, Self>, super::error::MpvError> {
+        match self {
+            Self::Map(m) => Ok(m),
+            Self::Invalid(e) => Err(e),
+            _ => panic!("{self:?} is not a map"),
+        }
+    }
+}
+
 impl From<MpvNode> for OwnedMpvNode {
     fn from(n: MpvNode) -> Self {
         Self::from(&n)
