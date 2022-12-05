@@ -727,8 +727,7 @@ checksum = "c0f80d65747a3e43d1596c7c5492d95d5edddaabd45a7fcdb02b95f644164966"
 [[package]]
 name = "libmpv"
 version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61a58e2d19b34775e81e0fdca194b3b8ee8de973b092e7582b416343979e22e7"
+source = "git+https://github.com/sirno/libmpv-rs?branch=upgrade-libmpv#85bebd6d752ed6d341dc18f00eb30ec11adfd45c"
 dependencies = [
  "libmpv-sys",
 ]
@@ -736,8 +735,7 @@ dependencies = [
 [[package]]
 name = "libmpv-sys"
 version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0df938d3145cd8f134572721a27afa3a51f9bc1c26ae30a1d5077162f96d074b"
+source = "git+https://github.com/sirno/libmpv-rs?branch=upgrade-libmpv#85bebd6d752ed6d341dc18f00eb30ec11adfd45c"
 
 [[package]]
 name = "linked-hash-map"
