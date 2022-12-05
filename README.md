@@ -1,15 +1,14 @@
 # m
-A music player written accidentaly in bash using mpv as a """backend""".
+
+A music player written accidentaly [in
+bash](https://github.com/mendess/m/tree/master) using mpv as a """backend""" and now
+rewritten in rust using libmpv as a backend.
 
 ## Dependencies
 - dmenu
-- fzf
 - youtube-dl
-- mpv
+- libmpv
 - notify-send
-- dbus-send
-- socat
-- jq
 
 ## Usage
 
@@ -25,20 +24,10 @@ Because I know someone will try, the format is as follows:
 Song Name\tlink\ttime\tcategory1\tcategory2\t....
 ```
 
-Another optional "config file" is a script that is intended to be to update a
+Another optional "config file" is a script that is intended to update a
 status bar or something. It can be whatever you want as long as it's located at
-`$XDG_CONFIG_HOME/m/update_panel.sh`
-
-The following commands attempt to call this script at the end of their task:
-- playlist
-- pause
-- quit
-- vu (volume up)
-- vd (volume down)
-- prev
-- next
-- prev-file
-- next-file
+`$XDG_CONFIG_HOME/m/update_panel.sh`. It will be called when you probably want
+to refresh whatever info you want to monitor.
 
 ## "Tips and tricks"
 
@@ -46,8 +35,16 @@ This is intended to be used mostly as a way to have keybinds for your window
 manager that control your music player.
 
 ## Instalation
-```
-cp path/to/m.sh /usr/bin/m
-chmod +x /usr/bin/m
+
+### Using cargo install
+
+```sh
+cargo install --path . --bin m
 ```
 
+### Copying to somewhere in your path
+
+```sh
+cargo build --release
+sudo install ./target/release/m /usr/bin/m
+```
