@@ -236,8 +236,6 @@ where
             let task = move || -> MpvResult<()> {
                 let mut events = mpv.create_event_context();
                 tracing::debug!(?player_index, "setting up event listener");
-                events.enable_all_events()?;
-                events.disable_deprecated_events()?;
                 events.observe_property("playlist-pos", Format::Int64, 0)?;
                 events.observe_property("volume", Format::Double, 0)?;
                 events.observe_property("media-title", Format::String, 0)?;
@@ -245,6 +243,8 @@ where
                 events.observe_property("chapter", Format::Int64, 0)?;
                 events.observe_property("chapter-metadata", Format::Node, 0)?;
                 events.enable_event(events::mpv_event_id::Shutdown)?;
+                events.enable_event(events::mpv_event_id::FileLoaded)?;
+                events.enable_event(events::mpv_event_id::StartFile)?;
                 loop {
                     let Some(ev) = events.wait_event(-1.0) else {
                         tracing::trace!("got none event");

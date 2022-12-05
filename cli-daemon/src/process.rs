@@ -186,9 +186,9 @@ where
     }
 
     async fn send_msg<M: Serialize>(sink: &mut BufWriter<WriteHalf<'_>>, m: &M) -> io::Result<()> {
-        let response = serde_json::to_vec(m).unwrap();
+        let response = serde_json::to_string(m).unwrap();
         debug!(?response, "sending response");
-        sink.write_all(&response).await?;
+        sink.write_all(response.as_bytes()).await?;
         sink.write_all(b"\n").await?;
         sink.flush().await?;
         Ok(())
