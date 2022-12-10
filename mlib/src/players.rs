@@ -255,14 +255,11 @@ impl PlayersDaemon {
     ) -> MpvResult<PlayerIndex> {
         let this_ref = this.clone();
         let mut this_ref = this_ref.lock().await;
-        let index = 'calc: {
-            for (i, slot) in this_ref.players.iter().enumerate() {
-                if slot.is_none() {
-                    break 'calc i;
-                }
-            }
-            this_ref.players.len()
-        };
+        let index = this_ref
+            .players
+            .iter()
+            .position(|slot| slot.is_none())
+            .unwrap_or(this_ref.players.len());
         let items = items
             .iter()
             .flat_map(|i| match i.try_into() {
@@ -286,21 +283,24 @@ impl PlayersDaemon {
             }
             mpv.set_property("geometry", "820x466")?;
             mpv.set_property("input-ipc-server", legacy_socket)?;
-            mpv.set_property("loop-playlist", items.len() > 1)?;
 
             Ok(())
         })?);
 
         let events = event_listener(mpv.clone(), index, move || async move {
             if let Err(e) = this.lock().await.quit(PlayerIndex::of(index)).await {
-                tracing::error!(?index, ?e, "failed to quit from player");
+                match e {
+                    MpvError::NoMpvInstance => {}
+                    e => tracing::error!(?index, ?e, "failed to quit from player"),
+                }
             }
         });
 
         mpv.playlist_load_files(&items)?;
 
         let index = this_ref.players.add(Player::new(mpv, events)).await;
-        let _ = this_ref.current_default.send(Some(index));
+        tracing::debug!("setting current default to {index}");
+        this_ref.current_default.send_replace(Some(index));
         Ok(PlayerIndex::of(index))
     }
 
@@ -360,9 +360,12 @@ impl PlayersDaemon {
     }
 
     fn current_player(&self, index: PlayerIndex) -> MpvResult<&Mpv> {
+        let index = index.0.or_else(|| {
+            let index = *self.current_default.borrow();
+            tracing::debug!("current player is {index:?}");
+            index
+        });
         index
-            .0
-            .or_else(|| *self.current_default.borrow())
             .and_then(|i| self.players.get(i))
             .and_then(|m| m.as_ref())
             .map(|p| &*p.handle)

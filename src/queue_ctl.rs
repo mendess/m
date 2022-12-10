@@ -436,10 +436,6 @@ pub async fn load(file: PathBuf) -> anyhow::Result<()> {
 pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> anyhow::Result<()> {
     let mut items = items.into_iter().collect::<Vec<_>>();
     tracing::info!("playing {:?}", items);
-    // let to_download = stream::iter(items.iter_mut())
-    //     .then(|i| async { check_cache_ref(dl_dir().ok()?, i).await })
-    //     .buffered(16)
-    //     .await;
     stream::iter(items.iter_mut())
         .for_each_concurrent(16, |i| async {
             let dl_dir = match dl_dir() {
@@ -480,9 +476,9 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
     let mut vids = match mode.as_str() {
         "single" => {
             let song_name = selector(
-                playlist.0.iter().rev().map(|s| &s.name),
+                playlist.songs.iter().rev().map(|s| &s.name),
                 "Which video?",
-                playlist.0.len(),
+                playlist.songs.len(),
             )
             .await?;
             match song_name {
@@ -493,14 +489,14 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                     .unwrap_or_else(|| Item::Search(Search::new(name)))],
             }
         }
-        "random" => match playlist.0.choose(&mut rngs::OsRng) {
+        "random" => match playlist.songs.choose(&mut rngs::OsRng) {
             Some(x) => {
                 vec![Item::Link(x.link.clone().into())]
             }
             None => return Err(anyhow::anyhow!("empty playlist")),
         },
         "All" => playlist
-            .0
+            .songs
             .into_iter()
             .rev()
             .map(|l| Item::Link(l.link.into()))
@@ -517,7 +513,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                 None => return Ok(()),
             };
             playlist
-                .0
+                .songs
                 .into_iter()
                 .filter(|s| s.categories.contains(&category))
                 .map(|l| Item::Link(l.link.into()))

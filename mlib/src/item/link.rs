@@ -193,6 +193,13 @@ impl VideoLink {
     }
 }
 
+impl TryFrom<String> for VideoLink {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_url(value)
+    }
+}
+
 impl FromStr for VideoLink {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {

@@ -30,7 +30,7 @@ pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
         Some(ref pat) => s.categories.iter().any(|c| pat.is_match(c)),
         None => true,
     };
-    for Song { name, link, .. } in playlist.0.into_iter().filter(filter) {
+    for Song { name, link, .. } in playlist.songs.into_iter().filter(filter) {
         println!("{} :: {}", link, name);
     }
     Ok(())

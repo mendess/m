@@ -45,7 +45,9 @@ impl Display for Song {
     }
 }
 
-pub struct Playlist(pub Vec<Song>);
+pub struct Playlist {
+    pub songs: Vec<Song>,
+}
 
 static WRITER_BUILDER: Lazy<AsyncWriterBuilder> = Lazy::new(|| {
     let mut builder = AsyncWriterBuilder::new();
@@ -107,7 +109,9 @@ impl Playlist {
             Err(e) => return Err(e.into()),
         };
         let reader = READER_BUILDER.create_deserializer(file);
-        Ok(Self(reader.into_deserialize().try_collect().await?))
+        Ok(Self {
+            songs: reader.into_deserialize().try_collect().await?,
+        })
     }
 
     pub async fn stream() -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
@@ -130,7 +134,7 @@ impl Playlist {
     }
 
     pub fn categories(&self) -> impl Iterator<Item = (&str, usize)> {
-        self.0
+        self.songs
             .iter()
             .flat_map(|s| s.categories.iter())
             .fold(HashMap::new(), |mut set, c| {
@@ -163,7 +167,7 @@ impl Playlist {
     }
 
     pub fn find_song<F: FnMut(&Song) -> bool>(&self, f: F) -> Option<PlaylistIndex<'_>> {
-        self.0.iter().position(f).map(|index| PlaylistIndex {
+        self.songs.iter().position(f).map(|index| PlaylistIndex {
             source: self,
             index,
         })
@@ -173,10 +177,13 @@ impl Playlist {
         &mut self,
         f: F,
     ) -> Option<PlaylistIndexMut<'_>> {
-        self.0.iter_mut().position(f).map(|index| PlaylistIndexMut {
-            source: self,
-            index,
-        })
+        self.songs
+            .iter_mut()
+            .position(f)
+            .map(|index| PlaylistIndexMut {
+                source: self,
+                index,
+            })
     }
 
     pub fn partial_name_search<'s>(
@@ -205,34 +212,34 @@ impl Playlist {
         &self,
         words: impl Iterator<Item = &'s str>,
     ) -> PartialSearchResult<usize> {
-        let mut idxs = (0..self.0.len()).collect::<Vec<_>>();
+        let mut idxs = (0..self.songs.len()).collect::<Vec<_>>();
         words.for_each(|w| {
             let regex = regex::RegexBuilder::new(&regex::escape(w))
                 .case_insensitive(true)
                 .build()
                 .unwrap();
-            idxs.retain(|i| regex.is_match(&self.0[*i].name))
+            idxs.retain(|i| regex.is_match(&self.songs[*i].name))
         });
         match &idxs[..] {
             [index] => PartialSearchResult::One(*index),
             [] => PartialSearchResult::None,
-            many => {
-                PartialSearchResult::Many(many.iter().map(|i| self.0[*i].name.clone()).collect())
-            }
+            many => PartialSearchResult::Many(
+                many.iter().map(|i| self.songs[*i].name.clone()).collect(),
+            ),
         }
     }
 
     pub async fn save(&self) -> Result<(), Error> {
         let file = File::create(Self::path()?).await?;
         let mut writer = WRITER_BUILDER.create_serializer(file);
-        for s in self.0.iter() {
-            writer.serialize(s).await.map_err(Error::from)?;
+        for song in self.songs.iter() {
+            writer.serialize(song).await?;
         }
         Ok(())
     }
 
     pub fn find_by_link(&self, link: &VideoLink) -> Option<&Song> {
-        self.0.iter().find(|s| s.link.id() == link.id())
+        self.songs.iter().find(|s| s.link.id() == link.id())
     }
 }
 
@@ -271,7 +278,7 @@ impl Deref for PlaylistIndex<'_> {
     type Target = Song;
 
     fn deref(&self) -> &Self::Target {
-        &self.source.0[self.index]
+        &self.source.songs[self.index]
     }
 }
 
@@ -284,19 +291,19 @@ impl Deref for PlaylistIndexMut<'_> {
     type Target = Song;
 
     fn deref(&self) -> &Self::Target {
-        &self.source.0[self.index]
+        &self.source.songs[self.index]
     }
 }
 
 impl DerefMut for PlaylistIndexMut<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.source.0[self.index]
+        &mut self.source.songs[self.index]
     }
 }
 
 impl PlaylistIndexMut<'_> {
     pub fn delete(self) -> Song {
-        self.source.0.remove(self.index)
+        self.source.songs.remove(self.index)
     }
 }
 
@@ -312,21 +319,25 @@ pub async fn find_song(id: &VideoId) -> Result<Option<Song>, Error> {
             let start = memchr::memmem::rfind(&buf[..i], b"\n")
                 .map(|i| i + 1)
                 .unwrap_or(0);
-            let mut i = buf[start..end]
+            let mut fields = buf[start..end]
                 .split(|c| *c == b'\t')
                 .map(<[u8]>::to_vec)
                 .map(String::from_utf8)
                 .map(Result::unwrap);
-            let not_enough_fields = || Error::PlaylistFile(String::from("not enough fields"));
-            Ok(Some(Song {
-                name: i.next().ok_or_else(not_enough_fields)?,
-                link: VideoLink::from_url(i.next().ok_or_else(not_enough_fields)?)
-                    .map_err(|a| Error::PlaylistFile(format!("invalid link: {}", a)))?,
-                time: i
+            let mut next_field = || {
+                fields
                     .next()
-                    .and_then(|n| n.parse().ok())
-                    .ok_or_else(|| Error::PlaylistFile("invalid duration".into()))?,
-                categories: i.collect(),
+                    .ok_or_else(|| Error::PlaylistFile(String::from("not enough fields")))
+            };
+            Ok(Some(Song {
+                name: next_field()?,
+                link: next_field()?
+                    .try_into()
+                    .map_err(|e| Error::PlaylistFile(format!("invalid link: {e}")))?,
+                time: next_field()?
+                    .parse()
+                    .map_err(|_| Error::PlaylistFile("invalid duration".into()))?,
+                categories: fields.collect(),
             }))
         }
         None => Ok(None),
