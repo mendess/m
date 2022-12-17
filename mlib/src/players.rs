@@ -513,13 +513,21 @@ impl PlayersDaemon {
         direction: Direction,
         amount: i32,
     ) -> MpvResult<()> {
-        self.current_player(index)?.add_property(
-            "chapter",
-            match direction {
-                Direction::Next => amount as isize,
-                Direction::Prev => -amount as isize,
-            },
-        )?;
+        self.current_player(index)?
+            .add_property(
+                "chapter",
+                match direction {
+                    Direction::Next => amount as isize,
+                    Direction::Prev => -amount as isize,
+                },
+            )
+            .map_err(MpvError::from)
+            .map_err(|e| match e {
+                MpvError::Raw(MpvErrorCode::Command) => MpvError::FailedToExecute {
+                    reason: "this file doesn't have any chapters".into(),
+                },
+                e => e,
+            })?;
         Ok(())
     }
 

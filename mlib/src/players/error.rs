@@ -27,6 +27,10 @@ pub enum MpvError {
         got: String,
         error: String,
     },
+    #[error("failed to execute command because {reason}")]
+    FailedToExecute {
+        reason: String,
+    },
 }
 
 impl From<libmpv::Error> for MpvError {
