@@ -277,11 +277,11 @@ where
                         event: ev.into(),
                     });
                 }
-                tokio::spawn(async move { shutdown().await });
                 let _ = tx.send(PlayerEvent {
                     player_index,
                     event: Event::Shutdown.into(),
                 });
+                tokio::spawn(async move { shutdown().await });
                 tracing::debug!(?player_index, "player shutting down");
                 Ok(())
             };

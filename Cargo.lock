@@ -764,7 +764,7 @@ dependencies = [
 
 [[package]]
 name = "m"
-version = "0.3.5"
+version = "0.3.7"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -845,7 +845,7 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "arc-swap",
  "async_once",
