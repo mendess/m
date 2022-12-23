@@ -852,6 +852,10 @@ pub async fn subscribe() -> Result<impl Stream<Item = io::Result<PlayerEvent>>, 
     Ok(PLAYERS.subscribe().await?)
 }
 
+pub async fn wait_for_music_daemon_to_start() {
+    PLAYERS.wait_for_daemon_to_spawn().await;
+}
+
 /// Create a new player instance, with the given items
 pub async fn create(
     items: impl Iterator<Item = &Item>,
