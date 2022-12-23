@@ -7,6 +7,8 @@ use std::{
     fmt::Debug,
     io,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
 };
 
 use futures_util::Stream;
@@ -22,14 +24,16 @@ use tracing::error;
 ///
 /// Talking to a daemon implicitly starts a background process as a daemon
 pub struct Daemon<M, R, E = Infallible> {
+    start_daemon: AtomicBool,
     name: &'static str,
-    channels: OnceCell<io::Result<Mutex<DaemonLink<M, R, E>>>>,
+    channels: OnceCell<Mutex<DaemonLink<M, R, E>>>,
     socket_path: OnceCell<PathBuf>,
 }
 
 impl<M, R, E> Daemon<M, R, E> {
     pub const fn new(name: &'static str) -> Self {
         Daemon {
+            start_daemon: AtomicBool::new(false),
             name,
             channels: OnceCell::const_new(),
             socket_path: OnceCell::const_new(),
@@ -48,10 +52,21 @@ impl<M, R, E> Daemon<M, R, E> {
             .await
     }
 
+    pub async fn wait_for_daemon_to_spawn(&self) {
+        // TODO: make this smarter with ifnotify things
+        loop {
+            if self.channels().await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
     pub async fn build_daemon_process(&self) -> Option<DaemonProcess<M, R, E>> {
         if matches!(std::env::args().next(), Some(arg0) if arg0 == self.name) {
             Some(DaemonProcess::new(self).await)
         } else {
+            self.start_daemon.store(true, Ordering::SeqCst);
             None
         }
     }
@@ -59,10 +74,14 @@ impl<M, R, E> Daemon<M, R, E> {
     async fn channels(&self) -> io::Result<&Mutex<DaemonLink<M, R, E>>> {
         match self
             .channels
-            .get_or_init(|| async move {
-                DaemonLink::new(self.name, self.socket_path().await)
-                    .await
-                    .map(Mutex::new)
+            .get_or_try_init(|| async move {
+                DaemonLink::new(
+                    self.name,
+                    self.socket_path().await,
+                    self.start_daemon.load(Ordering::SeqCst),
+                )
+                .await
+                .map(Mutex::new)
             })
             .await
         {

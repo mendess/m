@@ -30,7 +30,11 @@ pub struct DaemonLink<M, R, E = Infallible> {
 }
 
 impl<M, R, E> DaemonLink<M, R, E> {
-    pub async fn new(name: &str, socket_path: &Path) -> io::Result<Self> {
+    /// Try to connect to the daemon.
+    ///
+    /// If the daemon isn't running and `auto_start` is `true`. It will attempt to start the daemon
+    /// and connect to it.
+    pub async fn new(name: &str, socket_path: &Path, auto_start: bool) -> io::Result<Self> {
         let try_connect = || async {
             debug!(?socket_path, "attempt to connect");
             UnixStream::connect(socket_path).await.map(|sock| {
@@ -45,8 +49,10 @@ impl<M, R, E> DaemonLink<M, R, E> {
             })
         };
 
-        if let Ok(link) = try_connect().await {
-            return Ok(link);
+        match try_connect().await {
+            Ok(link) => return Ok(link),
+            Err(e) if !auto_start => return Err(e),
+            _ => {}
         }
 
         debug!(?name, ?socket_path, "starting the daemon");
@@ -62,8 +68,9 @@ impl<M, R, E> DaemonLink<M, R, E> {
         try_connect().await
     }
 
+    /// Try to clone this link and make a new independent one.
     pub(super) async fn try_clone(&self) -> io::Result<Self> {
-        Self::new(&self.name, &self.socket_path).await
+        Self::new(&self.name, &self.socket_path, false).await
     }
 }
 
