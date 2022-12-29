@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, future::Future, sync::Arc, thread, time::Duration};
 
 use libmpv::{
     events::{self, Event, PropertyData},
@@ -234,6 +234,7 @@ where
         let tx = tx.clone();
         move || {
             let task = move || -> MpvResult<()> {
+                thread::sleep(Duration::from_secs_f32(0.5));
                 let mut events = mpv.create_event_context();
                 tracing::debug!(?player_index, "setting up event listener");
                 events.observe_property("playlist-pos", Format::Int64, 0)?;
@@ -245,9 +246,10 @@ where
                 events.enable_event(events::mpv_event_id::Shutdown)?;
                 events.enable_event(events::mpv_event_id::FileLoaded)?;
                 events.enable_event(events::mpv_event_id::StartFile)?;
+                let mut first_event = true;
                 loop {
                     let Some(ev) = events.wait_event(-1.0) else {
-                        tracing::trace!("got none event");
+                        tracing::debug!("got none event");
                         continue;
                     };
                     let Ok(ev) = ev else {
@@ -263,7 +265,7 @@ where
                             name,
                             change: PropertyData::Int64(-1),
                             reply_userdata: _,
-                        } => {
+                        } if !first_event => {
                             tracing::debug!("{name} => -1");
                             break;
                         }
@@ -276,6 +278,7 @@ where
                         player_index,
                         event: ev.into(),
                     });
+                    first_event = false;
                 }
                 let _ = tx.send(PlayerEvent {
                     player_index,
