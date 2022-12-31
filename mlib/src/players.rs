@@ -8,6 +8,7 @@ use std::{
     any::type_name,
     convert::TryInto,
     io,
+    num::TryFromIntError,
     ops::Deref,
     path::PathBuf,
     str::FromStr,
@@ -135,6 +136,7 @@ enum Response {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Metadata {
     pub title: String,
+    pub index: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -554,7 +556,17 @@ impl PlayersDaemon {
                 got: format!("{t:?}"),
                 error: "wrong node type, expected string".into(),
             })?;
-        Ok(Metadata { title })
+        let index = self.simple_prop::<i64>(index, "chapter")?;
+        Ok(Metadata {
+            title,
+            index: index
+                .try_into()
+                .map_err(|e: TryFromIntError| MpvError::InvalidData {
+                    expected: "usize".into(),
+                    got: index.to_string(),
+                    error: e.to_string(),
+                })?,
+        })
     }
 
     fn simple_prop<T: GetData>(&self, index: PlayerIndex, prop: &str) -> MpvResult<T> {
