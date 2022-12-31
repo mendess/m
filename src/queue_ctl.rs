@@ -16,7 +16,7 @@ use futures_util::{
 use itertools::Itertools;
 use mlib::{
     item::{link::VideoLink, PlaylistLink},
-    players::{self, error::MpvError, PlayerIndex},
+    players::{self, error::MpvError, PlayerIndex, SmartQueueOpts, SmartQueueSummary},
     playlist::Playlist,
     queue::{Item, Queue},
     ytdl::YtdlBuilder,
@@ -167,66 +167,23 @@ where
         check_cache_ref(dl_dir()?, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
-        player
-            .load_file(item.clone())
+        let SmartQueueSummary { from, moved_to, current } = player
+            .smart_queue(item.clone(), SmartQueueOpts { no_move: q.no_move })
             .await
-            .context("loading the file")?;
-        println!("success");
-        let count = player
-            .queue_size()
-            .await
-            .context("getting the queue size")?;
-        let current = player
-            .queue_pos()
-            .await
-            .context("getting the queue position")?;
-        let playlist_pos = if q.no_move {
-            count
-        } else {
-            // TODO: this entire logic needs some refactoring
-            // there are a lot of edge cases
-            // - the queue might have shrunk since the last time we queued
-            // - the queue might have looped around
+            .context("when queueing")?;
 
-            tracing::debug!("current position: {}", current);
-            let mut target = (current + 1) % count;
-            tracing::debug!("first target: {}", target);
-
-            if let Some(last) = player
-                .last_queue()
-                .await
-                .context("fetching the last queue position")?
-            {
-                tracing::debug!("last: {}", last);
-                if target <= last {
-                    target = (last + 1) % count;
-                    tracing::debug!("second target: {}", target);
-                }
-            };
-            let from = count.saturating_sub(1);
-            if from != target {
-                print!(
-                    "Moving from {} -> {} [now playing: {}] ... ",
-                    from, target, current
-                );
-                std::io::stdout().flush()?;
-                player
-                    .queue_move(from, target)
-                    .await
-                    .with_context(|| format!("moving file from {} to {}", from, target))?;
-                println!("succcess");
-            }
-            player
-                .last_queue_set(target)
-                .await
-                .context("setting last queue")?;
-            target
-        };
+        if from != moved_to {
+            println!("success");
+            println!(
+                "Moved from {} -> {} [now playing: {}] ... ",
+                from, moved_to, current
+            );
+        }
         if q.notify && item_count < 30 {
-            notify_tasks.push(tokio::spawn(notify(item, current, playlist_pos)));
+            notify_tasks.push(tokio::spawn(notify(item, current, moved_to)));
         }
         if q.preemptive_download {
-            todo!("preemptive download {}", playlist_pos);
+            todo!("preemptive download {}", moved_to);
         }
         if notify_tasks.len() > 8 {
             if let Err(e) = notify_tasks.next().await.unwrap() {

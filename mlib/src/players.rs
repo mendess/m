@@ -904,6 +904,67 @@ pub async fn current() -> Result<Option<usize>, Error> {
     }
 }
 
+pub struct SmartQueueOpts {
+    pub no_move: bool,
+}
+
+pub struct SmartQueueSummary {
+    pub from: usize,
+    pub moved_to: usize,
+    pub current: usize,
+}
+
+impl PlayerIndex {
+    pub async fn smart_queue(
+        self,
+        item: Item,
+        opts: SmartQueueOpts,
+    ) -> Result<SmartQueueSummary, Error> {
+        self.load_file(item.clone()).await?;
+        let count = self.queue_size().await?;
+        let current = self.queue_pos().await?;
+        let queue_summary = if opts.no_move {
+            SmartQueueSummary {
+                from: count,
+                moved_to: count,
+                current,
+            }
+        } else {
+            // TODO: this entire logic needs some refactoring
+            // there are a lot of edge cases
+            // - the queue might have shrunk since the last time we queued
+            // - the queue might have looped around
+
+            tracing::debug!("current position: {}", current);
+            let mut target = (current + 1) % count;
+            tracing::debug!("first target: {}", target);
+
+            if let Some(last) = self.last_queue().await? {
+                tracing::debug!("last: {}", last);
+                if target <= last {
+                    target = (last + 1) % count;
+                    tracing::debug!("second target: {}", target);
+                }
+            };
+            let from = count.saturating_sub(1);
+            if from != target {
+                self.queue_move(from, target).await?;
+            }
+            self.last_queue_set(target).await?;
+            SmartQueueSummary {
+                from: count,
+                moved_to: target,
+                current,
+            }
+        };
+        Ok(queue_summary)
+    }
+}
+
+pub async fn smart_queue(item: Item, opts: SmartQueueOpts) -> Result<SmartQueueSummary, Error> {
+    PlayerIndex::CURRENT.smart_queue(item, opts).await
+}
+
 commands! {
     /// Get the last queued position
     last_queue as LastQueue
