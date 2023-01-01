@@ -23,9 +23,11 @@ use tracing::error;
 /// - "transform" a process into a daemon
 ///
 /// Talking to a daemon implicitly starts a background process as a daemon
+#[derive(Debug)]
 pub struct Daemon<M, R, E = Infallible> {
     start_daemon: AtomicBool,
     name: &'static str,
+    socket_namespace: Option<String>,
     channels: OnceCell<Mutex<DaemonLink<M, R, E>>>,
     socket_path: OnceCell<PathBuf>,
 }
@@ -35,6 +37,7 @@ impl<M, R, E> Daemon<M, R, E> {
         Daemon {
             start_daemon: AtomicBool::new(false),
             name,
+            socket_namespace: None,
             channels: OnceCell::const_new(),
             socket_path: OnceCell::const_new(),
         }
@@ -43,13 +46,26 @@ impl<M, R, E> Daemon<M, R, E> {
     async fn socket_path(&self) -> &Path {
         self.socket_path
             .get_or_init(|| async {
-                let (path, e) = namespaced_tmp::async_impl::in_user_tmp(self.name).await;
+                let (path, e) = match &self.socket_namespace {
+                    None => namespaced_tmp::async_impl::in_user_tmp(self.name).await,
+                    Some(ns) => namespaced_tmp::async_impl::in_tmp(ns, self.name).await,
+                };
                 if let Some(e) = e {
                     error!("failed to create tmp dir for {} daemon: {:?}", self.name, e);
                 }
                 path
             })
             .await
+    }
+
+    pub fn overriding_socket_namespace_with(&self, new_namepsace: String) -> Self {
+        Self {
+            start_daemon: AtomicBool::new(self.start_daemon.load(Ordering::Relaxed)),
+            name: self.name,
+            socket_namespace: Some(new_namepsace),
+            channels: OnceCell::const_new(),
+            socket_path: OnceCell::const_new(),
+        }
     }
 
     pub async fn wait_for_daemon_to_spawn(&self) {

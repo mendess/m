@@ -2,7 +2,7 @@ use crate::{
     item::id_from_path,
     players::{
         error::{Error as PlayerError, MpvError, MpvErrorCode},
-        PlayerIndex, QueueItemStatus,
+        PlayerLink, QueueItemStatus,
     },
     playlist, Error, Link,
 };
@@ -29,7 +29,7 @@ pub use crate::Item;
 
 impl Queue {
     pub async fn load(
-        index: PlayerIndex,
+        index: &PlayerLink,
         before_len: Option<u32>,
         after_len: Option<u32>,
     ) -> Result<Self, Error> {
@@ -94,13 +94,13 @@ impl Queue {
         })
     }
 
-    pub async fn now(index: PlayerIndex, len: u32) -> Result<Self, Error> {
+    pub async fn now(index: &PlayerLink, len: u32) -> Result<Self, Error> {
         let before = len / 5;
         let after = len - before - 1;
         Self::load(index, Some(before), Some(after)).await
     }
 
-    pub async fn link(index: PlayerIndex) -> Result<Item, Error> {
+    pub async fn link(index: &PlayerLink) -> Result<Item, Error> {
         let current_idx = index.queue_pos().await?;
         let current = index.queue_at(current_idx).await?;
         match Item::from(current.filename) {
@@ -113,7 +113,7 @@ impl Queue {
         }
     }
 
-    pub async fn current(index: PlayerIndex) -> Result<Current, Error> {
+    pub async fn current(index: &PlayerLink) -> Result<Current, Error> {
         let media_title = index.media_title().await?;
         let filename = Item::from(index.filename().await?);
         let id = filename.id();

@@ -12,7 +12,7 @@ use itertools::Itertools;
 use mlib::{
     downloaded::clean_downloads,
     item::link::VideoLink,
-    players::{self, PlayerIndex},
+    players::{self, PlayerIndex, PlayerLink},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
     ytdl::YtdlBuilder,
@@ -261,8 +261,8 @@ fn log_if_err<T, E: std::fmt::Debug>(r: Result<T, E>) -> Result<T, E> {
 }
 
 static CHOSEN_INDEX: Mutex<PlayerIndex> = Mutex::new(PlayerIndex::CURRENT);
-pub fn chosen_index() -> PlayerIndex {
-    *CHOSEN_INDEX.lock().unwrap()
+pub fn chosen_index() -> PlayerLink {
+    PlayerLink::from(*CHOSEN_INDEX.lock().unwrap())
 }
 
 async fn run() -> anyhow::Result<()> {

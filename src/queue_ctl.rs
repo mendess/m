@@ -16,7 +16,7 @@ use futures_util::{
 use itertools::Itertools;
 use mlib::{
     item::{link::VideoLink, PlaylistLink},
-    players::{self, error::MpvError, PlayerIndex, SmartQueueOpts, SmartQueueSummary},
+    players::{self, error::MpvError, PlayerLink, SmartQueueOpts, SmartQueueSummary},
     playlist::Playlist,
     queue::{Item, Queue},
     ytdl::YtdlBuilder,
@@ -35,14 +35,14 @@ use tokio_stream::wrappers::LinesStream;
 
 pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     if link {
-        let link = Queue::link(PlayerIndex::CURRENT)
+        let link = Queue::link(PlayerLink::current())
             .await
             .context("loading the queue to fetch the link")?;
         tracing::debug!("{:?}", link);
         notify!("{}", link);
         return Ok(());
     }
-    let current = Queue::current(PlayerIndex::CURRENT)
+    let current = Queue::current(PlayerLink::current())
         .await
         .context("loading the current queue")?;
     let plus = match current.progress {
@@ -99,7 +99,7 @@ pub async fn resolve_link(link: &VideoLink) -> String {
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let queue = Queue::now(PlayerIndex::CURRENT, amount.unwrap_or(10).unsigned_abs())
+    let queue = Queue::now(PlayerLink::current(), amount.unwrap_or(10).unsigned_abs())
         .await
         .context("failed getting queue")?;
     let current = queue.current_idx();
@@ -143,7 +143,7 @@ where
     I::IntoIter: ExactSizeIterator,
 {
     let player = match players::current().await? {
-        Some(index) => PlayerIndex::of(index),
+        Some(index) => PlayerLink::of(index),
         None => {
             tracing::debug!("no mpv instance, starting a new one");
             return play(items, with_video_env()).await;
@@ -167,7 +167,11 @@ where
         check_cache_ref(dl_dir()?, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
-        let SmartQueueSummary { from, moved_to, current } = player
+        let SmartQueueSummary {
+            from,
+            moved_to,
+            current,
+        } = player
             .smart_queue(item.clone(), SmartQueueOpts { no_move: q.no_move })
             .await
             .context("when queueing")?;
@@ -297,7 +301,7 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
 }
 
 pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
-    let player = PlayerIndex::CURRENT;
+    let player = PlayerLink::current();
     match d {
         DeQueue::Next => {
             player.queue_remove(player.queue_pos().await? + 1).await?;
@@ -350,7 +354,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
                 .await;
-            let queue = Queue::load(player, None, None)
+            let queue = Queue::load(&player, None, None)
                 .await
                 .context("loading current queue")?;
 
@@ -371,7 +375,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
 }
 
 pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
-    let q = Queue::load(PlayerIndex::CURRENT, None, None).await?;
+    let q = Queue::load(PlayerLink::current(), None, None).await?;
     let mut file = BufWriter::new(File::create(file).await?);
     for s in q.iter() {
         file.write_all(s.item.as_bytes()).await?;

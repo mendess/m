@@ -21,6 +21,7 @@ use tokio::{
 };
 use tracing::debug;
 
+#[derive(Debug)]
 pub struct DaemonLink<M, R, E = Infallible> {
     reader: BufReader<OwnedReadHalf>,
     writer: BufWriter<OwnedWriteHalf>,
@@ -69,7 +70,7 @@ impl<M, R, E> DaemonLink<M, R, E> {
     }
 
     /// Try to clone this link and make a new independent one.
-    pub(super) async fn try_clone(&self) -> io::Result<Self> {
+    pub async fn try_clone(&self) -> io::Result<Self> {
         Self::new(&self.name, &self.socket_path, false).await
     }
 }
