@@ -5,7 +5,7 @@ mod legacy_back_compat;
 mod libmpv_parsing;
 
 use core::fmt;
-use std::{io, path::PathBuf, str::FromStr, ops::Deref};
+use std::{io, ops::Deref, path::PathBuf, str::FromStr};
 
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};
@@ -71,9 +71,7 @@ impl PlayerLink {
     pub fn linked_to(&self, user: String) -> Self {
         Self {
             index: self.index,
-            daemon: StaticOrOwned::Owned(
-                self.daemon.overriding_socket_namespace_with(user),
-            ),
+            daemon: StaticOrOwned::Owned(self.daemon.overriding_socket_namespace_with(user)),
         }
     }
 }
@@ -272,6 +270,12 @@ macro_rules! commands {(
         }
         )*
     };
+}
+
+impl PlayerLink {
+    pub async fn subscribe(&self) -> Result<impl Stream<Item = io::Result<PlayerEvent>>, Error> {
+        Ok(self.daemon.subscribe().await?)
+    }
 }
 
 pub async fn subscribe() -> Result<impl Stream<Item = io::Result<PlayerEvent>>, Error> {

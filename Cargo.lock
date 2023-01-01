@@ -854,7 +854,7 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.3.8"
+version = "0.3.10"
 dependencies = [
  "arc-swap",
  "async_once",
