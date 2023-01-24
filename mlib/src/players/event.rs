@@ -262,11 +262,11 @@ where
                             break;
                         }
                         Event::PropertyChange {
-                            name,
+                            name: "playlist-pos",
                             change: PropertyData::Int64(-1),
                             reply_userdata: _,
                         } if !first_event => {
-                            tracing::debug!("{name} => -1");
+                            tracing::debug!("playlist-pos => -1");
                             break;
                         }
                         Event::Deprecated(_) => continue,
