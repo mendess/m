@@ -162,7 +162,12 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Dump { file } => queue_ctl::dump(file).await?,
         Command::Load { file } => queue_ctl::load(file).await?,
         Command::Play(p) => {
-            queue_ctl::play(search_params_to_items(p).await?, with_video_env()).await?
+            let with_video = p.video;
+            queue_ctl::play(
+                search_params_to_items(p).await?,
+                with_video || with_video_env(),
+            )
+            .await?
         }
         Command::ChCat => playlist_ctl::ch_cat().await?,
         Command::DeleteSong(DeleteSong {
@@ -368,7 +373,7 @@ impl SongQuery {
     }
 }
 
-async fn search_params_to_items(Play { what, search }: Play) -> anyhow::Result<Vec<Item>> {
+async fn search_params_to_items(Play { what, search, .. }: Play) -> anyhow::Result<Vec<Item>> {
     let SongQuery { mut items, words } = {
         tracing::debug!(?what, "parsing query");
         let query = SongQuery::new(what).await;

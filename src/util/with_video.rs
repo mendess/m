@@ -1,5 +1,9 @@
-use std::{env, ffi::OsStr};
-
 pub fn with_video_env() -> bool {
-    env::var_os("WITH_VIDEO").as_deref() == Some(OsStr::new("1"))
+    let Some(var) = std::env::var_os("WITH_VIDEO") else {
+        return false;
+    };
+    let Some(var) = var.to_str() else {
+        return false;
+    };
+    var == "1" || var == "true"
 }

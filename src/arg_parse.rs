@@ -168,6 +168,8 @@ pub struct Play {
     /// Search the song on youtube
     #[structopt(short, long)]
     pub search: bool,
+    #[structopt(short, long)]
+    pub video: bool,
     pub what: Vec<String>,
 }
 
