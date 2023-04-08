@@ -136,6 +136,7 @@ impl PlayersDaemon {
             }
             mpv.set_property("geometry", "820x466")?;
             mpv.set_property("input-ipc-server", legacy_socket)?;
+            mpv.set_property("osc", true)?;
 
             Ok(())
         })?);
