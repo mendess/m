@@ -32,6 +32,7 @@ use tokio::{
     sync::OnceCell,
 };
 use tokio_stream::wrappers::LinesStream;
+use tracing::{debug, warn};
 
 pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     if link {
@@ -85,43 +86,53 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
 
 pub async fn resolve_link(link: &VideoLink) -> String {
     static LIST: OnceCell<Result<Playlist, mlib::Error>> = OnceCell::const_new();
+    debug!("resolving link in playlist");
     let name = match LIST.get_or_init(Playlist::load).await {
         Ok(list) => Ok(list.find_by_link(link).map(|s| s.name.clone())),
         Err(e) => Err(e),
     };
     match name {
         Ok(Some(name)) => name,
-        _ => match YtdlBuilder::new(link).get_title().request().await {
-            Ok(r) => r.title(),
-            Err(_) => link.to_string(),
-        },
+        e => {
+            debug!("failed to find link in playlist: {e:?}");
+            match YtdlBuilder::new(link).get_title().request().await {
+                Ok(r) => r.title(),
+                Err(e) => {
+                    warn!("failed to resolve link using yt dl: {e:?}");
+                    link.to_string()
+                }
+            }
+        }
     }
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let queue = Queue::now(PlayerLink::current(), amount.unwrap_or(10).unsigned_abs())
+    let queue = Queue::load(PlayerLink::current(), amount.unwrap_or(10).unsigned_abs() as usize)
         .await
         .context("failed getting queue")?;
     let current = queue.current_idx();
     stream::iter(queue.iter())
-        .map(|i| async {
-            let s = match &i.item {
-                // TODO: should be able to move here
-                Item::Link(l) => match l.as_video() {
-                    Ok(l) => resolve_link(l).await,
-                    Err(_) => l.to_string(),
-                },
-                Item::File(f) => mlib::item::clean_up_path(&f)
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| f.to_string_lossy().into_owned()),
-                Item::Search(s) => YtdlBuilder::new(s)
-                    .get_title()
-                    .search()
-                    .await
-                    .map(|b| b.title())
-                    .unwrap_or_else(|l| l.to_string()),
-            };
-            (i.index, s)
+        .map(|i| {
+            debug!("translating queue item: {i:?}");
+            async {
+                let s = match &i.item {
+                    // TODO: should be able to move here
+                    Item::Link(l) => match l.as_video() {
+                        Ok(l) => resolve_link(l).await,
+                        Err(_) => l.to_string(),
+                    },
+                    Item::File(f) => mlib::item::clean_up_path(&f)
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| f.to_string_lossy().into_owned()),
+                    Item::Search(s) => YtdlBuilder::new(s)
+                        .get_title()
+                        .search()
+                        .await
+                        .map(|b| b.title())
+                        .unwrap_or_else(|l| l.to_string()),
+                };
+                (i.index, s)
+            }
         })
         .buffered(8)
         .for_each(|(index, s)| async move {
@@ -354,7 +365,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
                 .await;
-            let queue = Queue::load(&player, None, None)
+            let queue = Queue::load_full(player)
                 .await
                 .context("loading current queue")?;
 
@@ -375,7 +386,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
 }
 
 pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
-    let q = Queue::load(PlayerLink::current(), None, None).await?;
+    let q = Queue::load_full(PlayerLink::current()).await?;
     let mut file = BufWriter::new(File::create(file).await?);
     for s in q.iter() {
         file.write_all(s.item.as_bytes()).await?;

@@ -1,103 +1,53 @@
+pub use crate::Item;
 use crate::{
     item::id_from_path,
     players::{
         error::{Error as PlayerError, MpvError, MpvErrorCode},
-        PlayerLink, QueueItemStatus,
+        PlayerLink, QueueItem,
     },
     playlist, Error, Link,
 };
 
-use std::collections::VecDeque;
-
 use futures_util::future::OptionFuture;
 
 pub struct Queue {
-    pub before: VecDeque<SongIdent>,
-    pub current: SongIdent,
+    items: Vec<SongIdent>,
+    current_idx: usize,
     pub playing: bool,
-    pub after: Vec<SongIdent>,
     pub last_queue: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
-pub struct SongIdent {
-    pub index: usize,
-    pub item: Item,
-}
-
-pub use crate::Item;
-
 impl Queue {
-    pub async fn load(
-        index: &PlayerLink,
-        before_len: Option<u32>,
-        after_len: Option<u32>,
-    ) -> Result<Self, Error> {
-        let mut play_status = false;
-        let mut iter = index.queue().await?.into_iter();
-
-        let mut before = match before_len {
-            Some(cap) => VecDeque::with_capacity(cap as usize),
-            None => VecDeque::new(),
-        };
-        let mut next_index = 0;
-        let mut next_index = || {
-            let i = next_index;
-            next_index += 1;
-            i
-        };
-        let mut current = None;
-        for i in iter.by_ref() {
-            let item = SongIdent {
-                index: next_index(),
-                item: Item::from(i.filename),
-            };
-            match i.status {
-                Some(QueueItemStatus {
-                    current: _,
-                    playing,
-                }) => {
-                    current = Some(item);
-                    play_status = playing;
-                    break;
-                }
-                None => {
-                    if matches!(before_len, Some(cap) if cap as usize == before.len()) {
-                        before.pop_front();
-                    }
-                    before.push_back(item);
-                }
-            }
-        }
-        let after_len = after_len
-            .map(|a| {
-                a as usize
-                    + (before_len
-                        .map(|x| x as usize)
-                        .unwrap_or(0)
-                        .saturating_sub(before.len()))
-            })
-            .unwrap_or(usize::MAX);
-        let after = iter
-            .take(after_len)
-            .map(|i| SongIdent {
-                index: next_index(),
-                item: Item::from(i.filename),
-            })
-            .collect();
-        Ok(Self {
-            before,
-            current: current.unwrap(),
-            after,
-            last_queue: index.last_queue().await?,
-            playing: play_status,
-        })
+    pub fn before(&self) -> &[SongIdent] {
+        &self.items[..self.current_idx]
     }
 
-    pub async fn now(index: &PlayerLink, len: u32) -> Result<Self, Error> {
-        let before = len / 5;
-        let after = len - before - 1;
-        Self::load(index, Some(before), Some(after)).await
+    pub fn after(&self) -> &[SongIdent] {
+        self.items.get(self.current_idx + 1..).unwrap_or_default()
+    }
+
+    pub fn current_song(&self) -> &SongIdent {
+        &self.items[self.current_idx]
+    }
+
+    pub fn current_idx(&self) -> usize {
+        self.items[self.current_idx].index
+    }
+
+    pub async fn load_full(index: &PlayerLink) -> Result<Self, Error> {
+        Self::load(index, usize::MAX).await
+    }
+
+    pub async fn load(index: &PlayerLink, at_most: usize) -> Result<Self, Error> {
+        let queue = index.queue().await?;
+        let last_queue = index.last_queue().await?;
+        let (items, current_idx, playing) = slice_queue(queue, at_most);
+        Ok(Self {
+            items,
+            current_idx,
+            playing,
+            last_queue,
+        })
     }
 
     pub async fn link(index: &PlayerLink) -> Result<Item, Error> {
@@ -160,25 +110,24 @@ impl Queue {
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &SongIdent> {
-        self.before
-            .iter()
-            .chain([&self.current])
-            .chain(self.after.iter())
-    }
-
-    pub fn current_idx(&self) -> usize {
-        self.current.index
+        self.items.iter()
     }
 
     pub fn for_each<F: FnMut(&SongIdent), C: FnOnce(&SongIdent)>(&self, mut f: F, c: C) {
-        for i in &self.before {
+        for i in self.before() {
             f(i)
         }
-        c(&self.current);
-        for i in &self.after {
+        c(self.current_song());
+        for i in self.after() {
             f(i)
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct SongIdent {
+    pub index: usize,
+    pub item: Item,
 }
 
 pub struct Current {
@@ -190,4 +139,39 @@ pub struct Current {
     pub categories: Vec<String>,
     pub index: usize,
     pub next: Option<String>,
+}
+
+fn slice_queue(mut queue: Vec<QueueItem>, at_most: usize) -> (Vec<SongIdent>, usize, bool) {
+    let (mut current_idx, st) = queue
+        .iter()
+        .enumerate()
+        .find_map(|(idx, item)| item.status.map(|st| (idx, st)))
+        .unwrap();
+
+    let mut start_index = current_idx.saturating_sub(at_most / 5);
+    current_idx -= start_index; // start index is the new base, so current_idx has to become
+                                // relative to that base.
+    let mut end_index = start_index.saturating_add(at_most);
+    if end_index > queue.len() {
+        let delta = end_index - queue.len();
+        end_index = queue.len();
+        let new_start_index = start_index.saturating_sub(delta);
+        current_idx += start_index - new_start_index;
+        start_index = new_start_index;
+    }
+
+    let mut next_index = start_index;
+    let mut next_index = || {
+        let i = next_index;
+        next_index += 1;
+        i
+    };
+    let items = queue
+        .drain(start_index..end_index)
+        .map(|i| SongIdent {
+            index: next_index(),
+            item: Item::from(i.filename),
+        })
+        .collect();
+    (items, current_idx, st.playing)
 }

@@ -194,7 +194,7 @@ where
     T: YtdlParam<'l>,
     L: AsRef<OsStr>,
 {
-    let mut cmd = Command::new("youtube-dl");
+    let mut cmd = Command::new("yt-dlp");
     cmd.arg(link);
     T::collect(&mut cmd);
 

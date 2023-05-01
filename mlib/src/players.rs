@@ -184,7 +184,7 @@ pub struct QueueItem {
     pub id: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueueItemStatus {
     pub current: bool,
     pub playing: bool,
