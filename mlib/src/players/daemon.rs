@@ -270,7 +270,17 @@ impl PlayersDaemon {
     }
 
     pub(super) async fn queue_remove(&self, index: PlayerIndex, to_remove: usize) -> MpvResult<()> {
-        self.current_player(index)?
+        let player = self.current_player(index)?;
+        if self.queue_is_looping(player)? != LoopStatus::No {
+            let pos = simple_prop_logged::<i64>(player, "playlist-pos")?;
+            if to_remove as i64 == pos {
+                let len = simple_prop_logged::<i64>(player, "playlist-count")?;
+                if pos + 1 == len {
+                    player.command("playlist-play-index", &["0"])?;
+                }
+            }
+        }
+        player
             .playlist_remove_index(to_remove)?;
         Ok(())
     }
@@ -338,11 +348,11 @@ impl PlayersDaemon {
         direction: Direction,
     ) -> MpvResult<()> {
         let player = self.current_player(index)?;
-        let pos: u64 = match log_property_errors::<i64>(player, "playlist-pos")?.try_into() {
+        let pos: u64 = match simple_prop_logged::<i64>(player, "playlist-pos")?.try_into() {
             Ok(p) => p,
             Err(_) => return Ok(()),
         };
-        let count: u64 = match log_property_errors::<i64>(player, "playlist-count")?.try_into() {
+        let count: u64 = match simple_prop_logged::<i64>(player, "playlist-count")?.try_into() {
             Ok(p) if p > 1 => p,
             _ => return Ok(()),
         };
@@ -422,7 +432,7 @@ impl PlayersDaemon {
     }
 
     fn simple_prop<T: GetData>(&self, index: PlayerIndex, prop: &str) -> MpvResult<T> {
-        log_property_errors(self.current_player(index)?, prop)
+        simple_prop_logged(self.current_player(index)?, prop)
     }
 
     pub(super) async fn filename(&self, index: PlayerIndex) -> MpvResult<String> {
@@ -453,8 +463,8 @@ impl PlayersDaemon {
             .collect::<Result<Vec<_>, _>>()
     }
 
-    pub(super) async fn queue_is_looping(&self, index: PlayerIndex) -> MpvResult<LoopStatus> {
-        let s = self.simple_prop::<String>(index, "loop-playlist")?;
+    pub(super) fn queue_is_looping(&self, player: &Mpv) -> MpvResult<LoopStatus> {
+        let s = simple_prop_logged::<String>(player, "loop-playlist")?;
         s.parse::<LoopStatus>()
             .map_err(|error| MpvError::InvalidData {
                 expected: type_name::<LoopStatus>().to_string(),
@@ -490,7 +500,7 @@ impl PlayersDaemon {
     }
 }
 
-fn log_property_errors<T: GetData>(mpv: &Mpv, prop: &str) -> MpvResult<T> {
+fn simple_prop_logged<T: GetData>(mpv: &Mpv, prop: &str) -> MpvResult<T> {
     Ok(match mpv.get_property::<T>(prop) {
         Ok(p) => p,
         Err(e) => {
@@ -516,10 +526,10 @@ async fn handle_messages(
     players: Arc<Mutex<PlayersDaemon>>,
 ) -> MpvResult<Response> {
     macro_rules! call {
-        ($pl:ident.$method:ident($($param:ident),*$(,)?)) => {
+        ($pl:ident.$method:ident($($param:expr),*$(,)?)) => {
             $pl.lock().await.$method($($param),*).await.map(|_| Response::Unit)
         };
-        ($pl:ident.$method:ident($($param:ident),*$(,)?) => $ctor:ident) => {
+        ($pl:ident.$method:ident($($param:expr),*$(,)?) => $ctor:ident) => {
             $pl.lock().await.$method($($param),*).await.map(|v| Response::$ctor(v))
         };
     }
@@ -586,7 +596,9 @@ async fn handle_messages(
         }
         MessageKind::Queue => call!(players.queue(index) => Items),
         MessageKind::QueueIsLooping => {
-            call!(players.queue_is_looping(index) => LoopStatus)
+            let players = players.lock().await;
+            let player = players.current_player(index)?;
+            players.queue_is_looping(player).map(Response::LoopStatus)
         }
         MessageKind::QueuePos => {
             call!(players.queue_position(index) => Integer)
