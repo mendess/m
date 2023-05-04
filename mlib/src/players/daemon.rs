@@ -498,6 +498,14 @@ impl PlayersDaemon {
             self.simple_prop::<MpvNode>(index, &format!("playlist/{at}"))?,
         )
     }
+
+    pub(super) async fn duration(&self, index: PlayerIndex) -> MpvResult<f64> {
+        self.simple_prop(index, "duration")
+    }
+
+    pub(super) async fn playback_time(&self, index: PlayerIndex) -> MpvResult<f64> {
+        self.simple_prop(index, "playback-time")
+    }
 }
 
 fn simple_prop_logged<T: GetData>(mpv: &Mpv, prop: &str) -> MpvResult<T> {
@@ -610,6 +618,12 @@ async fn handle_messages(
         }
         MessageKind::QueueN { at } => {
             call!(players.queue_at(index, at) => Item)
+        }
+        MessageKind::Duration => {
+            call!(players.duration(index) => Real)
+        }
+        MessageKind::PlaybackTime => {
+            call!(players.playback_time(index) => Real)
         }
     }
     .map_err(From::from)

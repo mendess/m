@@ -6,9 +6,25 @@ pub mod with_video;
 use mlib::item::link::VideoLink;
 use mlib::VideoId;
 use once_cell::sync::Lazy;
+use std::fmt::Display;
 use std::io;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::process::Command;
+
+pub struct DurationFmt(pub Duration);
+
+impl Display for DurationFmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = self.0.as_secs();
+        let (h, s) = (s / 3600, s % 3600);
+        let (m, s) = (s / 60, s % 60);
+        if h > 0 {
+            write!(f, "{:02}:", h)?;
+        }
+        write!(f, "{:02}:{:02}", m, s)
+    }
+}
 
 pub fn dl_dir() -> anyhow::Result<PathBuf> {
     static PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {

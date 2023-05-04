@@ -2,7 +2,7 @@ use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
     download_ctl::check_cache_ref,
     notify,
-    util::{dl_dir, selector::selector, with_video::with_video_env},
+    util::{dl_dir, selector::selector, with_video::with_video_env, DurationFmt},
 };
 
 use std::{collections::HashSet, io::Write, path::PathBuf, pin::Pin};
@@ -46,11 +46,12 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     let current = Queue::current(PlayerLink::current())
         .await
         .context("loading the current queue")?;
+    const PROGRESS_BAR_LEN: usize = 11;
     let plus = match current.progress {
-        Some(progress) => "+".repeat(progress as usize / 10),
+        Some(progress) => "+".repeat(progress as usize / PROGRESS_BAR_LEN),
         None => "???".into(),
     };
-    let minus = "-".repeat(10usize.saturating_sub(plus.len()));
+    let minus = "-".repeat(PROGRESS_BAR_LEN.saturating_sub(plus.len()));
     let song = match current.chapter {
         Some(c) => {
             format!("§bVideo§r: {}\n§bSong§r:  {}", current.title, c)
@@ -58,13 +59,15 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
         None => current.title,
     };
     notify!("Now Playing";
-        content: "{}\n{}🔉{:.0}% | <{}{}> {:.0}%{}{}",
+        content: "{}\n{}🔉{:.0}% | <{}{}> {:.0}%\n          {}/{}{}{}",
         song,
         if current.playing { ">" } else { "||" },
         current.volume,
         plus,
         minus,
-        current.progress.as_ref().map(ToString::to_string).unwrap_or_else(|| String::from("none")),
+        current.progress.as_ref().unwrap_or(&-1.0),
+        DurationFmt(current.playback_time),
+        DurationFmt(current.duration),
         if current.categories.is_empty() {
             String::new()
         } else {
@@ -107,9 +110,12 @@ pub async fn resolve_link(link: &VideoLink) -> String {
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
-    let queue = Queue::load(PlayerLink::current(), amount.unwrap_or(10).unsigned_abs() as usize)
-        .await
-        .context("failed getting queue")?;
+    let queue = Queue::load(
+        PlayerLink::current(),
+        amount.unwrap_or(10).unsigned_abs() as usize,
+    )
+    .await
+    .context("failed getting queue")?;
     let current = queue.current_idx();
     stream::iter(queue.iter())
         .map(|i| {

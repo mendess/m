@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 pub use crate::Item;
 use crate::{
     item::id_from_path,
@@ -81,6 +83,20 @@ impl Queue {
             Err(PlayerError::Mpv(MpvError::Raw(MpvErrorCode::PropertyUnavailable))) => None,
             Err(e) => return Err(e.into()),
         };
+        let playback_time = match index.playback_time().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(%e, "getting the playback_time");
+                0.0
+            }
+        };
+        let duration = match index.duration().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(%e, "getting the duration");
+                0.0
+            }
+        };
         let categories = OptionFuture::from(id.map(playlist::find_song))
             .await
             .transpose()?
@@ -104,6 +120,8 @@ impl Queue {
             categories: categories.into_vec(),
             volume,
             progress,
+            duration: Duration::from_secs_f64(duration),
+            playback_time: Duration::from_secs_f64(playback_time),
             index: current_idx,
             next,
         })
@@ -136,6 +154,8 @@ pub struct Current {
     pub playing: bool,
     pub volume: f64,
     pub progress: Option<f64>,
+    pub playback_time: Duration,
+    pub duration: Duration,
     pub categories: Vec<String>,
     pub index: usize,
     pub next: Option<String>,

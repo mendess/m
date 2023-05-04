@@ -153,6 +153,8 @@ enum MessageKind {
     Volume,
     QueueNFilename { at: usize },
     QueueN { at: usize },
+    Duration,
+    PlaybackTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -454,5 +456,11 @@ commands! {
         / Response::Integer(i) => i as _ => usize;
     /// Get the player's volume.
     volume as Volume
+        / Response::Real(r) => r => f64;
+    /// Get the total time of the current track
+    duration as Duration
+        / Response::Real(r) => r => f64;
+    /// Get the total time of the current track
+    playback_time as PlaybackTime
         / Response::Real(r) => r => f64;
 }
