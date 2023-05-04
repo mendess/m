@@ -71,7 +71,7 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
         if current.categories.is_empty() {
             String::new()
         } else {
-            format!("\n\nCategories: | {} |", current.categories.iter().join(" | "))
+            format!("\n\n| {} |", current.categories.iter().join(" | "))
         },
         if let Some(next) = current.next {
             let up_next = match VideoLink::from_url(next) {
