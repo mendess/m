@@ -1,7 +1,5 @@
-use async_once::AsyncOnce;
 use std::{env, io, os::unix::ffi::OsStringExt};
-use structopt::lazy_static::lazy_static;
-use tokio::process::Command;
+use tokio::{process::Command, sync::OnceCell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SessionKind {
@@ -28,8 +26,10 @@ impl SessionKind {
             Ok(status.success())
         }
 
-        lazy_static! {
-            static ref CURRENT: AsyncOnce<SessionKind> = AsyncOnce::new(async {
+        static CURRENT: OnceCell<SessionKind> = OnceCell::const_new();
+
+        *CURRENT
+            .get_or_init(|| async {
                 let session_kind_var = env::var_os("SESSION_KIND");
                 if matches!(&session_kind_var, Some(v) if v == "gui") {
                     SessionKind::Gui
@@ -40,9 +40,7 @@ impl SessionKind {
                 } else {
                     SessionKind::Cli
                 }
-            });
-        }
-
-        *CURRENT.get().await
+            })
+            .await
     }
 }

@@ -3,13 +3,13 @@ use std::io::{stdout, Write};
 use super::arg_parse::Amount;
 
 use anyhow::Context;
+use clap::Parser;
 use crossterm::{
     cursor::{self, MoveTo},
     terminal::{Clear, ClearType},
     QueueableCommand,
 };
 use mlib::{players, queue::Queue};
-use structopt::StructOpt;
 
 use crate::{chosen_index, notify};
 
@@ -170,11 +170,11 @@ pub async fn interactive() -> anyhow::Result<()> {
             }) => {
                 let mut buf = [0; 4];
                 let cmd = c.encode_utf8(&mut buf);
-                if let Ok(cmd) = crate::arg_parse::Command::from_iter_safe(["", &*cmd]) {
-                    if matches!(cmd, crate::arg_parse::Command::Current { .. }) {
+                if let Ok(cmd) = crate::arg_parse::Args::try_parse_from(["", &*cmd]) {
+                    if matches!(cmd.cmd, crate::arg_parse::Command::Current { .. }) {
                         show_current().await?;
                     } else {
-                        super::process_cmd(cmd).await?
+                        super::process_cmd(cmd.cmd).await?
                     }
                 } else {
                     error = Some(String::from(cmd));

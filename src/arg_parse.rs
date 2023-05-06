@@ -2,23 +2,22 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 use serde::{Deserialize, Serialize};
-use structopt::clap::AppSettings::DisableVersion;
-use structopt::clap::Shell;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
+#[derive(Debug, Parser, Serialize, Deserialize)]
 pub struct Args {
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub socket: Option<usize>,
-    #[structopt(flatten)]
+    #[command(subcommand)]
     pub cmd: Command,
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
+#[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
 pub enum Command {
     /// Toggle pause
-    #[structopt(alias = "p")]
+    #[command(alias = "p")]
     Pause,
 
     /// Kill the most recent player
@@ -28,11 +27,11 @@ pub enum Command {
     Play(Play),
 
     /// Interactively asks the user what songs they want to play from their playlist
-    #[structopt(alias = "play-interactive")]
+    #[command(alias = "play-interactive")]
     Playlist,
 
     /// Add a new song to the playlist
-    #[structopt(alias = "add-song")]
+    #[command(alias = "add-song")]
     New(New),
 
     /// Append a playlist to the personal playlist
@@ -45,34 +44,34 @@ pub enum Command {
     Now(Amount),
 
     /// Show the current song
-    #[structopt(alias = "c")]
+    #[command(alias = "c")]
     Current {
         /// With a notification
-        #[structopt(short, long)]
+        #[arg(short, long)]
         notify: bool,
         /// Print the filename/link instead
-        #[structopt(short = "i", long)]
+        #[arg(short = 'i', long)]
         link: bool,
     },
 
     /// Shows lyrics for the current song
-    #[structopt(alias = "ly")]
+    #[command(alias = "ly")]
     Lyrics,
 
     /// Add a category to the current song
-    #[structopt(alias = "change-cats-to-current")]
+    #[command(alias = "change-cats-to-current")]
     ChCat, // TODO: review this
 
     /// Queue a song
-    #[structopt(alias = "q")]
+    #[command(alias = "q")]
     Queue(Queue),
 
     /// Dequeue a song
-    #[structopt(alias = "dq")]
+    #[command(subcommand, alias = "dq")]
     Dequeue(DeQueue),
 
     /// Delete a song from the playlist file
-    #[structopt(alias = "del")]
+    #[command(alias = "del")]
     DeleteSong(DeleteSong),
 
     /// Deletes downloaded songs that are not in the playlist anymore
@@ -82,39 +81,39 @@ pub enum Command {
     Loop,
 
     /// Volume up
-    #[structopt(alias = "k")]
+    #[command(alias = "k")]
     Vu(Amount),
 
     /// Volume up
-    #[structopt(alias = "j")]
+    #[command(alias = "j")]
     Vd(Amount),
 
     /// Previous chapter in a file
-    #[structopt(alias = "H")]
+    #[command(alias = "H")]
     Prev(Amount),
 
     /// Next chapter in a file
-    #[structopt(alias = "L")]
+    #[command(alias = "L")]
     Next(Amount),
 
     /// Previous file
-    #[structopt(alias = "h")]
+    #[command(alias = "h")]
     PrevFile(Amount),
 
     /// Skip to the next file
-    #[structopt(alias = "l")]
+    #[command(alias = "l")]
     NextFile(Amount),
 
     /// Seek backward
-    #[structopt(alias = "u", alias = "J")]
+    #[command(alias = "u", alias = "J")]
     Back(Amount),
 
     /// Seek forward
-    #[structopt(alias = "i", alias = "K")]
+    #[command(alias = "i", alias = "K")]
     Frwd(Amount),
 
     /// Enter interactive mode
-    #[structopt(alias = "int")]
+    #[command(alias = "int")]
     Interactive,
 
     // TODO: jukebox? probably deprecated
@@ -132,17 +131,17 @@ pub enum Command {
 
     /// Get the socket in use
     Socket {
-        #[structopt(parse(try_from_str = parse_new))]
+        #[arg(value_parser = parse_new, id = "new")]
         new: Option<()>, // yes, very much hack
     },
 
     /// Shuffle
-    #[structopt(alias = "shuf")]
+    #[command(alias = "shuf")]
     Shuffle,
 
     /// Status
     Status {
-        #[structopt(default_value = "players")]
+        #[arg(default_value = "players")]
         entity: EntityStatus,
     },
 
@@ -162,75 +161,75 @@ fn parse_new(s: &str) -> Result<(), &'static str> {
     }
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Parser, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub struct Play {
     /// Search the song on youtube
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub search: bool,
-    #[structopt(short, long)]
+
+    /// Whether to enable video or not
+    #[arg(short, long)]
     pub video: bool,
+
+    /// Queue all songs in a category
+    #[arg(short, long)]
+    pub category: Option<String>,
+
+    /// What to play
     pub what: Vec<String>,
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Parser, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub struct New {
     /// Queue it too
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub queue: bool,
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub search: bool,
     pub query: String,
     pub categories: Vec<String>,
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Parser, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub struct AddPlaylist {
     /// Queue it too
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub queue: bool,
     pub link: String,
     pub categories: Vec<String>,
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Parser, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub struct Queue {
-    #[structopt(flatten)]
+    #[command(flatten)]
     pub queue_opts: QueueOpts,
 
-    #[structopt(flatten)]
+    #[command(flatten)]
     pub play_opts: Play,
 }
 
-#[derive(Debug, StructOpt, Default, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Parser, Default, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub struct QueueOpts {
     /// Resets the queue fairness
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub reset: bool,
 
     /// Send a notification
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub notify: bool,
 
     /// Don't move in the playlist, keep it at the end
-    #[structopt(short = "m", long = "no-move")]
+    #[arg(short = 'm', long = "no-move")]
     pub no_move: bool,
 
     /// Clear the queue
-    #[structopt(short = "x", long = "clear")]
+    #[arg(short = 'x', long = "clear")]
     pub clear: bool,
-
-    /// Queue all songs in a category
-    #[structopt(short, long)]
-    pub category: Option<String>,
-
-    /// Don't preemptively download songs
-    #[structopt(short = "p", long = "no-preempt-download")]
-    pub preemptive_download: bool,
 }
 
 impl Deref for Queue {
@@ -240,8 +239,8 @@ impl Deref for Queue {
     }
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub enum DeQueue {
     /// The next song in the queue
     Next,
@@ -265,14 +264,14 @@ pub enum DeQueue {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DeQueueIndexKind {
     Minus,
     Plus,
     Exact,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct DeQueueIndex(pub DeQueueIndexKind, pub usize);
 
 impl FromStr for DeQueueIndex {
@@ -296,22 +295,22 @@ impl FromStr for DeQueueIndex {
     }
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Parser, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub struct DeleteSong {
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub current: bool,
     pub partial_name: Vec<String>, // TODO: incompatible with current
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Copy, Parser, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub struct Amount {
     pub amount: Option<i32>,
 }
 
-#[derive(Debug, StructOpt, Serialize, Deserialize)]
-#[structopt(global_settings = &[DisableVersion])]
+#[derive(Debug, Clone, Copy, Parser, Serialize, Deserialize)]
+// #[structopt(global_settings = &[DisableVersion])]
 pub enum EntityStatus {
     Players,
     Cache,

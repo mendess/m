@@ -203,9 +203,6 @@ where
         if q.notify && item_count < 30 {
             notify_tasks.push(tokio::spawn(notify(item, current, moved_to)));
         }
-        if q.preemptive_download {
-            todo!("preemptive download {}", moved_to);
-        }
         if notify_tasks.len() > 8 {
             if let Err(e) = notify_tasks.next().await.unwrap() {
                 tracing::error!("failed to notify: {:?}", e)

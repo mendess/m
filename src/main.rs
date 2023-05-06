@@ -6,7 +6,8 @@ mod playlist_ctl;
 mod queue_ctl;
 mod util;
 
-use arg_parse::{Args, Command, DeleteSong, EntityStatus, New, Play};
+use arg_parse::{Args, Command, DeleteSong, EntityStatus, New};
+use clap::{CommandFactory, Parser};
 use futures_util::{future::ready, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
 use mlib::{
@@ -20,7 +21,6 @@ use mlib::{
 };
 use rand::seq::SliceRandom;
 use std::{io::Write, sync::Mutex};
-use structopt::StructOpt;
 use tokio::io;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
@@ -28,7 +28,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
 use util::session_kind::SessionKind;
 
 use crate::{
-    arg_parse::AddPlaylist,
+    arg_parse::{AddPlaylist, Queue},
     util::{dl_dir, selector, with_video::with_video_env},
 };
 
@@ -161,11 +161,15 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         }
         Command::Dump { file } => queue_ctl::dump(file).await?,
         Command::Load { file } => queue_ctl::load(file).await?,
-        Command::Play(p) => {
-            let with_video = p.video;
+        Command::Play(arg_parse::Play {
+            search,
+            what,
+            category,
+            video,
+        }) => {
             queue_ctl::play(
-                search_params_to_items(p).await?,
-                with_video || with_video_env(),
+                search_params_to_items(what, search, category).await?,
+                video || with_video_env(),
             )
             .await?
         }
@@ -174,28 +178,14 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             current,
             partial_name,
         }) => playlist_ctl::delete_song(current, partial_name).await?,
-        Command::Queue(q) => {
-            let mut opts = q.queue_opts;
-            let mut items = search_params_to_items(q.play_opts).await?;
-            if let Some(cat) = opts.category.take() {
-                let cat = &cat;
-                let cat_items = Playlist::stream()
-                    .await?
-                    .filter_map(|s| async { s.ok() })
-                    .filter_map(|s| async move {
-                        s.categories
-                            .iter()
-                            .any(|c| c.contains(cat))
-                            .then_some(s.link)
-                    })
-                    .map(Link::Video)
-                    .map(Item::Link)
-                    .collect::<Vec<_>>()
-                    .await;
-                items.extend(cat_items);
-                items.shuffle(&mut rand::rngs::OsRng);
-            }
-            queue_ctl::queue(opts, items).await?;
+        Command::Queue(Queue {
+            queue_opts,
+            play_opts,
+        }) => {
+            let items =
+                search_params_to_items(play_opts.what, play_opts.search, play_opts.category)
+                    .await?;
+            queue_ctl::queue(queue_opts, items).await?;
         }
         Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
         Command::Playlist => queue_ctl::run_interactive_playlist().await?,
@@ -221,7 +211,12 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         }
         Command::Info { song } => playlist_ctl::info(song).await?,
         Command::AutoComplete { shell } => {
-            Args::clap().gen_completions_to("m", shell, &mut TracedWriter(std::io::stdout().lock()))
+            clap_complete::generate(
+                shell,
+                &mut Args::command(),
+                "m",
+                &mut std::io::stdout().lock(),
+            );
         }
     }
     tracing::debug!("updating bar");
@@ -274,7 +269,7 @@ async fn run() -> anyhow::Result<()> {
     download_ctl::start_daemon_if_running_as_daemon().await?;
     players::start_daemon_if_running_as_daemon().await?;
 
-    let args = match Args::from_args_safe() {
+    let args = match Args::try_parse() {
         Ok(args) => args,
         Err(e) => {
             if let SessionKind::Gui = SessionKind::current().await {
@@ -373,7 +368,11 @@ impl SongQuery {
     }
 }
 
-async fn search_params_to_items(Play { what, search, .. }: Play) -> anyhow::Result<Vec<Item>> {
+async fn search_params_to_items(
+    what: Vec<String>,
+    search: bool,
+    category: Option<String>,
+) -> anyhow::Result<Vec<Item>> {
     let SongQuery { mut items, words } = {
         tracing::debug!(?what, "parsing query");
         let query = SongQuery::new(what).await;
@@ -397,5 +396,23 @@ async fn search_params_to_items(Play { what, search, .. }: Play) -> anyhow::Resu
         )
     };
     items.push(link);
+    if let Some(cat) = category {
+        let cat = &cat;
+        let cat_items = Playlist::stream()
+            .await?
+            .filter_map(|s| async { s.ok() })
+            .filter_map(|s| async move {
+                s.categories
+                    .iter()
+                    .any(|c| c.contains(cat))
+                    .then_some(s.link)
+            })
+            .map(Link::Video)
+            .map(Item::Link)
+            .collect::<Vec<_>>()
+            .await;
+        items.extend(cat_items);
+        items.shuffle(&mut rand::rngs::OsRng);
+    }
     Ok(items)
 }
