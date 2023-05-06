@@ -11,7 +11,7 @@ use clap::{CommandFactory, Parser};
 use futures_util::{future::ready, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
 use mlib::{
-    downloaded::clean_downloads,
+    downloaded::{self, clean_downloads},
     item::link::VideoLink,
     players::{self, PlayerIndex, PlayerLink},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
@@ -29,6 +29,7 @@ use util::session_kind::SessionKind;
 
 use crate::{
     arg_parse::{AddPlaylist, Queue},
+    config::DownloadFormat,
     util::{dl_dir, selector, with_video::with_video_env},
 };
 
@@ -217,6 +218,38 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 "m",
                 &mut std::io::stdout().lock(),
             );
+        }
+        Command::Download { what, category } => {
+            let items = if what.is_none() && category.is_none() {
+                Playlist::load()
+                    .await?
+                    .songs
+                    .into_iter()
+                    .map(|i| Item::Link(i.link.into()))
+                    .collect()
+            } else {
+                search_params_to_items(what.unwrap_or_default(), false, category).await?
+            };
+            let dl_dir = dl_dir()?;
+            for i in items {
+                match i {
+                    Item::Link(l) => match l {
+                        Link::Video(l) => {
+                            if downloaded::check_cache(&dl_dir, &l).await {
+                                downloaded::download(
+                                    dl_dir.clone(),
+                                    &l,
+                                    config::CONFIG.download_format == DownloadFormat::Audio,
+                                )
+                                .await?;
+                            }
+                        }
+                        Link::Playlist(_) => {}
+                    },
+                    Item::File(_) => {}
+                    Item::Search(_) => {}
+                }
+            }
         }
     }
     tracing::debug!("updating bar");

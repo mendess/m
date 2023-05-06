@@ -151,6 +151,12 @@ pub enum Command {
     /// Generate auto complete script
     #[serde(skip)]
     AutoComplete { shell: Shell },
+
+    /// Just download the missing songs
+    Download {
+        category: Option<String>,
+        what: Option<Vec<String>>,
+    },
 }
 
 fn parse_new(s: &str) -> Result<(), &'static str> {
