@@ -7,6 +7,7 @@ use clap_complete::Shell;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Parser, Serialize, Deserialize)]
+#[command(author, version, about, long_about = None)]
 pub struct Args {
     #[arg(short, long)]
     pub socket: Option<usize>,
