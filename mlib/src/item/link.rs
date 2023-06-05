@@ -17,6 +17,7 @@ pub trait IntoVideo {
 pub enum Link {
     Video(VideoLink),
     Playlist(PlaylistLink),
+    OtherPlatform(url::Url),
 }
 
 impl Link {
@@ -35,12 +36,14 @@ impl Link {
         PlaylistLink::from_url(s)
             .map(Self::Playlist)
             .or_else(|s| VideoLink::from_url(s).map(Self::Video))
+            .or_else(|s| s.parse().map(Self::OtherPlatform).map_err(|_| s))
     }
 
     pub fn video_id(&self) -> Option<&VideoId> {
         match self {
             Self::Video(l) => Some(l.id()),
             Self::Playlist(l) => l.video_id(),
+            Self::OtherPlatform(_) => None,
         }
     }
 
@@ -48,6 +51,7 @@ impl Link {
         match self {
             Self::Video(_) => None,
             Self::Playlist(l) => Some(l.id()),
+            Self::OtherPlatform(_) => None,
         }
     }
 
@@ -55,6 +59,7 @@ impl Link {
         match self {
             Self::Video(l) => l.as_str(),
             Self::Playlist(l) => l.as_str(),
+            Self::OtherPlatform(url) => url.as_str(),
         }
     }
 
@@ -62,20 +67,23 @@ impl Link {
         match self {
             Self::Video(l) => l.into_string(),
             Self::Playlist(l) => l.into_string(),
+            Self::OtherPlatform(url) => url.into(),
         }
     }
 
-    pub fn as_video(&self) -> Result<&VideoLink, &PlaylistLink> {
+    pub fn as_video(&self) -> Option<&VideoLink> {
         match self {
-            Self::Video(l) => Ok(l),
-            Self::Playlist(l) => l.as_video_link(),
+            Self::Video(l) => Some(l),
+            Self::Playlist(l) => l.as_video_link().ok(),
+            Self::OtherPlatform(_) => None,
         }
     }
 
-    pub fn into_video(self) -> Result<VideoLink, PlaylistLink> {
+    pub fn into_video(self) -> Result<VideoLink, Self> {
         match self {
             Self::Video(l) => Ok(l),
-            Self::Playlist(l) => l.into_video_link(),
+            Self::Playlist(l) => l.into_video_link().map_err(Self::Playlist),
+            Self::OtherPlatform(url) => Err(Self::OtherPlatform(url)),
         }
     }
 
@@ -83,6 +91,7 @@ impl Link {
         match self {
             Self::Video(_) => None,
             Self::Playlist(l) => Some(l),
+            Self::OtherPlatform(_) => None,
         }
     }
 
@@ -90,6 +99,7 @@ impl Link {
         match self {
             Self::Video(_) => None,
             Self::Playlist(l) => Some(l),
+            Self::OtherPlatform(_) => None,
         }
     }
 }
@@ -107,6 +117,11 @@ impl FromStr for Link {
         s.parse()
             .map(Self::Playlist)
             .or_else(|_| s.parse().map(Self::Video))
+            .or_else(|_| {
+                s.parse()
+                    .map(Self::OtherPlatform)
+                    .map_err(|_| "invalid url")
+            })
     }
 }
 
@@ -129,6 +144,7 @@ impl Display for Link {
         match self {
             Self::Video(v) => v.fmt(f),
             Self::Playlist(v) => v.fmt(f),
+            Self::OtherPlatform(v) => v.fmt(f),
         }
     }
 }
@@ -138,6 +154,7 @@ impl AsRef<OsStr> for Link {
         match self {
             Self::Video(l) => l.as_ref(),
             Self::Playlist(l) => l.as_ref(),
+            Self::OtherPlatform(url) => url.as_str().as_ref(),
         }
     }
 }

@@ -245,6 +245,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                             }
                         }
                         Link::Playlist(_) => {}
+                        Link::OtherPlatform(_) => {}
                     },
                     Item::File(_) => {}
                     Item::Search(_) => {}

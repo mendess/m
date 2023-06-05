@@ -71,8 +71,8 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
     }
     let link = match item {
         Item::Link(l) => match l.as_video() {
-            Ok(v) => v,
-            Err(_) => return CheckCacheDecision::Skip,
+            Some(v) => v,
+            None => return CheckCacheDecision::Skip,
         },
         _ => return CheckCacheDecision::Skip,
     };

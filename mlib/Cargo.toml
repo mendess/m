@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 
 [dependencies]
@@ -25,6 +25,7 @@ serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 tokio-stream = { workspace = true, features = ["fs", "io-util"], optional = true }
 whoami = { workspace = true, optional = true }
+url = { version = "2.4.0", features = ["serde"] }
 
 [dependencies.tokio]
 workspace = true
@@ -44,48 +45,9 @@ name = "observe"
 required-features = ["player"]
 
 [features]
-default = [
-    "ytdl",
-    "player",
-    "playlist",
-    "queue",
-    "downloads",
-]
-ytdl = [
-    "tokio",
-    "tokio-stream",
-    "pin-project",
-    "futures-util",
-    "serde",
-    "player",
-    "thiserror",
-    "tracing"
-]
-player = [
-    "arc-swap",
-    "serde",
-    "tokio",
-    "futures-util",
-    "namespaced-tmp",
-    "libmpv",
-    "cli-daemon",
-    "thiserror",
-    "tracing"
-]
-playlist = [
-    "player",
-
-    "csv-async",
-    "dirs",
-    "memchr",
-]
-queue = [
-    "playlist",
-    "player",
-]
-downloads = [
-    "queue",
-    "ytdl",
-
-    "glob"
-]
+default = ["ytdl", "player", "playlist", "queue", "downloads"]
+ytdl = ["tokio", "tokio-stream", "pin-project", "futures-util", "serde", "player", "thiserror", "tracing"]
+player = ["arc-swap", "serde", "tokio", "futures-util", "namespaced-tmp", "libmpv", "cli-daemon", "thiserror", "tracing"]
+playlist = ["player", "csv-async", "dirs", "memchr"]
+queue = ["playlist", "player"]
+downloads = ["queue", "ytdl", "glob"]

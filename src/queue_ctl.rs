@@ -124,8 +124,8 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
                 let s = match &i.item {
                     // TODO: should be able to move here
                     Item::Link(l) => match l.as_video() {
-                        Ok(l) => resolve_link(l).await,
-                        Err(_) => l.to_string(),
+                        Some(l) => resolve_link(l).await,
+                        None => l.to_string(),
                     },
                     Item::File(f) => mlib::item::clean_up_path(&f)
                         .map(ToString::to_string)
@@ -232,32 +232,44 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
     tracing::debug!("image tmp path: {}", img_path.display());
     let title = match item {
         Item::Link(l) => {
-            let b = match l.into_video() {
+            macro_rules! handle {
+                ($thumbnail:expr, $title:expr) => {{
+                    let thumbnail = $thumbnail;
+                    tracing::debug!("thumbnail: {}", thumbnail);
+                    let thumb = reqwest::get(thumbnail).await?;
+                    let mut byte_stream = thumb.bytes_stream();
+                    let mut img_file = BufWriter::new(File::from(img_file));
+                    while let Some(chunk) = byte_stream.next().await.transpose()? {
+                        img_file.write_all(&chunk).await?;
+                    }
+                    img_file.flush().await?;
+
+                    $title
+                }}
+            }
+            match l.into_video() {
                 Ok(v) => {
-                    YtdlBuilder::new(&v)
+                    let b = YtdlBuilder::new(&v)
                         .get_title()
                         .get_thumbnail()
                         .request()
-                        .await?
+                        .await?;
+                    handle!(b.thumbnail(), b.title())
                 }
-                Err(pl) => YtdlBuilder::new(&pl)
-                    .get_title()
-                    .get_thumbnail()
-                    .request_playlist()?
-                    .next()
-                    .await
-                    .ok_or_else(|| anyhow::anyhow!("playlist was emtpy"))??,
-            };
-            tracing::debug!("thumbnail: {}", b.thumbnail());
-            let thumb = reqwest::get(b.thumbnail()).await?;
-            let mut byte_stream = thumb.bytes_stream();
-            let mut img_file = BufWriter::new(File::from(img_file));
-            while let Some(chunk) = byte_stream.next().await.transpose()? {
-                img_file.write_all(&chunk).await?;
+                Err(pl) => match pl.as_playlist() {
+                    Some(pl) => {
+                        let b = YtdlBuilder::new(pl)
+                            .get_title()
+                            .get_thumbnail()
+                            .request_playlist()?
+                            .next()
+                            .await
+                            .ok_or_else(|| anyhow::anyhow!("playlist was emtpy"))??;
+                        handle!(b.thumbnail(), b.title())
+                    }
+                    None => handle!("", String::from("url")),
+                },
             }
-            img_file.flush().await?;
-
-            b.title()
         }
         Item::File(f) => {
             let mut ffmpeg = Fork::new("ffmpeg")
