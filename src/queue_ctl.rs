@@ -245,7 +245,7 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
                     img_file.flush().await?;
 
                     $title
-                }}
+                }};
             }
             match l.into_video() {
                 Ok(v) => {

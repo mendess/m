@@ -17,7 +17,7 @@ impl SessionKind {
             let status = Command::new("bash")
                 .arg("-c")
                 .arg(format!(
-                    r#"pstree -s $$ | tr '\n' ' ' | grep -vEq "\\?|login|lemon|tmux|{}""#,
+                    r#"pstree -s $$ | tr '\n' ' ' | grep -vEq "\\?|login|lemon|tmux|sshd|{}""#,
                     String::from_utf8_lossy(&t.into_vec())
                 ))
                 .spawn()?
