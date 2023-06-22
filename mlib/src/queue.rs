@@ -2,7 +2,7 @@ use std::time::Duration;
 
 pub use crate::Item;
 use crate::{
-    item::id_from_path,
+    item::{id_from_path, link::VideoLink},
     players::{
         error::{Error as PlayerError, MpvError, MpvErrorCode},
         PlayerLink, QueueItem,
@@ -106,13 +106,8 @@ impl Queue {
 
         let chapter = index.chapter_metadata().await.ok().map(|m| m.title);
 
-        let size = index.queue_size().await?;
         let current_idx = index.queue_pos().await?;
-        let next = if size == 1 {
-            None
-        } else {
-            Some(index.queue_at((current_idx + 1) % size).await?.filename)
-        };
+        let next = Self::up_next(index, current_idx).await?;
         Ok(Current {
             title,
             chapter,
@@ -121,9 +116,31 @@ impl Queue {
             volume,
             progress,
             duration: Duration::from_secs_f64(duration),
-            playback_time: Duration::from_secs_f64(playback_time),
+            playback_time: (playback_time >= 0.0).then(|| Duration::from_secs_f64(playback_time)),
             index: current_idx,
             next,
+        })
+    }
+
+    pub async fn up_next<I>(index: &PlayerLink, queue_index: I) -> Result<Option<String>, Error>
+    where
+        I: Into<Option<usize>>,
+    {
+        let size = index.queue_size().await?;
+        Ok(if size == 1 {
+            None
+        } else {
+            let queue_index = match queue_index.into() {
+                Some(idx) => idx,
+                None => index.queue_pos().await?,
+            };
+            let next = index.queue_at((queue_index + 1) % size).await?.filename;
+            Some(match VideoLink::from_url(next) {
+                Ok(l) => l.resolve_link().await,
+                Err(next) => crate::item::clean_up_path(&next)
+                    .unwrap_or(&next)
+                    .to_owned(),
+            })
         })
     }
 
@@ -154,7 +171,7 @@ pub struct Current {
     pub playing: bool,
     pub volume: f64,
     pub progress: Option<f64>,
-    pub playback_time: Duration,
+    pub playback_time: Option<Duration>,
     pub duration: Duration,
     pub categories: Vec<String>,
     pub index: usize,

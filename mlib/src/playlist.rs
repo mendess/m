@@ -17,9 +17,11 @@ use std::{
 use tokio::{
     fs::{File, OpenOptions},
     io::AsyncReadExt,
+    sync::OnceCell,
 };
+use tracing::{debug, warn};
 
-use crate::{item::link::VideoLink, Error, VideoId};
+use crate::{item::link::VideoLink, ytdl::YtdlBuilder, Error, VideoId};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
@@ -363,5 +365,31 @@ impl PlaylistIds {
 
     pub fn contains(&self, l: &str) -> bool {
         self.0.contains(l)
+    }
+}
+
+impl VideoLink {
+    /// Resolve a link by trying to find it in the playlist and then querying youtube for it's
+    /// title.
+    pub async fn resolve_link(&self) -> String {
+        static LIST: OnceCell<Result<Playlist, crate::Error>> = OnceCell::const_new();
+        debug!("resolving link in playlist");
+        let name = match LIST.get_or_init(Playlist::load).await {
+            Ok(list) => Ok(list.find_by_link(self).map(|s| s.name.clone())),
+            Err(e) => Err(e),
+        };
+        match name {
+            Ok(Some(name)) => name,
+            e => {
+                debug!("failed to find link in playlist: {e:?}");
+                match YtdlBuilder::new(self).get_title().request().await {
+                    Ok(r) => r.title(),
+                    Err(e) => {
+                        warn!("failed to resolve link using yt dl: {e:?}");
+                        self.to_string()
+                    }
+                }
+            }
+        }
     }
 }

@@ -33,9 +33,6 @@ use crate::{
     util::{dl_dir, selector, with_video::with_video_env},
 };
 
-use async_recursion::async_recursion;
-
-#[async_recursion(?Send)]
 async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     tracing::debug!(?cmd, "running command");
     match cmd {
@@ -320,7 +317,11 @@ async fn run() -> anyhow::Result<()> {
         players::override_legacy_socket_base_dir(new_base.clone());
     }
 
-    process_cmd(args.cmd).await?;
+    if let Some(cmd) = args.cmd {
+        process_cmd(cmd).await?;
+    } else {
+        player_ctl::interactive().await?;
+    }
 
     Ok(())
 }

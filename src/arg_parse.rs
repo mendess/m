@@ -12,7 +12,7 @@ pub struct Args {
     #[arg(short, long)]
     pub socket: Option<usize>,
     #[command(subcommand)]
-    pub cmd: Command,
+    pub cmd: Option<Command>,
 }
 
 #[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
@@ -314,6 +314,14 @@ pub struct DeleteSong {
 // #[structopt(global_settings = &[DisableVersion])]
 pub struct Amount {
     pub amount: Option<i32>,
+}
+
+impl From<i32> for Amount {
+    fn from(value: i32) -> Self {
+        Self {
+            amount: Some(value),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Parser, Serialize, Deserialize)]

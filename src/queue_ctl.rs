@@ -2,7 +2,7 @@ use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
     download_ctl::check_cache_ref,
     notify,
-    util::{dl_dir, selector::selector, with_video::with_video_env, DurationFmt},
+    util::{dl_dir, selector::selector, with_video::with_video_env, DisplayEither, DurationFmt},
 };
 
 use std::{collections::HashSet, io::Write, path::PathBuf, pin::Pin};
@@ -18,7 +18,7 @@ use mlib::{
     item::{link::VideoLink, PlaylistLink},
     players::{self, error::MpvError, PlayerLink, SmartQueueOpts, SmartQueueSummary},
     playlist::Playlist,
-    queue::{Item, Queue},
+    queue::{Current, Item, Queue},
     ytdl::YtdlBuilder,
     Error, Search,
 };
@@ -29,10 +29,9 @@ use tokio::{
     fs::File,
     io::{AsyncBufReadExt, AsyncWriteExt, BufWriter},
     process::Command as Fork,
-    sync::OnceCell,
 };
 use tokio_stream::wrappers::LinesStream;
-use tracing::{debug, warn};
+use tracing::debug;
 
 pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     if link {
@@ -46,17 +45,32 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     let current = Queue::current(PlayerLink::current())
         .await
         .context("loading the current queue")?;
+
+    display_current(&current, notify).await
+}
+
+pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<()> {
     const PROGRESS_BAR_LEN: usize = 11;
     let plus = match current.progress {
         Some(progress) => "+".repeat(progress as usize / PROGRESS_BAR_LEN),
         None => "???".into(),
     };
     let minus = "-".repeat(PROGRESS_BAR_LEN.saturating_sub(plus.len()));
-    let song = match current.chapter {
+    let song = match &current.chapter {
         Some(c) => {
             format!("§bVideo§r: {}\n§bSong§r:  {}", current.title, c)
         }
-        None => current.title,
+        None => current.title.clone(),
+    };
+    let current_categories = if current.categories.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n| {} |", current.categories.iter().join(" | "))
+    };
+    let up_next = if let Some(next) = current.next.clone() {
+        format!("\n\n=== UP NEXT ===\n{next}")
+    } else {
+        String::new()
     };
     notify!("Now Playing";
         content: "{}\n{}🔉{:.0}% | <{}{}> {:.0}%\n          {}/{}{}{}",
@@ -66,47 +80,17 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
         plus,
         minus,
         current.progress.as_ref().unwrap_or(&-1.0),
-        DurationFmt(current.playback_time),
+        current
+            .playback_time
+            .map(DurationFmt)
+            .map(DisplayEither::Left)
+            .unwrap_or_else(|| DisplayEither::Right(String::new())),
         DurationFmt(current.duration),
-        if current.categories.is_empty() {
-            String::new()
-        } else {
-            format!("\n\n| {} |", current.categories.iter().join(" | "))
-        },
-        if let Some(next) = current.next {
-            let up_next = match VideoLink::from_url(next) {
-                Ok(l) => resolve_link(&l).await,
-                Err(next) => mlib::item::clean_up_path(&next).unwrap_or(&next).to_owned(),
-            };
-            format!("\n\n=== UP NEXT ===\n{up_next}")
-        } else {
-            String::new()
-        };
+        current_categories,
+        up_next;
         force_notify: notify
     );
     Ok(())
-}
-
-pub async fn resolve_link(link: &VideoLink) -> String {
-    static LIST: OnceCell<Result<Playlist, mlib::Error>> = OnceCell::const_new();
-    debug!("resolving link in playlist");
-    let name = match LIST.get_or_init(Playlist::load).await {
-        Ok(list) => Ok(list.find_by_link(link).map(|s| s.name.clone())),
-        Err(e) => Err(e),
-    };
-    match name {
-        Ok(Some(name)) => name,
-        e => {
-            debug!("failed to find link in playlist: {e:?}");
-            match YtdlBuilder::new(link).get_title().request().await {
-                Ok(r) => r.title(),
-                Err(e) => {
-                    warn!("failed to resolve link using yt dl: {e:?}");
-                    link.to_string()
-                }
-            }
-        }
-    }
 }
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
@@ -124,7 +108,7 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
                 let s = match &i.item {
                     // TODO: should be able to move here
                     Item::Link(l) => match l.as_video() {
-                        Some(l) => resolve_link(l).await,
+                        Some(l) => l.resolve_link().await,
                         None => l.to_string(),
                     },
                     Item::File(f) => mlib::item::clean_up_path(&f)

@@ -12,6 +12,25 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
 
+#[derive(Debug)]
+pub enum DisplayEither<A, B> {
+    Left(A),
+    Right(B),
+}
+
+impl<A, B> Display for DisplayEither<A, B>
+where
+    A: Display,
+    B: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DisplayEither::Left(l) => write!(f, "{l}"),
+            DisplayEither::Right(r) => write!(f, "{r}"),
+        }
+    }
+}
+
 pub struct DurationFmt(pub Duration);
 
 impl Display for DurationFmt {
