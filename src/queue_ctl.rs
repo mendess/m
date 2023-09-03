@@ -165,7 +165,7 @@ where
     let item_count = items.len();
     let mut expanded_items = expand_playlists(items).inspect(|_| n_targets += 1);
     while let Some(mut item) = expanded_items.next().await {
-        check_cache_ref(dl_dir()?, &mut item).await;
+        check_cache_ref(dl_dir().await?, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
         let SmartQueueSummary {
@@ -409,7 +409,7 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
     tracing::info!("playing {:?}", items);
     stream::iter(items.iter_mut())
         .for_each_concurrent(16, |i| async {
-            let dl_dir = match dl_dir() {
+            let dl_dir = match dl_dir().await {
                 Ok(d) => d,
                 Err(_) => return,
             };

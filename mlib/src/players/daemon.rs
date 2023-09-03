@@ -170,7 +170,7 @@ impl PlayersDaemon {
     pub(super) fn last_queue(&mut self, index: PlayerIndex) -> MpvResult<Option<usize>> {
         const THREE_HOURS: Duration = Duration::from_secs(60 * 60 * 3);
 
-        let mut pl = index
+        let pl = index
             .0
             .or_else(|| *self.current_default.borrow())
             .and_then(|index| self.players.get_mut(index))
@@ -280,8 +280,7 @@ impl PlayersDaemon {
                 }
             }
         }
-        player
-            .playlist_remove_index(to_remove)?;
+        player.playlist_remove_index(to_remove)?;
         Ok(())
     }
 

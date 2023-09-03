@@ -5,12 +5,12 @@ pub mod with_video;
 
 use mlib::item::link::VideoLink;
 use mlib::VideoId;
-use once_cell::sync::Lazy;
 use std::fmt::Display;
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
+use tokio::sync::OnceCell;
 
 #[derive(Debug)]
 pub enum DisplayEither<A, B> {
@@ -45,14 +45,17 @@ impl Display for DurationFmt {
     }
 }
 
-pub fn dl_dir() -> anyhow::Result<PathBuf> {
-    static PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
-        let mut p = dirs::audio_dir()?;
+pub async fn dl_dir() -> anyhow::Result<PathBuf> {
+    static PATH: OnceCell<PathBuf> = OnceCell::const_new();
+
+    PATH.get_or_try_init(|| async {
+        let mut p = dirs::audio_dir().ok_or_else(|| anyhow::anyhow!("couldn't find audio dir"))?;
         p.push("m");
-        Some(p)
-    });
-    PATH.clone()
-        .ok_or_else(|| anyhow::anyhow!("couldn't find audio dir"))
+        tokio::fs::create_dir_all(&p).await?;
+        Ok(p)
+    })
+    .await
+    .cloned()
 }
 
 pub async fn update_bar() -> io::Result<()> {

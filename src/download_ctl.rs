@@ -79,7 +79,7 @@ mod daemon {
         };
 
         let (tx, mut rx) = mpsc::channel::<VideoLink>(1000);
-        let dl_dir = crate::util::dl_dir()?;
+        let dl_dir = crate::util::dl_dir().await?;
 
         static STATUS: Lazy<Mutex<Status>> = Lazy::new(Mutex::default);
         let paralellism = match available_parallelism().map(NonZeroUsize::get).unwrap_or(1) {
@@ -194,7 +194,7 @@ pub async fn check_cache_ref(path: PathBuf, item: &mut Item) {
 }
 
 pub async fn cache_status() -> anyhow::Result<()> {
-    let dl_dir = crate::dl_dir()?;
+    let dl_dir = crate::dl_dir().await?;
     let dl_dir = &dl_dir;
     let (cached, not) = Playlist::stream()
         .await?
