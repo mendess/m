@@ -154,16 +154,16 @@ async fn add_song(mut link: VideoLink, categories: HashSet<String>) -> anyhow::R
 }
 
 pub(crate) async fn info(song: Vec<String>) -> anyhow::Result<()> {
-    let song = song
+    let song_iter = song
         .iter()
         .map(String::as_str)
         .flat_map(|s| s.split_whitespace());
     let playlist = playlist::Playlist::load().await?;
-    let item = playlist.partial_name_search(song.clone());
+    let item = playlist.partial_name_search(song_iter.clone());
 
     match item {
         PartialSearchResult::None => {
-            let vid = match VideoLink::from_url(song.collect()) {
+            let vid = match VideoLink::try_from(song.into_iter().collect::<String>()) {
                 Ok(l) => YtdlBuilder::new(&l).get_title().request().await?,
                 Err(e) => {
                     YtdlBuilder::new(&Search::new(e))

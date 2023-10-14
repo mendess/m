@@ -1,8 +1,7 @@
-use once_cell::sync::Lazy;
-use regex::Regex;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::{ffi::OsStr, fmt::Display, ops::Deref, str::FromStr};
+use std::{borrow::Cow, ffi::OsStr, fmt::Display, ops::Deref, str::FromStr};
+use url::Url;
 
 pub trait IntoPlaylist {
     fn into_playlist(self) -> PlaylistLink;
@@ -21,9 +20,6 @@ pub enum Link {
 }
 
 impl Link {
-    const QUERY_VID_PARAM: &'static str = "v=";
-    const QUERY_PLAYLIST_PARAM: &'static str = "list=";
-
     pub fn from_video_id(id: &VideoId) -> Self {
         Self::Video(VideoLink::from_id(id))
     }
@@ -32,11 +28,11 @@ impl Link {
         Self::Playlist(PlaylistLink::from_id(id))
     }
 
-    pub fn from_url(s: String) -> Result<Self, String> {
+    pub fn from_url(s: Url) -> Self {
         PlaylistLink::from_url(s)
             .map(Self::Playlist)
             .or_else(|s| VideoLink::from_url(s).map(Self::Video))
-            .or_else(|s| s.parse().map(Self::OtherPlatform).map_err(|_| s))
+            .unwrap_or_else(Self::OtherPlatform)
     }
 
     pub fn video_id(&self) -> Option<&VideoId> {
@@ -125,18 +121,13 @@ impl FromStr for Link {
     }
 }
 
-fn id_from_link<'s>(s: &'s str, param: &'static str) -> Option<&'s str> {
-    match s.match_indices(param).next() {
-        Some((i, _)) => {
-            let x = &s[(i + param.len())..];
-            let end = x
-                .char_indices()
-                .find_map(|(i, c)| (c == '&').then_some(i))
-                .unwrap_or(x.len());
-            Some(&x[..end])
-        }
-        None => s.split('/').last(),
-    }
+fn id_from_link<T: Id + ?Sized>(s: &Url) -> Option<&T> {
+    s.query_pairs()
+        .find(|(k, _)| k == T::QUERY_PARAM)
+        .map(|(_, id)| match id {
+            Cow::Owned(_) => unreachable!("yt ids are always url safe"),
+            Cow::Borrowed(id) => T::new(id),
+        })
 }
 
 impl Display for Link {
@@ -159,25 +150,30 @@ impl AsRef<OsStr> for Link {
     }
 }
 
+impl TryFrom<String> for Link {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Url::parse(&value).ok().map(Self::from_url).ok_or(value)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
-pub struct VideoLink(String);
+pub struct VideoLink(Url);
 
 impl VideoLink {
-    const QUERY_PARAM: &'static str = "v=";
-
     pub fn id(&self) -> &VideoId {
-        VideoId::new(
-            id_from_link(&self.0, Self::QUERY_PARAM).expect("video link to have a video id"),
-        )
+        id_from_link(&self.0)
+            .or_else(|| VideoId::from_short_url(&self.0))
+            .expect("video link to have a video id")
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
-    pub fn from_url(s: String) -> Result<Self, String> {
+    pub fn from_url(s: Url) -> Result<Self, Url> {
         if Self::is_video_link(&s) {
             Ok(Self(s))
         } else {
@@ -186,55 +182,61 @@ impl VideoLink {
     }
 
     pub fn from_id(s: &VideoId) -> Self {
-        Self(format!("https://youtu.be/{}", &s.0))
+        let mut base = Url::parse("https://youtu.be/").unwrap();
+        base.set_path(&s.0);
+        Self(base)
     }
 
     pub fn into_string(self) -> String {
-        self.0
+        self.0.into()
     }
 
-    fn is_video_link(s: &str) -> bool {
-        static SHORT_LINK_PAT: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"https?://youtu\.be/[0-9a-zA-Z_\-]+$").unwrap());
-
-        s.starts_with("http") && (s.contains(Self::QUERY_PARAM) || SHORT_LINK_PAT.is_match(s))
+    fn is_video_link(s: &Url) -> bool {
+        s.scheme().starts_with("http")
+            && (s.host_str().is_some_and(|host| host.contains("youtu.be"))
+                || s.query_pairs().any(|(k, _)| k == VideoId::QUERY_PARAM))
     }
 
     pub fn shorten(&mut self) {
-        if self.0.contains("youtube") {
-            use std::fmt::Write;
+        if self
+            .0
+            .domain()
+            .is_some_and(|domain| domain.contains("youtube"))
+        {
             let id = self.id().as_str().to_owned();
-            self.0.clear();
-            let _ = write!(self.0, "https://youtu.be/{id}");
+            self.0.set_host(Some("youtu.be")).unwrap();
+            self.0.set_path(&id);
         }
-    }
-}
-
-impl TryFrom<String> for VideoLink {
-    type Error = String;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::from_url(value)
     }
 }
 
 impl FromStr for VideoLink {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        VideoLink::is_video_link(s)
-            .then(|| VideoLink(s.into()))
-            .ok_or("invalid video url")
+        let url = Url::parse(s).map_err(|_| "not a url")?;
+        Self::from_url(url).map_err(|_| "not a video url")
     }
 }
 
 impl Display for VideoLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(self.0.as_str())
     }
 }
 
 impl AsRef<OsStr> for VideoLink {
     fn as_ref(&self) -> &OsStr {
-        self.0.as_ref()
+        self.0.as_str().as_ref()
+    }
+}
+
+impl TryFrom<String> for VideoLink {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Url::parse(&value)
+            .ok()
+            .and_then(|url| Self::from_url(url).ok())
+            .ok_or(value)
     }
 }
 
@@ -243,19 +245,19 @@ impl AsRef<OsStr> for VideoLink {
 pub struct VideoId(str);
 
 impl VideoId {
-    pub(crate) fn new(s: &str) -> &Self {
-        unsafe { std::mem::transmute(s) }
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    pub fn from_url(s: &str) -> Option<&Self> {
-        s.starts_with("http")
-            .then(|| id_from_link(s, Link::QUERY_VID_PARAM))
-            .flatten()
-            .map(Self::new)
+    pub fn from_url(s: &Url) -> Option<&Self> {
+        id_from_link(s).or_else(|| Self::from_short_url(s))
+    }
+
+    fn from_short_url(url: &Url) -> Option<&Self> {
+        url.host_str()
+            .is_some_and(|h| h.contains("youtu.be"))
+            .then(|| url.path())
+            .map(VideoId::new)
     }
 }
 
@@ -264,6 +266,13 @@ impl Deref for VideoId {
 
     fn deref(&self) -> &Self::Target {
         self.as_str()
+    }
+}
+
+impl Id for VideoId {
+    const QUERY_PARAM: &'static str = "v";
+    fn new(s: &str) -> &Self {
+        unsafe { std::mem::transmute(s) }
     }
 }
 
@@ -276,17 +285,17 @@ impl Deref for VideoId {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
-pub struct PlaylistLink(String);
+pub struct PlaylistLink(Url);
 
 impl PlaylistLink {
-    const QUERY_PARAM: &'static str = "list=";
+    // fn is_playlist_link(s: &str) -> bool {
+    //     s.starts_with("http") && s.contains(Self::QUERY_PARAM)
+    // }
 
-    fn is_playlist_link(s: &str) -> bool {
-        s.starts_with("http") && s.contains(Self::QUERY_PARAM)
-    }
-
-    pub fn from_url(s: String) -> Result<Self, String> {
-        if PlaylistLink::is_playlist_link(&s) {
+    pub fn from_url(s: Url) -> Result<Self, Url> {
+        if s.scheme().starts_with("http")
+            && s.query_pairs().any(|(k, _)| k == PlaylistId::QUERY_PARAM)
+        {
             Ok(Self(s))
         } else {
             Err(s)
@@ -294,45 +303,41 @@ impl PlaylistLink {
     }
 
     pub fn from_id(s: &PlaylistId) -> Self {
-        Self(format!(
-            "https://youtube.com/playlist?{}{}",
-            Self::QUERY_PARAM,
-            &s.0
-        ))
+        let mut base = Url::parse("https://youtube.com/playlist").unwrap();
+        base.query_pairs_mut()
+            .append_pair(PlaylistId::QUERY_PARAM, &s.0);
+        Self(base)
     }
 
     pub fn id(&self) -> &PlaylistId {
-        PlaylistId::new(
-            id_from_link(&self.0, Self::QUERY_PARAM).expect("playlist link to have a playlist id"),
-        )
+        self.0
+            .query_pairs()
+            .find(|(k, _)| k == PlaylistId::QUERY_PARAM)
+            .map(|(_, id)| match id {
+                Cow::Owned(_) => unreachable!("yt ids are always url safe"),
+                Cow::Borrowed(id) => PlaylistId::new(id),
+            })
+            .unwrap()
     }
 
     pub fn video_id(&self) -> Option<&VideoId> {
-        id_from_link(&self.0, VideoLink::QUERY_PARAM).map(VideoId::new)
+        id_from_link(&self.0)
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
     pub fn into_string(self) -> String {
-        self.0
+        self.0.into()
     }
 
     pub fn without_video_id(&self) -> Self {
-        static LINK_REGEX: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"watch\?.*(list=[^&]+)").unwrap());
-        let new = if let Some(captures) = LINK_REGEX.captures(&self.0) {
-            let start = captures.get(0).unwrap().start();
-            let list_id = captures.get(1).unwrap().as_str();
-            let mut new = String::with_capacity(start + "playlist?".len() + list_id.len());
-            new.push_str(&self.0[..start]);
-            new.push_str("playlist?");
-            new.push_str(list_id);
-            new
-        } else {
-            self.0.clone()
-        };
+        let mut new = self.0.clone();
+        new.set_path("playlist");
+        new.query_pairs_mut()
+            .clear()
+            .append_pair(PlaylistId::QUERY_PARAM, &self.id().0);
         Self(new)
     }
 
@@ -352,21 +357,30 @@ impl PlaylistLink {
 impl FromStr for PlaylistLink {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::is_playlist_link(s)
-            .then(|| Self(s.into()))
-            .ok_or("invalid playlist link")
+        let url = Url::parse(s).map_err(|_| "not a url")?;
+        Self::from_url(url).map_err(|_| "invalid playlist link")
     }
 }
 
 impl Display for PlaylistLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(self.0.as_str())
     }
 }
 
 impl AsRef<OsStr> for PlaylistLink {
     fn as_ref(&self) -> &OsStr {
-        self.0.as_ref()
+        self.0.as_str().as_ref()
+    }
+}
+
+impl TryFrom<String> for PlaylistLink {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Url::parse(&value)
+            .ok()
+            .and_then(|url| Self::from_url(url).ok())
+            .ok_or(value)
     }
 }
 
@@ -375,19 +389,22 @@ impl AsRef<OsStr> for PlaylistLink {
 pub struct PlaylistId(str);
 
 impl PlaylistId {
-    pub(crate) fn new(s: &str) -> &Self {
-        unsafe { std::mem::transmute(s) }
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    pub fn from_url(s: &str) -> Option<&Self> {
-        s.starts_with("http")
-            .then(|| id_from_link(s, Link::QUERY_PLAYLIST_PARAM))
+    pub fn from_url(url: &Url) -> Option<&Self> {
+        url.scheme()
+            .starts_with("http")
+            .then(|| id_from_link(url))
             .flatten()
-            .map(Self::new)
+    }
+}
+
+impl Id for PlaylistId {
+    const QUERY_PARAM: &'static str = "list";
+    fn new(s: &str) -> &Self {
+        unsafe { std::mem::transmute(s) }
     }
 }
 
@@ -397,6 +414,12 @@ impl Deref for PlaylistId {
     fn deref(&self) -> &Self::Target {
         self.as_str()
     }
+}
+
+pub(crate) trait Id {
+    const QUERY_PARAM: &'static str;
+
+    fn new(s: &str) -> &Self;
 }
 
 #[cfg(test)]
@@ -410,7 +433,7 @@ mod test {
         const AFTER: &str =
             "https://www.youtube.com/playlist?list=PL17PSucW5L7nEPyX3tqEzq_wmyYk2IkXr";
 
-        let playlist_link = PlaylistLink::from_url(BEFORE.to_string())
+        let playlist_link = PlaylistLink::from_url(BEFORE.parse().unwrap())
             .unwrap()
             .without_video_id();
         assert_eq!(AFTER, playlist_link.as_str());

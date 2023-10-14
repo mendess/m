@@ -135,7 +135,7 @@ impl Queue {
                 None => index.queue_pos().await?,
             };
             let next = index.queue_at((queue_index + 1) % size).await?.filename;
-            Some(match VideoLink::from_url(next) {
+            Some(match VideoLink::try_from(next) {
                 Ok(l) => l.resolve_link().await,
                 Err(next) => crate::item::clean_up_path(&next)
                     .unwrap_or(&next)

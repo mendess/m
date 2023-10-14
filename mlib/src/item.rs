@@ -14,6 +14,8 @@ pub use link::{Link, PlaylistId, PlaylistLink, VideoId};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use self::link::Id;
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Item {
@@ -94,7 +96,7 @@ impl From<String> for Item {
         if s.starts_with(Search::PREFIX) {
             Item::Search(Search(s))
         } else {
-            match Link::from_url(s) {
+            match Link::try_from(s) {
                 Ok(l) => Item::Link(l),
                 Err(s) => Item::File(PathBuf::from(s)),
             }

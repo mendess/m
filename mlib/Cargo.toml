@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.4.3"
+version = "0.5.0"
 edition = "2021"
 
 [dependencies]
@@ -26,6 +26,7 @@ serde_json = { workspace = true, optional = true }
 tokio-stream = { workspace = true, features = ["fs", "io-util"], optional = true }
 whoami = { workspace = true, optional = true }
 url = { version = "2.4.0", features = ["serde"] }
+form_urlencoded = { version = "1.2.0", default-features = false }
 
 [dependencies.tokio]
 workspace = true

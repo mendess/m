@@ -17,7 +17,10 @@ use tokio::{
 use tokio_stream::wrappers::LinesStream;
 
 use crate::{
-    item::{link::VideoLink, PlaylistLink},
+    item::{
+        link::{Id, VideoLink},
+        PlaylistLink,
+    },
     Error, Link, Search, VideoId,
 };
 use thiserror::Error;

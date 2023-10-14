@@ -102,7 +102,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     None => return Ok(()),
                 }
             } else {
-                VideoLink::from_url(link)
+                VideoLink::try_from(link)
                     .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?
                     .into()
             };
@@ -117,7 +117,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             categories,
         }) => {
             let link =
-                Link::from_url(link).map_err(|s| anyhow::anyhow!("{} is not a valid link", s))?;
+                Link::try_from(link).map_err(|s| anyhow::anyhow!("{} is not a valid link", s))?;
             let links = playlist_ctl::add_playlist(&link, categories).await?;
             if queue {
                 links
@@ -388,7 +388,7 @@ impl SongQuery {
         let mut items = vec![];
         let mut words = vec![];
         for x in strings {
-            match Link::from_url(x) {
+            match Link::try_from(x) {
                 Ok(l) => items.push(Item::Link(l)),
                 Err(s) => match tokio::fs::metadata(&s).await {
                     Ok(_) => items.push(Item::File(s.into())),
