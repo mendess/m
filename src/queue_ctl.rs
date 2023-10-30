@@ -138,7 +138,7 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn queue<I>(q: crate::arg_parse::QueueOpts, items: I) -> anyhow::Result<()>
+pub async fn queue<I>(q: crate::arg_parse::QueueOpts, items: I) -> anyhow::Result<PlayerLink>
 where
     I: IntoIterator<Item = Item>,
     I::IntoIter: ExactSizeIterator,
@@ -201,13 +201,13 @@ where
         })
         .await;
     if n_targets > 5 {
-        tracing::debug!("reseting queue because got {} targets", n_targets);
+        tracing::info!("reseting queue because got {} targets", n_targets);
         player
             .last_queue_clear()
             .await
             .context("reseting last queue")?;
     }
-    Ok(())
+    Ok(player)
 }
 
 async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()> {
@@ -400,11 +400,19 @@ pub async fn load(file: PathBuf) -> anyhow::Result<()> {
         .map_ok(Item::from)
         .try_collect::<Vec<_>>()
         .await?;
-    queue(Default::default(), items).await?;
+
+    queue(Default::default(), items)
+        .await?
+        .queue_loop(true)
+        .await?;
+
     Ok(())
 }
 
-pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> anyhow::Result<()> {
+pub async fn play(
+    items: impl IntoIterator<Item = Item>,
+    with_video: bool,
+) -> anyhow::Result<PlayerLink> {
     let mut items = items.into_iter().collect::<Vec<_>>();
     tracing::info!("playing {:?}", items);
     stream::iter(items.iter_mut())
@@ -426,8 +434,8 @@ pub async fn play(items: impl IntoIterator<Item = Item>, with_video: bool) -> an
         Ok(_) => {}
     }
 
-    players::create(items.iter(), with_video).await?;
-    Ok(())
+    let index = players::create(items.iter(), with_video).await?;
+    Ok(index.into())
 }
 
 pub async fn run_interactive_playlist() -> anyhow::Result<()> {

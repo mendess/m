@@ -18,6 +18,7 @@ pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir}
 
 use self::event::PlayerEvent;
 
+/// The index of a player
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PlayerIndex(Option<usize>);
@@ -56,6 +57,7 @@ static CURRENT_LINK: PlayerLink = PlayerLink {
     index: PlayerIndex(None),
     daemon: StaticOrOwned::Static(&daemon::PLAYERS),
 };
+
 impl PlayerLink {
     pub fn current() -> &'static Self {
         &CURRENT_LINK
