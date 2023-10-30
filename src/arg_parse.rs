@@ -128,7 +128,11 @@ pub enum Command {
     Dump { file: PathBuf },
 
     /// Load a file of songs to play
-    Load { file: PathBuf },
+    Load {
+        file: PathBuf,
+        #[arg(short, long)]
+        shuf: bool,
+    },
 
     /// Get the socket in use
     Socket {

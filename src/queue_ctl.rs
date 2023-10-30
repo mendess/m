@@ -395,11 +395,15 @@ pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn load(file: PathBuf) -> anyhow::Result<()> {
-    let items = LinesStream::new(BufReader::new(File::open(file).await?).lines())
+pub async fn load(file: PathBuf, shuf: bool) -> anyhow::Result<()> {
+    let mut items = LinesStream::new(BufReader::new(File::open(file).await?).lines())
         .map_ok(Item::from)
         .try_collect::<Vec<_>>()
         .await?;
+
+    if shuf {
+        items.shuffle(&mut rngs::OsRng);
+    }
 
     queue(Default::default(), items)
         .await?

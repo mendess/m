@@ -158,7 +158,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             }
         }
         Command::Dump { file } => queue_ctl::dump(file).await?,
-        Command::Load { file } => queue_ctl::load(file).await?,
+        Command::Load { file, shuf } => queue_ctl::load(file, shuf).await?,
         Command::Play(arg_parse::Play {
             search,
             what,
@@ -169,7 +169,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 search_params_to_items(what, search, category).await?,
                 video || with_video_env(),
             )
-            .await?
+            .await?;
         }
         Command::ChCat => playlist_ctl::ch_cat().await?,
         Command::DeleteSong(DeleteSong {
