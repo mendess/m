@@ -104,7 +104,7 @@ impl Queue {
             .map(|s| s.categories)
             .unwrap_or_default();
 
-        let chapter = index.chapter_metadata().await.ok().map(|m| m.title);
+        let chapter = index.chapter_metadata().await?.map(|m| m.title);
 
         let current_idx = index.queue_pos().await?;
         let next = Self::up_next(index, current_idx).await?;

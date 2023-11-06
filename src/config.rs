@@ -45,7 +45,9 @@ pub static CONFIG: Lazy<MConfig> = Lazy::new(|| {
             .iter()
             .map(|p| {
                 if p == "~" {
-                    dirs::home_dir().expect("can't find home dir").into_os_string()
+                    dirs::home_dir()
+                        .expect("can't find home dir")
+                        .into_os_string()
                 } else {
                     p.to_owned()
                 }

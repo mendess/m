@@ -9,7 +9,7 @@ use std::{
 };
 
 use cli_daemon::Daemon;
-use futures_util::{stream, Stream, StreamExt};
+use futures_util::{join, stream, Stream, StreamExt};
 use libmpv::{FileState, GetData, Mpv, MpvNode};
 use tokio::sync::{broadcast, watch, Mutex};
 
@@ -21,7 +21,9 @@ use crate::{
 use super::{
     error::{MpvErrorCode, MpvResult},
     event::{self, PlayerEvent},
-    libmpv_parsing, Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
+    libmpv_parsing,
+    mpris::MprisPlayer,
+    Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
 };
 
 pub(super) type PlayersDaemonLink = Daemon<Message, MpvResult<Response>, PlayerEvent>;
@@ -60,7 +62,7 @@ impl Deref for Players {
     }
 }
 
-struct PlayersDaemon {
+pub(super) struct PlayersDaemon {
     current_default: watch::Sender<Option<usize>>,
     players: Players,
 }
@@ -158,6 +160,10 @@ impl PlayersDaemon {
         Ok(PlayerIndex::of(index))
     }
 
+    pub(super) fn current_default(&self) -> Option<PlayerIndex> {
+        self.current_default.borrow().map(PlayerIndex::of)
+    }
+
     pub(super) fn list(&self) -> Vec<PlayerIndex> {
         self.players
             .iter()
@@ -165,6 +171,10 @@ impl PlayersDaemon {
             .filter_map(|(i, p)| p.is_some().then_some(i))
             .map(PlayerIndex::of)
             .collect()
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.players.len()
     }
 
     pub(super) fn last_queue(&mut self, index: PlayerIndex) -> MpvResult<Option<usize>> {
@@ -213,7 +223,7 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    fn current_player(&self, index: PlayerIndex) -> MpvResult<&Mpv> {
+    pub(super) fn current_player(&self, index: PlayerIndex) -> MpvResult<&Mpv> {
         let index = index.0.or_else(|| {
             let index = *self.current_default.borrow();
             tracing::debug!("current player is {index:?}");
@@ -233,6 +243,17 @@ impl PlayersDaemon {
 
     pub(super) async fn pause(&self, index: PlayerIndex) -> MpvResult<()> {
         self.current_player(index)?.pause()?;
+        Ok(())
+    }
+
+    pub(super) async fn resume(&self, index: PlayerIndex) -> MpvResult<()> {
+        self.current_player(index)?.unpause()?;
+        Ok(())
+    }
+
+    pub(super) async fn jump_to(&self, index: PlayerIndex, pos: usize) -> MpvResult<()> {
+        self.current_player(index)?
+            .command("playlist-play-index", &[&pos.to_string()])?;
         Ok(())
     }
 
@@ -330,13 +351,13 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    pub(super) async fn change_volume(&mut self, index: PlayerIndex, delta: i32) -> MpvResult<()> {
+    pub(super) async fn change_volume(&self, index: PlayerIndex, delta: i32) -> MpvResult<()> {
         self.current_player(index)?
             .add_property("volume", delta as isize)?;
         Ok(())
     }
 
-    pub(super) async fn cycle_video(&mut self, index: PlayerIndex) -> MpvResult<()> {
+    pub(super) async fn cycle_video(&self, index: PlayerIndex) -> MpvResult<()> {
         self.current_player(index)?.cycle_property("vid", true)?;
         Ok(())
     }
@@ -394,8 +415,20 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    pub(super) async fn chapter_metadata(&self, index: PlayerIndex) -> MpvResult<Metadata> {
-        let t = self.simple_prop::<MpvNode>(index, "chapter-metadata")?;
+    pub(super) async fn chapter_metadata(&self, index: PlayerIndex) -> MpvResult<Option<Metadata>> {
+        use MpvErrorCode as MEC;
+        let t = match self
+            .current_player(index)?
+            .get_property::<MpvNode>("chapter-metadata")
+        {
+            Ok(t) => t,
+            Err(e) => {
+                return match e {
+                    libmpv::Error::Raw(code) if code == MEC::PropertyUnavailable as i32 => Ok(None),
+                    _ => Err(e.into()),
+                }
+            }
+        };
         let title = t
             .to_map()
             .ok_or_else(|| MpvError::InvalidData {
@@ -418,7 +451,7 @@ impl PlayersDaemon {
                 error: "wrong node type, expected string".into(),
             })?;
         let index = self.simple_prop::<i64>(index, "chapter")?;
-        Ok(Metadata {
+        Ok(Some(Metadata {
             title,
             index: index
                 .try_into()
@@ -427,7 +460,7 @@ impl PlayersDaemon {
                     got: index.to_string(),
                     error: e.to_string(),
                 })?,
-        })
+        }))
     }
 
     fn simple_prop<T: GetData>(&self, index: PlayerIndex, prop: &str) -> MpvResult<T> {
@@ -520,7 +553,7 @@ fn simple_prop_logged<T: GetData>(mpv: &Mpv, prop: &str) -> MpvResult<T> {
                     PropertyError,
                 ];
                 if CODES.iter().any(|c| *c as i32 == code) {
-                    tracing::error!("failed to get property {prop}");
+                    tracing::error!("failed to get property {prop}: {code:x}");
                 }
             }
             return Err(e.into());
@@ -593,7 +626,7 @@ async fn handle_messages(
             call!(players.change_chapter(index, direction, amount))
         }
         MessageKind::ChapterMetadata => {
-            call!(players.chapter_metadata(index) => Metadata)
+            call!(players.chapter_metadata(index) => MaybeMetadata)
         }
         MessageKind::Filename => call!(players.filename(index) => Text),
         MessageKind::IsPaused => call!(players.is_paused(index) => Bool),
@@ -664,15 +697,27 @@ async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = 
 pub async fn start_daemon_if_running_as_daemon() -> io::Result<()> {
     if let Some(builder) = PLAYERS.build_daemon_process().await {
         let players = Arc::new(Mutex::new(PlayersDaemon::default()));
-        builder
-            .run_with_events(
-                {
-                    let players = players.clone();
-                    move |message| handle_messages(message, players.clone())
-                },
-                move || handle_events(players),
-            )
-            .await?;
+        // TODO: implement signals
+        let server = mpris_server::Server::new_with_all("m", MprisPlayer::new(players.clone()));
+        if let Err(e) = server.init().await {
+            tracing::error!(?e, "failed to initialize mpris server");
+        }
+        let signal_mpris_events = {
+            let players = players.clone();
+            // do it like this so that the await on the "handle_events" function can't block this
+            // from calling "run_with_events".
+            async move { super::mpris::signal_mpris_events(server, handle_events(players).await).await }
+        };
+        let run_with_events = builder.run_with_events(
+            {
+                let players = players.clone();
+                move |message| handle_messages(message, players.clone())
+            },
+            move || handle_events(players),
+        );
+
+        let (run_with_events, _) = join!(run_with_events, signal_mpris_events);
+        run_with_events?;
     }
     Ok(())
 }

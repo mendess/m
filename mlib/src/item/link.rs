@@ -256,7 +256,7 @@ impl VideoId {
     fn from_short_url(url: &Url) -> Option<&Self> {
         url.host_str()
             .is_some_and(|h| h.contains("youtu.be"))
-            .then(|| url.path())
+            .then(|| url.path().trim_start_matches('/'))
             .map(VideoId::new)
     }
 }

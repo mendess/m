@@ -3,6 +3,7 @@ pub mod error;
 pub mod event;
 mod legacy_back_compat;
 mod libmpv_parsing;
+mod mpris;
 
 use core::fmt;
 use std::{io, ops::Deref, path::PathBuf, str::FromStr};
@@ -19,7 +20,7 @@ pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir}
 use self::event::PlayerEvent;
 
 /// The index of a player
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PlayerIndex(Option<usize>);
 
@@ -163,6 +164,7 @@ enum MessageKind {
 enum Response {
     Create(PlayerIndex),
     Metadata(Metadata),
+    MaybeMetadata(Option<Metadata>),
     Bool(bool),
     Text(String),
     Real(f64),
@@ -428,7 +430,7 @@ commands! {
     change_chapter as ChangeChapter { direction: Direction, amount: i32 };
     /// Get chapter metadata.
     chapter_metadata as ChapterMetadata
-        / Response::Metadata(m) => m => Metadata;
+        / Response::MaybeMetadata(m) => m => Option<Metadata>;
     /// Get the filename of the currently playing song.
     filename as Filename
         / Response::Text(t) => t => String;

@@ -17,37 +17,50 @@ pub struct PlayerEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OwnedLibMpvEvent {
+    /// Received when the player is shutting down
     Shutdown,
+    /// *Has not been tested*, received when explicitly asked to MPV
     LogMessage {
         prefix: String,
         level: String,
         text: String,
         log_level: u32,
     },
+    /// Received when using get_property_async
     GetPropertyReply {
         name: String,
         result: OwnedMpvNode,
         reply_userdata: u64,
     },
+    /// Received when using set_property_async
     SetPropertyReply(u64),
+    /// Received when using command_async
     CommandReply(u64),
+    /// Event received when a new file is playing
     StartFile,
+    /// Event received when the file being played currently has stopped, for an error or not
     EndFile(u32),
+    /// Event received when a file has been *loaded*, but has not been started
     FileLoaded,
     ClientMessage(Vec<Box<str>>),
     VideoReconfig,
     AudioReconfig,
+    /// The player changed current position
     Seek,
     PlaybackRestart,
+    /// Received when used with observe_property
     PropertyChange {
         name: String,
         change: OwnedMpvNode,
         reply_userdata: u64,
     },
+    /// Received when the Event Queue is full
     QueueOverflow,
+    /// A deprecated event
     Deprecated {
         event_id: u32,
     },
+    /// Emited when an error occurred while receiving an event.
     Errored(String),
 }
 
