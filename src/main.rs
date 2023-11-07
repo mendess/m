@@ -20,7 +20,7 @@ use mlib::{
     Link, Search,
 };
 use rand::seq::SliceRandom;
-use std::{io::Write, sync::Mutex};
+use std::{io::Write, process::ExitCode, sync::Mutex};
 use tokio::io;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
@@ -343,27 +343,24 @@ pub fn init_logger() {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     init_logger();
-    let exit_code = {
-        if let Err(e) = run().await {
-            let mut chain = e.chain().skip(1).peekable();
-            let stringified = e.to_string();
-            let (header, rest) = match stringified.split_once('\n') {
-                Some(x) => x,
-                None => (stringified.as_str(), ""),
-            };
-            if chain.peek().is_some() {
-                error!("{}", header; content: "{}Caused by:\n\t{}", rest, chain.format("\n\t"));
-            } else {
-                error!("{}", header; content: "{}", rest);
-            }
-            1
+    if let Err(e) = run().await {
+        let mut chain = e.chain().skip(1).peekable();
+        let stringified = e.to_string();
+        let (header, rest) = match stringified.split_once('\n') {
+            Some(x) => x,
+            None => (stringified.as_str(), ""),
+        };
+        if chain.peek().is_some() {
+            error!("{}", header; content: "{}Caused by:\n\t{}", rest, chain.format("\n\t"));
         } else {
-            0
+            error!("{}", header; content: "{}", rest);
         }
-    };
-    std::process::exit(exit_code);
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn handle_search_result<T>(r: PartialSearchResult<T>) -> anyhow::Result<T> {

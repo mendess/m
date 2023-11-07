@@ -65,49 +65,75 @@ impl Queue {
         }
     }
 
+    #[tracing::instrument(skip(index))]
     pub async fn current(index: &PlayerLink) -> Result<Current, Error> {
-        let media_title = index.media_title().await?;
-        let filename = Item::from(index.filename().await?);
-        let id = filename.id();
-        // TODO: this is wrong
-        let title = if media_title.is_empty() {
-            filename.to_string()
-        } else {
-            media_title
+        tracing::trace!("getting current");
+        let metadata = async {
+            let media_title = index.media_title().await?;
+            let filename = Item::from(index.filename().await?);
+            let id = filename.id();
+            // TODO: this is wrong
+            let title = if media_title.is_empty() {
+                filename.to_string()
+            } else {
+                media_title
+            };
+
+            let playing = !index.is_paused().await?;
+            let volume = index.volume().await?;
+            let progress = match index.percent_position().await {
+                Ok(progress) => Some(progress),
+                Err(PlayerError::Mpv(MpvError::Raw(MpvErrorCode::PropertyUnavailable))) => None,
+                Err(e) => return Err(e.into()),
+            };
+            let playback_time = match index.playback_time().await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(%e, "getting the playback_time");
+                    0.0
+                }
+            };
+            let duration = match index.duration().await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(%e, "getting the duration");
+                    0.0
+                }
+            };
+            let categories = OptionFuture::from(id.map(playlist::find_song))
+                .await
+                .transpose()?
+                .flatten()
+                .map(|s| s.categories)
+                .unwrap_or_default();
+
+            let chapter = index.chapter_metadata().await?.map(|m| m.title);
+
+            tracing::trace!("metadata done");
+            Ok((
+                title,
+                playing,
+                volume,
+                progress,
+                playback_time,
+                duration,
+                categories,
+                chapter,
+            ))
         };
 
-        let playing = !index.is_paused().await?;
-        let volume = index.volume().await?;
-        let progress = match index.percent_position().await {
-            Ok(progress) => Some(progress),
-            Err(PlayerError::Mpv(MpvError::Raw(MpvErrorCode::PropertyUnavailable))) => None,
-            Err(e) => return Err(e.into()),
+        let next = async {
+            let current_idx = index.queue_pos().await?;
+            let next = Self::up_next(index, current_idx).await?;
+            tracing::trace!("next done");
+            Ok::<_, Error>((current_idx, next))
         };
-        let playback_time = match index.playback_time().await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!(%e, "getting the playback_time");
-                0.0
-            }
-        };
-        let duration = match index.duration().await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!(%e, "getting the duration");
-                0.0
-            }
-        };
-        let categories = OptionFuture::from(id.map(playlist::find_song))
-            .await
-            .transpose()?
-            .flatten()
-            .map(|s| s.categories)
-            .unwrap_or_default();
 
-        let chapter = index.chapter_metadata().await?.map(|m| m.title);
+        let (
+            (current_idx, next),
+            (title, playing, volume, progress, playback_time, duration, categories, chapter),
+        ) = futures_util::try_join!(next, metadata)?;
 
-        let current_idx = index.queue_pos().await?;
-        let next = Self::up_next(index, current_idx).await?;
         Ok(Current {
             title,
             chapter,
@@ -122,21 +148,30 @@ impl Queue {
         })
     }
 
+    #[tracing::instrument(skip(index))]
     pub async fn up_next<I>(index: &PlayerLink, queue_index: I) -> Result<Option<String>, Error>
     where
-        I: Into<Option<usize>>,
+        I: Into<Option<usize>> + std::fmt::Debug,
     {
+        tracing::trace!("getting queue_size");
         let size = index.queue_size().await?;
         Ok(if size == 1 {
             None
         } else {
             let queue_index = match queue_index.into() {
                 Some(idx) => idx,
-                None => index.queue_pos().await?,
+                None => {
+                    tracing::trace!("getting queue_pos");
+                    index.queue_pos().await?
+                }
             };
+            tracing::trace!("getting queue_at");
             let next = index.queue_at((queue_index + 1) % size).await?.filename;
             Some(match VideoLink::try_from(next) {
-                Ok(l) => l.resolve_link().await,
+                Ok(l) => {
+                    tracing::trace!("resolving link");
+                    l.resolve_link().await
+                }
                 Err(next) => crate::item::clean_up_path(&next)
                     .unwrap_or(&next)
                     .to_owned(),
