@@ -42,7 +42,7 @@ pub enum CheckCacheDecision {
     Skip,
 }
 
-pub async fn check_cache(dl_dir: &Path, link: &VideoLink) -> bool {
+pub async fn is_in_cache(dl_dir: &Path, link: &VideoLink) -> bool {
     let mut s = dl_dir.to_string_lossy().into_owned();
     s.push_str("/*=");
     s.push_str(link.id());

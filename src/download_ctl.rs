@@ -6,7 +6,7 @@ use self::daemon::{Message, DAEMON};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use mlib::{
-    downloaded::{check_cache, CheckCacheDecision},
+    downloaded::{is_in_cache, CheckCacheDecision},
     playlist::Playlist,
     Item,
 };
@@ -200,7 +200,7 @@ pub async fn cache_status() -> anyhow::Result<()> {
         .await?
         .filter_map(|r| async { r.ok() })
         .fold((vec![], vec![]), |(mut cached, mut not), s| async move {
-            if check_cache(dl_dir, &s.link).await {
+            if is_in_cache(dl_dir, &s.link).await {
                 cached.push(s.name);
             } else {
                 not.push(s.name);
