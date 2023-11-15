@@ -100,12 +100,16 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
             }
             Some(last) => {
                 tracing::warn!(
-                    "glob {:?} matched multiple files: {:?} + [{:?}]",
+                    "glob {:?} matched multiple files: {:?}[{:?}]",
                     s,
                     files,
                     last
                 );
-                return R::Error;
+                let Ok(last) = last else {
+                    return R::Error;
+                };
+                tracing::warn!("picking last one: {}", last.display());
+                last
             }
         };
         R::F(file)
