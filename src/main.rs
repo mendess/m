@@ -238,12 +238,15 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                         Link::Video(l) => {
                             if !downloaded::is_in_cache(&dl_dir, &l).await {
                                 notify!("downloading {l}");
-                                downloaded::download(
+                                if let Err(e) = downloaded::download(
                                     dl_dir.clone(),
                                     &l,
                                     config::CONFIG.download_format == DownloadFormat::Audio,
                                 )
-                                .await?;
+                                .await
+                                {
+                                    tracing::error!(?e, "failed to download {l}");
+                                }
                             }
                         }
                         Link::Playlist(_) => {}
