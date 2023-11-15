@@ -71,6 +71,10 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             query: link,
             categories,
         }) => {
+            if categories.is_empty() {
+                error!("empty category list"; content: "please provide at least one category");
+                return Ok(());
+            }
             let link = if search {
                 let search = Search::multiple(link, 10);
                 notify!("searching for 10 videos....");
