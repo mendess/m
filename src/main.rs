@@ -237,7 +237,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     Item::Link(l) => match l {
                         Link::Video(l) => {
                             if !downloaded::is_in_cache(&dl_dir, &l).await {
-                                tracing::info!("downloading {l}");
+                                notify!("downloading {l}");
                                 downloaded::download(
                                     dl_dir.clone(),
                                     &l,
