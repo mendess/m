@@ -232,12 +232,13 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 search_params_to_items(what.unwrap_or_default(), false, category).await?
             };
             let dl_dir = dl_dir().await?;
-            for i in items {
+            let total = items.len();
+            for (idx, i) in items.into_iter().enumerate() {
                 match i {
                     Item::Link(l) => match l {
                         Link::Video(l) => {
                             if !downloaded::is_in_cache(&dl_dir, &l).await {
-                                notify!("downloading {l}");
+                                notify!("[{idx}/{total}] downloading {l}");
                                 if let Err(e) = downloaded::download(
                                     dl_dir.clone(),
                                     &l,
