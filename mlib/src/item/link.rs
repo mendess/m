@@ -206,6 +206,7 @@ impl VideoLink {
             let id = self.id().as_str().to_owned();
             self.0.set_host(Some("youtu.be")).unwrap();
             self.0.set_path(&id);
+            self.0.set_query(None);
         }
     }
 }
