@@ -49,8 +49,44 @@ required-features = ["player"]
 
 [features]
 default = ["ytdl", "player", "playlist", "queue", "downloads"]
-ytdl = ["tokio", "tokio-stream", "pin-project", "futures-util", "serde", "player", "thiserror", "tracing"]
-player = ["arc-swap", "serde", "tokio", "futures-util", "namespaced-tmp", "libmpv", "cli-daemon", "thiserror", "tracing"]
-playlist = ["player", "csv-async", "dirs", "memchr"]
-queue = ["playlist", "player"]
-downloads = ["queue", "ytdl", "glob"]
+ytdl = [
+    "player",
+
+    "dep:tokio",
+    "dep:tokio-stream",
+    "dep:pin-project",
+    "dep:futures-util",
+    "dep:serde",
+    "dep:thiserror",
+    "dep:tracing",
+]
+player = [
+    "serde",
+
+    "dep:arc-swap",
+    "dep:tokio",
+    "dep:futures-util",
+    "dep:namespaced-tmp",
+    "dep:libmpv",
+    "dep:cli-daemon",
+    "dep:thiserror",
+    "dep:tracing",
+]
+playlist = [
+    "player",
+
+    "dep:csv-async",
+    "dep:dirs",
+    "dep:memchr",
+]
+queue = [
+    "playlist",
+    "player",
+]
+downloads = [
+    "queue",
+    "ytdl",
+
+    "dep:glob",
+]
+serde = ["dep:serde"]
