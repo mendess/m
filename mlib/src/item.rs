@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use self::link::Id;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Item {
     Link(Link),
@@ -120,7 +120,7 @@ pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
     Some(VideoId::new(&name[range]))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Search(String);

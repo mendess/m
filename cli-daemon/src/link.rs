@@ -108,6 +108,7 @@ where
 {
     pub async fn subscribe(mut self) -> Result<impl Stream<Item = io::Result<E>>, io::Error> {
         let message = serde_json::to_vec(&EventSubscription).unwrap();
+        tracing::debug!(message = ?std::str::from_utf8(&message), "sending event subscription message");
         self.writer.write_all(&message).await?;
         self.writer.write_all(b"\n").await?;
         self.writer.flush().await?;

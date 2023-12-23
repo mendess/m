@@ -1,16 +1,16 @@
 use std::{
     any::type_name,
-    io,
     num::TryFromIntError,
     ops::Deref,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::{Duration, SystemTime},
 };
 
 use cli_daemon::Daemon;
 use futures_util::{join, stream, Stream, StreamExt};
 use libmpv::{FileState, GetData, Mpv, MpvNode};
+use regex::Regex;
 use tokio::sync::{broadcast, watch, Mutex};
 
 use crate::{
@@ -301,7 +301,22 @@ impl PlayersDaemon {
                 }
             }
         }
+        #[cfg(feature = "statistics")]
+        let queue = match self.queue(index).await {
+            Ok(playlist) => Some(playlist),
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to record statistics for skipped songs");
+                None
+            }
+        };
         player.playlist_remove_index(to_remove)?;
+        #[cfg(feature = "statistics")]
+        if let Some(mut queue) = queue {
+            let item = queue.remove(to_remove);
+            if let Err(e) = crate::statistics::dequeued_song(Item::from(item.filename)).await {
+                tracing::error!(error = ?e, "failed to record statistics for skipped songs");
+            }
+        }
         Ok(())
     }
 
@@ -383,6 +398,19 @@ impl PlayersDaemon {
                 .unwrap_or_else(|| count.saturating_sub(1)),
         };
         player.command("playlist-play-index", &[&new_pos.to_string()])?;
+        #[cfg(feature = "statistics")]
+        {
+            match self.filename(index).await.map(Item::from) {
+                Ok(item) => {
+                    if let Err(e) = crate::statistics::skipped_song(item).await {
+                        tracing::error!(error = ?e, "failed to record statistics for skipped songs");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = ?e, "failed to record statistics for skipped songs")
+                }
+            }
+        }
         Ok(())
     }
 
@@ -468,7 +496,14 @@ impl PlayersDaemon {
     }
 
     pub(super) async fn filename(&self, index: PlayerIndex) -> MpvResult<String> {
-        self.simple_prop(index, "filename")
+        let mut filename = self.simple_prop::<String>(index, "filename")?;
+        static YT_ID: OnceLock<Regex> = OnceLock::new();
+        let pat = YT_ID.get_or_init(|| Regex::new(r"^[a-zA-Z\-_0-9]{11}$").unwrap());
+        // mpv now returns only the video id instead of the full youtube url
+        if pat.is_match(&filename) {
+            filename.insert_str(0, "https://youtu.be/");
+        }
+        Ok(filename)
     }
 
     pub(super) async fn is_paused(&self, index: PlayerIndex) -> MpvResult<bool> {
@@ -694,7 +729,8 @@ async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = 
     .flatten()
 }
 
-pub async fn start_daemon_if_running_as_daemon() -> io::Result<()> {
+#[tracing::instrument(name = "players-daemon")]
+pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
     if let Some(builder) = PLAYERS.build_daemon_process().await {
         let players = Arc::new(Mutex::new(PlayersDaemon::default()));
         // TODO: implement signals
@@ -713,11 +749,47 @@ pub async fn start_daemon_if_running_as_daemon() -> io::Result<()> {
                 let players = players.clone();
                 move |message| handle_messages(message, players.clone())
             },
-            move || handle_events(players),
+            {
+                let players = players.clone();
+                move || handle_events(players)
+            },
         );
+        #[cfg(feature = "statistics")]
+        let stats_task = register_statistics_listener(handle_events(players).await);
+        #[cfg(not(feature = "statistics"))]
+        let stats_task = std::future::ready(Ok::<_, super::Error>(()));
 
-        let (run_with_events, _) = join!(run_with_events, signal_mpris_events);
+        let (run_with_events, _, stats_task) =
+            join!(run_with_events, signal_mpris_events, stats_task);
         run_with_events?;
+        stats_task?;
     }
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+#[cfg(feature = "statistics")]
+pub async fn register_statistics_listener(
+    events: impl Stream<Item = PlayerEvent>,
+) -> Result<(), super::Error> {
+    tracing::info!("starting statistics listener");
+
+    let mut events = std::pin::pin!(events);
+    while let Some(event) = events.next().await {
+        match event.event {
+            event::OwnedLibMpvEvent::PropertyChange {
+                name,
+                change,
+                reply_userdata: _,
+            } if name == "filename" => {
+                tracing::info!(name, ?change, "property change");
+                if let Ok(filename) = change.into_string() {
+                    crate::statistics::played_song(Item::from(filename)).await?
+                }
+            }
+            _ => {}
+        }
+    }
+
     Ok(())
 }

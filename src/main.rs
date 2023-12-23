@@ -33,6 +33,7 @@ use crate::{
     util::{dl_dir, selector, with_video::with_video_env},
 };
 
+#[tracing::instrument]
 async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     tracing::debug!(?cmd, "running command");
     match cmd {

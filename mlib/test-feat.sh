@@ -14,3 +14,6 @@ features && $0 ~ /[a-z]+ =.*/ {
 }
 /^\[features\]$/ { features = 1 }
 ' Cargo.toml
+
+echo "############# testing feature" player + statistics
+cargo --quiet test --no-default-features --features player,statistics

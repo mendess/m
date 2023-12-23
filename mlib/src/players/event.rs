@@ -250,6 +250,7 @@ where
                 thread::sleep(Duration::from_secs_f32(0.5));
                 let mut events = mpv.create_event_context();
                 tracing::debug!(?player_index, "setting up event listener");
+                events.observe_property("filename", Format::String, 0)?;
                 events.observe_property("playlist-pos", Format::Int64, 0)?;
                 events.observe_property("volume", Format::Double, 0)?;
                 events.observe_property("media-title", Format::String, 0)?;

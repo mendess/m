@@ -122,14 +122,15 @@ impl<M, R, E> Daemon<M, R, E>
 where
     E: DeserializeOwned,
 {
+    #[tracing::instrument(skip_all)]
     pub async fn subscribe(&self) -> Result<impl Stream<Item = io::Result<E>>, io::Error> {
-        self.channels()
-            .await?
-            .lock()
-            .await
-            .try_clone()
-            .await?
-            .subscribe()
-            .await
+        tracing::debug!("getting channels");
+        let ch = self.channels().await?;
+        tracing::debug!("getting channels lock");
+        let ch = ch.lock().await;
+        tracing::debug!("cloning channels");
+        let ch = ch.try_clone().await?;
+        tracing::debug!("subscribing");
+        ch.subscribe().await
     }
 }

@@ -10,6 +10,8 @@ pub mod players;
 pub mod playlist;
 #[cfg(feature = "queue")]
 pub mod queue;
+#[cfg(feature = "statistics")]
+pub mod statistics;
 #[cfg(feature = "ytdl")]
 pub mod ytdl;
 

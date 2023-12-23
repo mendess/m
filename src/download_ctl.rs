@@ -72,6 +72,7 @@ mod daemon {
 
     pub static DAEMON: Daemon<Message, Option<Status>> = Daemon::new(ARG_0);
 
+    #[tracing::instrument(name = "download-daemon")]
     pub async fn start_daemon() -> anyhow::Result<()> {
         let builder = match DAEMON.build_daemon_process().await {
             None => return Ok(()),
