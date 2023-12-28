@@ -186,6 +186,7 @@ pub async fn interative_select<E: Display, const K: usize>(
             Event::Key(KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers: KeyModifiers::CONTROL,
+                ..
             }) => return Ok(None),
             Event::Key(KeyEvent {
                 code: KeyCode::Char(ch),

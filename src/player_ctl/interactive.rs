@@ -82,15 +82,18 @@ async fn input_task() {
                 KeyEvent {
                     code: KeyCode::Char('q'),
                     modifiers: Mod::NONE,
+                    ..
                 }
                 | KeyEvent {
                     code: KeyCode::Char('c' | 'd'),
                     modifiers: Mod::CONTROL,
+                    ..
                 },
             ) => break,
             Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers,
+                ..
             }) => {
                 let _ = match (c, modifiers) {
                     ('p', _) => player_ctl::pause().await,

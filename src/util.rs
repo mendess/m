@@ -88,7 +88,7 @@ pub async fn preview_video(l: &VideoId) -> anyhow::Result<()> {
 
 pub struct RawMode;
 impl RawMode {
-    pub fn enable() -> crossterm::Result<Self> {
+    pub fn enable() -> io::Result<Self> {
         crossterm::terminal::enable_raw_mode().map(|_| Self)
     }
 }
