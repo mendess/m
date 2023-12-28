@@ -50,12 +50,12 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
 }
 
 pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<()> {
-    const PROGRESS_BAR_LEN: usize = 11;
+    const PROGRESS_BAR_LEN: f64 = 11.;
     let plus = match current.progress {
-        Some(progress) => "+".repeat(progress as usize / PROGRESS_BAR_LEN),
+        Some(progress) => "+".repeat((progress / 100. * PROGRESS_BAR_LEN).round() as usize),
         None => "???".into(),
     };
-    let minus = "-".repeat(PROGRESS_BAR_LEN.saturating_sub(plus.len()));
+    let minus = "-".repeat((PROGRESS_BAR_LEN as usize).saturating_sub(plus.len()));
     let song = match &current.chapter {
         Some(c) => {
             format!("§bVideo§r: {}\n§bSong§r:  {}", current.title, c)
