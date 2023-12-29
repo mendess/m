@@ -5,9 +5,9 @@ use std::{
 
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use mpris_server::{
-    async_trait, builder::MetadataBuilder, LoopStatus, MaybePlaylist, Metadata, PlaybackRate,
-    PlaybackStatus, PlayerInterface, Playlist, PlaylistId, PlaylistOrdering, PlaylistsInterface,
-    RootInterface, Time, TrackId, TrackListInterface, Uri, Volume,
+    async_trait, builder::MetadataBuilder, LoopStatus, Metadata, PlaybackRate, PlaybackStatus,
+    PlayerInterface, Playlist, PlaylistId, PlaylistOrdering, PlaylistsInterface, RootInterface,
+    Time, TrackId, TrackListInterface, Uri, Volume,
 };
 use tokio::sync::Mutex;
 use zbus::fdo;
@@ -487,10 +487,10 @@ impl PlaylistsInterface for MprisPlayer {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn active_playlist(&self) -> fdo::Result<MaybePlaylist> {
+    async fn active_playlist(&self) -> fdo::Result<Option<Playlist>> {
         match self.daemon.lock().await.current_default() {
-            Some(current) => Ok(MaybePlaylist::just(Playlist::from(current))),
-            None => Ok(MaybePlaylist::nothing()),
+            Some(current) => Ok(Some(Playlist::from(current))),
+            None => Ok(None),
         }
     }
 }
@@ -641,10 +641,14 @@ where
                 emit_seek(&server, PlayerIndex::of(event.player_index)).await
             }
             event::OwnedLibMpvEvent::Shutdown => {
+                let playlist_count = server.imp().daemon.lock().await.len();
                 let r = server
-                    .playlists_properties_changed(
-                        PlaylistsProperty::PlaylistCount | PlaylistsProperty::ActivePlaylist,
-                    )
+                    .playlists_properties_changed([
+                        PlaylistsProperty::PlaylistCount(playlist_count as _),
+                        PlaylistsProperty::ActivePlaylist(
+                            server.imp().active_playlist().await.ok().flatten(),
+                        ),
+                    ])
                     .await;
                 if let Err(e) = r {
                     tracing::error!(
@@ -653,25 +657,37 @@ where
                     );
                 }
             }
-            event::OwnedLibMpvEvent::PropertyChange { name, .. } => match name.as_str() {
-                "pause" => {
-                    if let Err(e) = server.properties_changed(Property::PlaybackStatus).await {
-                        tracing::error!(?e, "failed to emit properties_changed playback status");
+            event::OwnedLibMpvEvent::PropertyChange { name, change, .. } => {
+                let properties = match name.as_str() {
+                    "pause" => {
+                        let Ok(paused) = change.into_bool() else {
+                            continue;
+                        };
+                        emit_seek(&server, PlayerIndex::of(event.player_index)).await;
+                        Property::PlaybackStatus(if paused {
+                            PlaybackStatus::Paused
+                        } else {
+                            PlaybackStatus::Playing
+                        })
                     }
-                    emit_seek(&server, PlayerIndex::of(event.player_index)).await
-                }
-                "volume" => {
-                    if let Err(e) = server.properties_changed(Property::Volume).await {
-                        tracing::error!(?e, "failed to emit properties_changed playback status");
+                    "volume" => {
+                        let Ok(volume) = change.into_double() else {
+                            continue;
+                        };
+                        Property::Volume(volume)
                     }
-                }
-                "media-title" | "chapter-metadata" | "playlist-pos" => {
-                    if let Err(e) = server.properties_changed(Property::Metadata).await {
-                        tracing::error!(?e, "failed to emit properties_changed playback status");
+                    "media-title" | "chapter-metadata" | "playlist-pos" => {
+                        let Ok(meta) = server.imp().metadata().await else {
+                            continue;
+                        };
+                        Property::Metadata(meta)
                     }
+                    _ => continue,
+                };
+                if let Err(e) = server.properties_changed([properties]).await {
+                    tracing::error!(?e, "failed to emit properties_changed playback status");
                 }
-                _ => {}
-            },
+            }
             event::OwnedLibMpvEvent::StartFile
             | event::OwnedLibMpvEvent::EndFile(_)
             | event::OwnedLibMpvEvent::PlaybackRestart

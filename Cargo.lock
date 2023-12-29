@@ -1088,7 +1088,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.5",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -1442,13 +1442,11 @@ dependencies = [
 
 [[package]]
 name = "mpris-server"
-version = "0.4.2"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e566ce4cc3fd3ecc4a1cd5498670354e39986307dabcb3a6f5be9b3239da3855"
+checksum = "cf2cdb2dfbe7063acc7fccb9e28d6dc0bc87fec7b343b6d09771a37970e98233"
 dependencies = [
- "async-lock 3.2.0",
  "async-trait",
- "enumflags2",
  "futures-channel",
  "futures-util",
  "serde",
