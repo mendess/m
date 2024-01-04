@@ -334,6 +334,10 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
             };
             player.queue_remove(last).await?;
         }
+        DeQueue::Current => {
+            let to_remove = player.queue_pos().await?;
+            player.queue_remove(to_remove).await?;
+        }
         DeQueue::N {
             i: DeQueueIndex(kind, n),
         } => {

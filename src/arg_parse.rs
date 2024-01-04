@@ -264,6 +264,8 @@ pub enum DeQueue {
         /// The category to filter by
         cat: String,
     },
+    /// The current song.
+    Current,
     /// A relative index
     N {
         /// -X is X songs before the current one
