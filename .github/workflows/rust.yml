@@ -1,0 +1,26 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "oxidise" ]
+  pull_request:
+    branches: [ "oxidise" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install System Dependencies
+      run: sudo apt update && sudo apt install -y libmpv-dev libxcb-shape0-dev libxcb-xfixes0-dev
+    - name: Fmt
+      run: cargo fmt --check
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose

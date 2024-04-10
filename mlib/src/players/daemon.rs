@@ -739,11 +739,8 @@ pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
             // do it like this so that the await on the "new_with_all" function can't block this
             // from calling "run_with_events".
             async move {
-                match mpris_server::Server::new_with_all(
-                    "m",
-                    MprisPlayer::new(players.clone()),
-                )
-                .await
+                match mpris_server::Server::new_with_all("m", MprisPlayer::new(players.clone()))
+                    .await
                 {
                     Ok(server) => {
                         super::mpris::signal_mpris_events(server, handle_events(players).await)
