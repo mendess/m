@@ -21,9 +21,7 @@ use crate::{
 use super::{
     error::{MpvErrorCode, MpvResult},
     event::{self, PlayerEvent},
-    libmpv_parsing,
-    mpris::MprisPlayer,
-    Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
+    libmpv_parsing, Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
 };
 
 pub(super) type PlayersDaemonLink = Daemon<Message, MpvResult<Response>, PlayerEvent>;
@@ -160,6 +158,7 @@ impl PlayersDaemon {
         Ok(PlayerIndex::of(index))
     }
 
+    #[cfg(feature = "mpris")]
     pub(super) fn current_default(&self) -> Option<PlayerIndex> {
         self.current_default.borrow().map(PlayerIndex::of)
     }
@@ -173,6 +172,7 @@ impl PlayersDaemon {
             .collect()
     }
 
+    #[cfg(feature = "mpris")]
     pub(super) fn len(&self) -> usize {
         self.players.len()
     }
@@ -246,11 +246,13 @@ impl PlayersDaemon {
         Ok(())
     }
 
+    #[cfg(feature = "mpris")]
     pub(super) async fn resume(&self, index: PlayerIndex) -> MpvResult<()> {
         self.current_player(index)?.unpause()?;
         Ok(())
     }
 
+    #[cfg(feature = "mpris")]
     pub(super) async fn jump_to(&self, index: PlayerIndex, pos: usize) -> MpvResult<()> {
         self.current_player(index)?
             .command("playlist-play-index", &[&pos.to_string()])?;
@@ -733,12 +735,13 @@ async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = 
 pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
     if let Some(builder) = PLAYERS.build_daemon_process().await {
         let players = Arc::new(Mutex::new(PlayersDaemon::default()));
-        // TODO: implement signals
+        #[cfg(feature = "mpris")]
         let signal_mpris_events = {
             let players = players.clone();
             // do it like this so that the await on the "new_with_all" function can't block this
             // from calling "run_with_events".
             async move {
+                use super::mpris::MprisPlayer;
                 match mpris_server::Server::new_with_all("m", MprisPlayer::new(players.clone()))
                     .await
                 {
@@ -752,6 +755,8 @@ pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
                 };
             }
         };
+        #[cfg(not(feature = "mpris"))]
+        let signal_mpris_events = std::future::ready(());
         let run_with_events = builder.run_with_events(
             {
                 let players = players.clone();

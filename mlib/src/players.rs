@@ -3,6 +3,7 @@ pub mod error;
 pub mod event;
 mod legacy_back_compat;
 mod libmpv_parsing;
+#[cfg(feature = "mpris")]
 mod mpris;
 
 use core::fmt;

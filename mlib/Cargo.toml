@@ -64,15 +64,13 @@ player = [
     "serde",
 
     "dep:arc-swap",
-    "dep:tokio",
+    "tokio/io-util",
     "dep:futures-util",
     "dep:namespaced-tmp",
     "dep:libmpv",
     "dep:cli-daemon",
     "dep:thiserror",
     "dep:tracing",
-    "dep:zbus",
-    "dep:mpris-server"
 ]
 statistics = [
     "serde",
@@ -84,17 +82,21 @@ statistics = [
     "dep:tempfile",
     "dep:serde-map-to-array",
     "dep:dirs",
-    "dep:tokio",
+    "tokio/fs",
     "dep:futures-util",
     "dep:tracing",
 ]
 playlist = [
-    "player",
-    "ytdl",
+    "serde",
+    #"ytdl",
 
+    "dep:tokio",
+    "dep:futures-util",
     "dep:csv-async",
     "dep:dirs",
     "dep:memchr",
+    "dep:thiserror",
+    "dep:tracing",
 ]
 queue = [
     "playlist",
@@ -107,6 +109,10 @@ downloads = [
     "dep:glob",
 ]
 serde = ["dep:serde"]
+mpris = [
+    "dep:zbus",
+    "dep:mpris-server"
+]
 default = [
     "ytdl",
     "player",

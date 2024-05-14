@@ -24,7 +24,7 @@ pub use item::{Item, Link, Search, VideoId};
     derive(thiserror::Error)
 )]
 pub enum Error {
-    #[cfg(any(feature = "ytdl", feature = "player"))]
+    #[cfg(any(feature = "ytdl", feature = "player", feature = "playlist"))]
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 

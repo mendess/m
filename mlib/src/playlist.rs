@@ -16,12 +16,12 @@ use std::{
 };
 use tokio::{
     fs::{File, OpenOptions},
-    io::AsyncReadExt,
+    io::{AsyncRead, AsyncReadExt},
     sync::OnceCell,
 };
-use tracing::{debug, warn};
+use tracing::debug;
 
-use crate::{item::link::VideoLink, ytdl::YtdlBuilder, Error, VideoId};
+use crate::{item::link::VideoLink, Error, VideoId};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
@@ -110,7 +110,11 @@ impl Playlist {
             }
             Err(e) => return Err(e.into()),
         };
-        let reader = READER_BUILDER.create_deserializer(file);
+        Self::load_from_reader(file).await
+    }
+
+    pub async fn load_from_reader<R: AsyncRead + Unpin + Send>(source: R) -> Result<Self, Error> {
+        let reader = READER_BUILDER.create_deserializer(source);
         Ok(Self {
             songs: reader.into_deserialize().try_collect().await?,
         })
@@ -380,15 +384,22 @@ impl VideoLink {
         };
         match name {
             Ok(Some(name)) => name,
+            #[cfg(feature = "ytdl")]
             e => {
                 debug!("failed to find link in playlist: {e:?}");
+                use crate::ytdl::YtdlBuilder;
                 match YtdlBuilder::new(self).get_title().request().await {
                     Ok(r) => r.title(),
                     Err(e) => {
-                        warn!("failed to resolve link using yt dl: {e:?}");
+                        tracing::warn!("failed to resolve link using yt dl: {e:?}");
                         self.to_string()
                     }
                 }
+            }
+            #[cfg(not(feature = "ytdl"))]
+            e => {
+                debug!("failed to find link in playlist: {e:?}");
+                self.to_string()
             }
         }
     }
