@@ -2,16 +2,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[cfg(feature = "player")]
-use std::{future::Future, sync::Arc, thread, time::Duration};
+use super::error::MpvResult;
 #[cfg(feature = "player")]
 use libmpv::{
     events::{self, Event, PropertyData},
     Format, Mpv, MpvNode, MpvNodeValue,
 };
 #[cfg(feature = "player")]
-use tokio::sync::broadcast;
+use std::{future::Future, sync::Arc, thread, time::Duration};
 #[cfg(feature = "player")]
-use super::error::MpvResult;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerEvent {
