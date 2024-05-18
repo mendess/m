@@ -149,9 +149,7 @@ async fn event_listener() -> impl Stream<Item = UiUpdate> {
                 OwnedLibMpvEvent::PropertyChange { name, change, .. } => match name.as_str() {
                     "playlist-pos" => Some(UiUpdate::ClearChapter),
                     "media-title" => {
-                        let Ok(title) = change.into_string() else {
-                            return None;
-                        };
+                        let title = change.into_string().ok()?;
                         let total_time = players::duration().await.ok()?;
                         let next = Queue::up_next(PlayerLink::current(), None)
                             .await
@@ -164,27 +162,16 @@ async fn event_listener() -> impl Stream<Item = UiUpdate> {
                         })
                     }
                     "volume" => {
-                        let Ok(volume) = change.into_double() else {
-                            return None;
-                        };
+                        let volume = change.into_double().ok()?;
                         Some(UiUpdate::Volume(volume))
                     }
                     "pause" => {
-                        let Ok(is_paused) = change.into_bool() else {
-                            return None;
-                        };
+                        let is_paused = change.into_bool().ok()?;
                         Some(UiUpdate::Pause { is_paused })
                     }
                     "chapter-metadata" => {
-                        let Ok(mut map) = change.into_map() else {
-                            return None;
-                        };
-                        let Some(title) = map.remove("title") else {
-                            return None;
-                        };
-                        let Ok(title) = title.into_string() else {
-                            return None;
-                        };
+                        let mut map = change.into_map().ok()?;
+                        let title = map.remove("title")?.into_string().ok()?;
                         let total_time = players::duration().await.ok()?;
                         Some(UiUpdate::Chapter { title, total_time })
                     }
