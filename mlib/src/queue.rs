@@ -36,13 +36,13 @@ impl Queue {
         self.items[self.current_idx].index
     }
 
-    pub async fn load_full(index: &PlayerLink) -> Result<Self, Error> {
-        Self::load(index, usize::MAX).await
+    pub async fn load_full(player: &PlayerLink) -> Result<Self, Error> {
+        Self::load(player, usize::MAX).await
     }
 
-    pub async fn load(index: &PlayerLink, at_most: usize) -> Result<Self, Error> {
-        let queue = index.queue().await?;
-        let last_queue = index.last_queue().await?;
+    pub async fn load(player: &PlayerLink, at_most: usize) -> Result<Self, Error> {
+        let queue = player.queue().await?;
+        let last_queue = player.last_queue().await?;
         let (items, current_idx, playing) = slice_queue(queue, at_most);
         Ok(Self {
             items,
@@ -52,9 +52,9 @@ impl Queue {
         })
     }
 
-    pub async fn link(index: &PlayerLink) -> Result<Item, Error> {
-        let current_idx = index.queue_pos().await?;
-        let current = index.queue_at(current_idx).await?;
+    pub async fn link(player: &PlayerLink) -> Result<Item, Error> {
+        let current_idx = player.queue_pos().await?;
+        let current = player.queue_at(current_idx).await?;
         match Item::from(current.filename) {
             Item::Link(l) => Ok(Item::Link(l)),
             Item::File(p) => Ok(id_from_path(&p)
@@ -65,12 +65,12 @@ impl Queue {
         }
     }
 
-    #[tracing::instrument(skip(index))]
-    pub async fn current(index: &PlayerLink) -> Result<Current, Error> {
+    #[tracing::instrument(skip(player))]
+    pub async fn current(player: &PlayerLink) -> Result<Current, Error> {
         tracing::trace!("getting current");
         let metadata = async {
-            let media_title = index.media_title().await?;
-            let filename = Item::from(index.filename().await?);
+            let media_title = player.media_title().await?;
+            let filename = Item::from(player.filename().await?);
             let id = filename.id();
             // TODO: this is wrong
             let title = if media_title.is_empty() {
@@ -79,21 +79,21 @@ impl Queue {
                 media_title
             };
 
-            let playing = !index.is_paused().await?;
-            let volume = index.volume().await?;
-            let progress = match index.percent_position().await {
+            let playing = !player.is_paused().await?;
+            let volume = player.volume().await?;
+            let progress = match player.percent_position().await {
                 Ok(progress) => Some(progress),
                 Err(PlayerError::Mpv(MpvError::Raw(MpvErrorCode::PropertyUnavailable))) => None,
                 Err(e) => return Err(e.into()),
             };
-            let playback_time = match index.playback_time().await {
+            let playback_time = match player.playback_time().await {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::error!(%e, "getting the playback_time");
                     0.0
                 }
             };
-            let duration = match index.duration().await {
+            let duration = match player.duration().await {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::error!(%e, "getting the duration");
@@ -107,7 +107,7 @@ impl Queue {
                 .map(|s| s.categories)
                 .unwrap_or_default();
 
-            let chapter = index.chapter_metadata().await?.map(|m| m.title);
+            let chapter = player.chapter_metadata().await?.map(|m| m.title);
 
             tracing::trace!("metadata done");
             Ok((
@@ -123,8 +123,8 @@ impl Queue {
         };
 
         let next = async {
-            let current_idx = index.queue_pos().await?;
-            let next = Self::up_next(index, current_idx).await?;
+            let current_idx = player.queue_pos().await?;
+            let next = Self::up_next(player, current_idx).await?;
             tracing::trace!("next done");
             Ok::<_, Error>((current_idx, next))
         };
@@ -148,13 +148,13 @@ impl Queue {
         })
     }
 
-    #[tracing::instrument(skip(index))]
-    pub async fn up_next<I>(index: &PlayerLink, queue_index: I) -> Result<Option<String>, Error>
+    #[tracing::instrument(skip(player))]
+    pub async fn up_next<I>(player: &PlayerLink, queue_index: I) -> Result<Option<String>, Error>
     where
         I: Into<Option<usize>> + std::fmt::Debug,
     {
         tracing::trace!("getting queue_size");
-        let size = index.queue_size().await?;
+        let size = player.queue_size().await?;
         Ok(if size == 1 {
             None
         } else {
@@ -162,11 +162,11 @@ impl Queue {
                 Some(idx) => idx,
                 None => {
                     tracing::trace!("getting queue_pos");
-                    index.queue_pos().await?
+                    player.queue_pos().await?
                 }
             };
             tracing::trace!("getting queue_at");
-            let next = index.queue_at((queue_index + 1) % size).await?.filename;
+            let next = player.queue_at((queue_index + 1) % size).await?.filename;
             Some(match VideoLink::try_from(next) {
                 Ok(l) => {
                     tracing::trace!("resolving link");

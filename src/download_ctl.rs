@@ -139,7 +139,7 @@ mod daemon {
             let _ = shutdown_send.send(());
         });
 
-        match builder
+        let never = builder
             .with_shutdown(shutdown_recv)
             .run(move |message| {
                 let tx = tx.clone();
@@ -154,7 +154,9 @@ mod daemon {
                     }
                 }
             })
-            .await? {}
+            .await?;
+
+        match never {}
     }
 }
 

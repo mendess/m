@@ -20,7 +20,7 @@ use mlib::{
     Link, Search,
 };
 use rand::seq::SliceRandom;
-use std::{io::Write, process::ExitCode, sync::Mutex};
+use std::{process::ExitCode, sync::Mutex};
 use tokio::io;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
@@ -265,40 +265,6 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     util::update_bar().await?;
 
     Ok(())
-}
-
-struct TracedWriter<W: Write>(W);
-
-impl<W> Write for TracedWriter<W>
-where
-    W: Write,
-{
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        log_if_err(self.0.write(buf))
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        log_if_err(self.0.flush())
-    }
-
-    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> io::Result<usize> {
-        log_if_err(self.0.write_vectored(bufs))
-    }
-
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        log_if_err(self.0.write_all(buf))
-    }
-
-    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> io::Result<()> {
-        log_if_err(self.0.write_fmt(fmt))
-    }
-}
-
-fn log_if_err<T, E: std::fmt::Debug>(r: Result<T, E>) -> Result<T, E> {
-    if let Err(e) = &r {
-        tracing::error!("{:?}", e)
-    }
-    r
 }
 
 static CHOSEN_INDEX: Mutex<PlayerIndex> = Mutex::new(PlayerIndex::CURRENT);
