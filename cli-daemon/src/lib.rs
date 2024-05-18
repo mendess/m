@@ -7,7 +7,10 @@ use std::{
     fmt::Debug,
     io,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -17,6 +20,8 @@ use process::DaemonProcess;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::{Mutex, OnceCell};
 use tracing::error;
+
+type ArcDaemonLink<M, R, E> = Arc<Mutex<DaemonLink<M, R, E>>>;
 
 /// The idea of a daemon. Instances of this struct can be used to
 /// - talk to an existing daemon
@@ -28,7 +33,7 @@ pub struct Daemon<M, R, E = Infallible> {
     start_daemon: AtomicBool,
     name: &'static str,
     socket_namespace: Option<String>,
-    channels: OnceCell<Mutex<DaemonLink<M, R, E>>>,
+    channels: Mutex<Option<ArcDaemonLink<M, R, E>>>,
     socket_path: OnceCell<PathBuf>,
 }
 
@@ -38,7 +43,7 @@ impl<M, R, E> Daemon<M, R, E> {
             start_daemon: AtomicBool::new(false),
             name,
             socket_namespace: None,
-            channels: OnceCell::const_new(),
+            channels: Mutex::const_new(None),
             socket_path: OnceCell::const_new(),
         }
     }
@@ -63,12 +68,14 @@ impl<M, R, E> Daemon<M, R, E> {
             start_daemon: AtomicBool::new(self.start_daemon.load(Ordering::Relaxed)),
             name: self.name,
             socket_namespace: Some(new_namepsace),
-            channels: OnceCell::const_new(),
+            channels: Mutex::const_new(None),
             socket_path: OnceCell::const_new(),
         }
     }
 
     pub async fn wait_for_daemon_to_spawn(&self) {
+        // reset the socket. If we are doing this we expect to not have a valid socket setup.
+        *self.channels.lock().await = None;
         // TODO: make this smarter with ifnotify things
         loop {
             if self.channels().await.is_ok() {
@@ -87,22 +94,20 @@ impl<M, R, E> Daemon<M, R, E> {
         }
     }
 
-    async fn channels(&self) -> io::Result<&Mutex<DaemonLink<M, R, E>>> {
-        match self
-            .channels
-            .get_or_try_init(|| async move {
-                DaemonLink::new(
-                    self.name,
-                    self.socket_path().await,
-                    self.start_daemon.load(Ordering::SeqCst),
-                )
-                .await
-                .map(Mutex::new)
-            })
-            .await
-        {
-            Ok(ch) => Ok(ch),
-            Err(e) => Err(e.kind().into()),
+    async fn channels(&self) -> io::Result<Arc<Mutex<DaemonLink<M, R, E>>>> {
+        let mut channels = self.channels.lock().await;
+        match &*channels {
+            Some(ch) => Ok(ch.clone()),
+            None => Ok(channels
+                .insert(Arc::new(Mutex::new(
+                    DaemonLink::new(
+                        self.name,
+                        self.socket_path().await,
+                        self.start_daemon.load(Ordering::SeqCst),
+                    )
+                    .await?,
+                )))
+                .clone()),
         }
     }
 }
@@ -114,7 +119,8 @@ where
 {
     pub async fn exchange(&self, message: M) -> io::Result<R> {
         let channels = self.channels().await?;
-        channels.lock().await.exchange(message).await
+        let mut channels = channels.lock().await;
+        channels.exchange(message).await
     }
 }
 

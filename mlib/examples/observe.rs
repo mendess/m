@@ -1,3 +1,5 @@
+use std::future::ready;
+
 use futures_util::StreamExt;
 use mlib::players;
 use tracing::dispatcher::set_global_default;
@@ -26,7 +28,7 @@ async fn main() -> Result<(), mlib::Error> {
     players::start_daemon_if_running_as_daemon().await?;
     players::subscribe()
         .await?
-        .for_each(|e| async move { println!("{e:?}") })
+        .for_each(|e| ready(tracing::info!(event = ?e, "new event")))
         .await;
     Ok(())
 }
