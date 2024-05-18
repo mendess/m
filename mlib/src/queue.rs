@@ -11,6 +11,7 @@ use crate::{
 };
 
 use futures_util::future::OptionFuture;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct SongIdent {
@@ -200,6 +201,7 @@ impl Queue {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Current {
     pub title: String,
     pub chapter: Option<(usize, String)>,
