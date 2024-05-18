@@ -4,7 +4,7 @@
 #[cfg(feature = "downloads")]
 pub mod downloaded;
 pub mod item;
-#[cfg(feature = "player")]
+#[cfg(feature = "player-connection")]
 pub mod players;
 #[cfg(feature = "playlist")]
 pub mod playlist;
@@ -17,14 +17,22 @@ pub mod ytdl;
 
 pub use item::{Item, Link, Search, VideoId};
 
-#[cfg(any(feature = "ytdl", feature = "player", feature = "playlist"))]
+#[cfg(any(
+    feature = "ytdl",
+    feature = "playlist",
+    feature = "player-connection"
+))]
 #[derive(Debug)]
 #[cfg_attr(
-    any(feature = "ytdl", feature = "player", feature = "playlist"),
+    any(
+        feature = "ytdl",
+        feature = "playlist",
+        feature = "player-connection"
+    ),
     derive(thiserror::Error)
 )]
 pub enum Error {
-    #[cfg(any(feature = "ytdl", feature = "player", feature = "playlist"))]
+    #[cfg(any(feature = "ytdl", feature = "player-connection", feature = "playlist"))]
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 
@@ -32,7 +40,7 @@ pub enum Error {
     #[error("csv: {0}")]
     Csv(#[from] csv_async::Error),
 
-    #[cfg(feature = "player")]
+    #[cfg(feature = "player-connection")]
     #[error("libmpv error: {0}")]
     MpvError(players::error::MpvError),
 
@@ -49,7 +57,7 @@ pub enum Error {
     PlaylistFileNotFound(std::path::PathBuf),
 }
 
-#[cfg(feature = "player")]
+#[cfg(feature = "player-connection")]
 impl From<players::error::Error> for Error {
     fn from(e: players::error::Error) -> Self {
         match e {

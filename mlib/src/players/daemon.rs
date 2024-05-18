@@ -7,30 +7,24 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use cli_daemon::Daemon;
 use futures_util::{join, stream, Stream, StreamExt};
 use libmpv::{FileState, GetData, Mpv, MpvNode};
 use regex::Regex;
 use tokio::sync::{broadcast, watch, Mutex};
 use tracing::Instrument;
 
+use crate::players::event::event_listener;
 use crate::{
-    players::{
-        error::MpvError,
-        event::{event_listener, OwnedLibMpvEvent},
-        legacy_socket_for, MessageKind,
-    },
+    players::{error::MpvError, event::OwnedLibMpvEvent, legacy_socket_for, MessageKind},
     Item,
 };
 
+use super::libmpv_parsing;
 use super::{
     error::{MpvErrorCode, MpvResult},
     event::{self, PlayerEvent},
-    libmpv_parsing, Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
+    Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
 };
-
-pub(super) type PlayersDaemonLink = Daemon<Message, MpvResult<Response>, PlayerEvent>;
-pub(super) static PLAYERS: PlayersDaemonLink = Daemon::new("m-players");
 
 #[derive(Default)]
 struct Players {
@@ -772,7 +766,7 @@ async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = 
 
 #[tracing::instrument(name = "players-daemon")]
 pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
-    if let Some(builder) = PLAYERS.build_daemon_process().await {
+    if let Some(builder) = super::connection::PLAYERS.build_daemon_process().await {
         let players = Arc::new(Mutex::new(PlayersDaemon::default()));
         #[cfg(feature = "mpris")]
         let signal_mpris_events = {
@@ -807,7 +801,8 @@ pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
             },
         );
         #[cfg(feature = "statistics")]
-        let stats_task = register_statistics_listener(handle_events(players).await);
+        let stats_task =
+            super::connection::register_statistics_listener(handle_events(players).await);
         #[cfg(not(feature = "statistics"))]
         let stats_task = std::future::ready(Ok::<_, super::Error>(()));
 
@@ -816,32 +811,5 @@ pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
         run_with_events?;
         stats_task?;
     }
-    Ok(())
-}
-
-#[tracing::instrument(skip_all)]
-#[cfg(feature = "statistics")]
-pub async fn register_statistics_listener(
-    events: impl Stream<Item = PlayerEvent>,
-) -> Result<(), super::Error> {
-    tracing::info!("starting statistics listener");
-
-    let mut events = std::pin::pin!(events);
-    while let Some(event) = events.next().await {
-        match event.event {
-            event::OwnedLibMpvEvent::PropertyChange {
-                name,
-                change,
-                reply_userdata: _,
-            } if name == "filename" => {
-                tracing::info!(name, ?change, "property change");
-                if let Ok(filename) = change.into_string() {
-                    crate::statistics::played_song(Item::from(filename)).await?
-                }
-            }
-            _ => {}
-        }
-    }
-
     Ok(())
 }

@@ -1,7 +1,10 @@
+mod connection;
+#[cfg(feature = "player")]
 mod daemon;
 pub mod error;
 pub mod event;
 mod legacy_back_compat;
+#[cfg(feature = "player")]
 mod libmpv_parsing;
 #[cfg(feature = "mpris")]
 mod mpris;
@@ -14,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Item;
 
+#[cfg(feature = "player")]
 pub use daemon::start_daemon_if_running_as_daemon;
 pub use error::Error;
 pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir};
@@ -52,12 +56,12 @@ impl<T: 'static> Deref for StaticOrOwned<T> {
 #[derive(Debug)]
 pub struct PlayerLink {
     index: PlayerIndex,
-    daemon: StaticOrOwned<daemon::PlayersDaemonLink>,
+    daemon: StaticOrOwned<connection::PlayersDaemonLink>,
 }
 
 static CURRENT_LINK: PlayerLink = PlayerLink {
     index: PlayerIndex(None),
-    daemon: StaticOrOwned::Static(&daemon::PLAYERS),
+    daemon: StaticOrOwned::Static(&connection::PLAYERS),
 };
 
 impl PlayerLink {
@@ -68,7 +72,7 @@ impl PlayerLink {
     pub fn of(index: usize) -> Self {
         Self {
             index: PlayerIndex(Some(index)),
-            daemon: StaticOrOwned::Static(&daemon::PLAYERS),
+            daemon: StaticOrOwned::Static(&connection::PLAYERS),
         }
     }
 
@@ -84,7 +88,7 @@ impl From<PlayerIndex> for PlayerLink {
     fn from(index: PlayerIndex) -> Self {
         Self {
             index,
-            daemon: StaticOrOwned::Static(&daemon::PLAYERS),
+            daemon: StaticOrOwned::Static(&connection::PLAYERS),
         }
     }
 }
@@ -286,11 +290,11 @@ impl PlayerLink {
 }
 
 pub async fn subscribe() -> Result<impl Stream<Item = io::Result<PlayerEvent>>, Error> {
-    Ok(daemon::PLAYERS.subscribe().await?)
+    Ok(connection::PLAYERS.subscribe().await?)
 }
 
 pub async fn wait_for_music_daemon_to_start() {
-    daemon::PLAYERS.wait_for_daemon_to_spawn().await;
+    connection::PLAYERS.wait_for_daemon_to_spawn().await;
 }
 
 /// Create a new player instance, with the given items
@@ -298,7 +302,7 @@ pub async fn create(
     items: impl Iterator<Item = &Item>,
     with_video: bool,
 ) -> Result<PlayerIndex, Error> {
-    match daemon::PLAYERS
+    match connection::PLAYERS
         .exchange(Message::create(items.cloned().collect(), with_video))
         .await??
     {
@@ -321,7 +325,7 @@ pub async fn all() -> Result<Vec<PlayerLink>, Error> {
 
 /// Gets the currenly selected player
 pub async fn current() -> Result<Option<usize>, Error> {
-    match daemon::PLAYERS
+    match connection::PLAYERS
         .exchange(Message::new(PlayerIndex(None), MessageKind::Current))
         .await??
     {

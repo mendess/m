@@ -15,4 +15,4 @@ namespaced-tmp = { workspace = true, features = ["async"] }
 
 [dependencies.tokio]
 workspace = true
-features = ["signal", "sync", "time", "net"]
+features = ["signal", "sync", "time", "net", "io-util"]

@@ -1,12 +1,16 @@
-use std::{collections::HashMap, future::Future, sync::Arc, thread, time::Duration};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
+#[cfg(feature = "player")]
+use std::{future::Future, sync::Arc, thread, time::Duration};
+#[cfg(feature = "player")]
 use libmpv::{
     events::{self, Event, PropertyData},
     Format, Mpv, MpvNode, MpvNodeValue,
 };
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "player")]
 use tokio::sync::broadcast;
-
+#[cfg(feature = "player")]
 use super::error::MpvResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,12 +132,14 @@ impl OwnedMpvNode {
     }
 }
 
+#[cfg(feature = "player")]
 impl From<MpvNode> for OwnedMpvNode {
     fn from(n: MpvNode) -> Self {
         Self::from(&n)
     }
 }
 
+#[cfg(feature = "player")]
 impl From<&MpvNode> for OwnedMpvNode {
     fn from(n: &MpvNode) -> Self {
         match n.value() {
@@ -151,6 +157,7 @@ impl From<&MpvNode> for OwnedMpvNode {
     }
 }
 
+#[cfg(feature = "player")]
 impl From<PropertyData<'_>> for OwnedMpvNode {
     fn from(p: PropertyData<'_>) -> Self {
         match p {
@@ -169,6 +176,7 @@ const _: fn() = || {
     is_send::<OwnedLibMpvEvent>();
 };
 
+#[cfg(feature = "player")]
 impl From<Event<'_>> for OwnedLibMpvEvent {
     fn from(e: Event<'_>) -> Self {
         match e {
@@ -225,14 +233,17 @@ impl From<Event<'_>> for OwnedLibMpvEvent {
     }
 }
 
+#[cfg(feature = "player")]
 pub(super) struct EventSubscriber(broadcast::Sender<PlayerEvent>);
 
+#[cfg(feature = "player")]
 impl EventSubscriber {
     pub fn subscribe(&self) -> broadcast::Receiver<PlayerEvent> {
         self.0.subscribe()
     }
 }
 
+#[cfg(feature = "player")]
 pub(super) fn event_listener<S>(mpv: Arc<Mpv>, player_index: usize, shutdown: S) -> EventSubscriber
 where
     S: Future<Output = ()> + Send + 'static,

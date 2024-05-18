@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.8.3"
+version = "0.8.4"
 edition = "2021"
 
 [dependencies]
@@ -52,55 +52,55 @@ required-features = ["player"]
 
 [features]
 ytdl = [
+    "dep:futures-util",
+    "dep:pin-project",
+    "dep:thiserror",
     "dep:tokio",
     "dep:tokio-stream",
-    "dep:pin-project",
-    "dep:futures-util",
-    "dep:serde",
-    "dep:thiserror",
-    "dep:tracing",
 ]
 player = [
     "serde",
+    "player-connection",
+
+    "dep:libmpv",
+    "tokio/io-util",
+]
+player-connection = [
+    "serde",
 
     "dep:arc-swap",
-    "tokio/io-util",
+    "dep:cli-daemon",
     "dep:futures-util",
     "dep:namespaced-tmp",
-    "dep:libmpv",
-    "dep:cli-daemon",
     "dep:thiserror",
+    "dep:tokio",
     "dep:tracing",
 ]
 statistics = [
     "serde",
 
+    "dep:chrono",
+    "dep:dirs",
+    "dep:raii_flock",
+    "dep:serde-map-to-array",
     "dep:serde_json",
     "dep:tempfile",
-    "dep:chrono",
-    "dep:raii_flock",
-    "dep:tempfile",
-    "dep:serde-map-to-array",
-    "dep:dirs",
-    "tokio/fs",
-    "dep:futures-util",
     "dep:tracing",
+    "tokio/fs",
 ]
 playlist = [
     "serde",
-    #"ytdl",
 
-    "dep:tokio",
-    "dep:futures-util",
     "dep:csv-async",
     "dep:dirs",
+    "dep:futures-util",
     "dep:memchr",
     "dep:thiserror",
-    "dep:tracing",
+    "dep:tokio",
 ]
 queue = [
     "playlist",
-    "player",
+    "player-connection",
 ]
 downloads = [
     "queue",
@@ -110,14 +110,14 @@ downloads = [
 ]
 serde = ["dep:serde"]
 mpris = [
+    "dep:mpris-server",
     "dep:zbus",
-    "dep:mpris-server"
 ]
 default = [
-    "ytdl",
+    "downloads",
     "player",
     "playlist",
     "queue",
-    "downloads",
     "statistics",
+    "ytdl",
 ]

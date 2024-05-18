@@ -15,6 +15,7 @@ pub enum Error {
 pub enum MpvError {
     #[error("mpv error. code: {0}")]
     Raw(MpvErrorCode),
+    #[cfg(feature = "player")]
     #[error("load files. index: {0} code: {1}")]
     Loadfiles(usize, libmpv::MpvError),
     #[error("No player running")]
@@ -31,6 +32,7 @@ pub enum MpvError {
     FailedToExecute { reason: String },
 }
 
+#[cfg(feature = "player")]
 impl From<libmpv::Error> for MpvError {
     fn from(e: libmpv::Error) -> Self {
         use libmpv::Error::*;
@@ -80,6 +82,7 @@ pub enum MpvErrorCode {
     Unknown = i32::MIN,
 }
 
+#[cfg(feature = "player")]
 impl From<libmpv::MpvError> for MpvErrorCode {
     fn from(e: libmpv::MpvError) -> Self {
         if (-20..=0i32).contains(&e) {
