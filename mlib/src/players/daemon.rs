@@ -190,8 +190,7 @@ impl PlayersDaemon {
             Some(lq) => lq,
             None => return Ok(None),
         };
-        let now = SystemTime::now();
-        if set.duration_since(now).unwrap_or_default() > THREE_HOURS {
+        if set.elapsed().unwrap_or_default() > THREE_HOURS {
             pl.last_queue = None;
             Ok(None)
         } else {
