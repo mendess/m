@@ -2,15 +2,11 @@ use std::time::Duration;
 
 pub use crate::Item;
 use crate::{
-    item::{id_from_path, link::VideoLink},
-    players::{
-        error::{Error as PlayerError, MpvError, MpvErrorCode},
-        PlayerLink, QueueItem,
-    },
-    playlist, Error, Link,
+    item::id_from_path,
+    players::{PlayerLink, QueueItem},
+    Error, Link,
 };
 
-use futures_util::future::OptionFuture;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -73,7 +69,16 @@ impl Queue {
     }
 
     #[tracing::instrument(skip(player))]
+    #[cfg(feature = "ytdl")]
     pub async fn current(player: &PlayerLink) -> Result<Current, Error> {
+        pub use crate::Item;
+        use crate::{
+            players::error::{Error as PlayerError, MpvError, MpvErrorCode},
+            playlist, Error,
+        };
+
+        use futures_util::future::OptionFuture;
+
         tracing::trace!("getting current");
         let metadata = async {
             let media_title = player.media_title().await?;
@@ -156,10 +161,13 @@ impl Queue {
     }
 
     #[tracing::instrument(skip(player))]
+    #[cfg(feature = "ytdl")]
     pub async fn up_next<I>(player: &PlayerLink, queue_index: I) -> Result<Option<String>, Error>
     where
         I: Into<Option<usize>> + std::fmt::Debug,
     {
+        use crate::item::link::VideoLink;
+
         tracing::trace!("getting queue_size");
         let size = player.queue_size().await?;
         Ok(if size == 1 {
@@ -198,6 +206,15 @@ impl Queue {
         for i in self.after() {
             f(i)
         }
+    }
+}
+
+impl IntoIterator for Queue {
+    type Item = SongIdent;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
     }
 }
 

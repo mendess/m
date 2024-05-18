@@ -104,25 +104,7 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     stream::iter(queue.iter())
         .map(|i| {
             debug!("translating queue item: {i:?}");
-            async {
-                let s = match &i.item {
-                    // TODO: should be able to move here
-                    Item::Link(l) => match l.as_video() {
-                        Some(l) => l.resolve_link().await,
-                        None => l.to_string(),
-                    },
-                    Item::File(f) => mlib::item::clean_up_path(&f)
-                        .map(ToString::to_string)
-                        .unwrap_or_else(|| f.to_string_lossy().into_owned()),
-                    Item::Search(s) => YtdlBuilder::new(s)
-                        .get_title()
-                        .search()
-                        .await
-                        .map(|b| b.title())
-                        .unwrap_or_else(|l| l.to_string()),
-                };
-                (i.index, s)
-            }
+            async { (i.index, i.item.fetch_item_title().await) }
         })
         .buffered(8)
         .for_each(|(index, s)| async move {

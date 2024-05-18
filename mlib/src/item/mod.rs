@@ -40,6 +40,27 @@ impl Item {
             Item::Search(s) => s.as_str().as_bytes(),
         }
     }
+
+    #[cfg(all(feature = "ytdl", feature = "playlist"))]
+    pub async fn fetch_item_title(&self) -> String {
+        use crate::ytdl::YtdlBuilder;
+        match self {
+            // TODO: should be able to move here
+            Item::Link(l) => match l.as_video() {
+                Some(l) => l.resolve_link().await,
+                None => l.to_string(),
+            },
+            Item::File(f) => clean_up_path(&f)
+                .map(ToString::to_string)
+                .unwrap_or_else(|| f.to_string_lossy().into_owned()),
+            Item::Search(s) => YtdlBuilder::new(s)
+                .get_title()
+                .search()
+                .await
+                .map(|b| b.title())
+                .unwrap_or_else(|l| l.to_string()),
+        }
+    }
 }
 
 impl<'s> TryFrom<&'s Item> for &'s str {

@@ -209,6 +209,35 @@ impl VideoLink {
             self.0.set_query(None);
         }
     }
+    /// Resolve a link by trying to find it in the playlist and then querying youtube for it's
+    /// title.
+    #[cfg(all(feature = "ytdl", feature = "playlist"))]
+    pub async fn resolve_link(&self) -> String {
+        use crate::playlist::Playlist;
+        use tokio::sync::OnceCell;
+        use tracing::debug;
+
+        static LIST: OnceCell<Result<Playlist, crate::Error>> = OnceCell::const_new();
+        debug!("resolving link in playlist");
+        let name = match LIST.get_or_init(Playlist::load).await {
+            Ok(list) => Ok(list.find_by_link(self).map(|s| s.name.clone())),
+            Err(e) => Err(e),
+        };
+        match name {
+            Ok(Some(name)) => name,
+            e => {
+                debug!("failed to find link in playlist: {e:?}");
+                use crate::ytdl::YtdlBuilder;
+                match YtdlBuilder::new(self).get_title().request().await {
+                    Ok(r) => r.title(),
+                    Err(e) => {
+                        tracing::warn!("failed to resolve link using yt dl: {e:?}");
+                        self.to_string()
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl FromStr for VideoLink {
