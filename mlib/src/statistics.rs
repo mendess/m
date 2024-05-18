@@ -60,7 +60,7 @@ where
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, &stats)?;
 
-        std::fs::rename(&temp_path, stats_path)?;
+        temp_path.persist(stats_path).map_err(|e| e.error)?;
 
         Ok(())
     }
