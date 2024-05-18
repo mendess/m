@@ -42,7 +42,7 @@ pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
         notify!("{}", link);
         return Ok(());
     }
-    let current = Queue::current(PlayerLink::current())
+    let current = Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
         .await
         .context("loading the current queue")?;
 

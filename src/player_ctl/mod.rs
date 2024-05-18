@@ -122,7 +122,7 @@ pub async fn toggle_loop() -> anyhow::Result<()> {
 pub async fn status() -> anyhow::Result<()> {
     let all = players::all().await?;
     for player in all {
-        let current = Queue::current(&player)
+        let current = Queue::current(&player, mlib::queue::CurrentOptions::None)
             .await
             .with_context(|| format!("[{player}] fetching current in queue"))?;
         let queue_size = player

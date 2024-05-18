@@ -194,7 +194,10 @@ pub async fn interactive() -> anyhow::Result<()> {
     let mut input_task = pin!(input_task());
     let mut ui_task = pin!(async {
         let mut event_listener = pin!(event_listener().await);
-        let mut current = Queue::current(PlayerLink::current()).await.unwrap();
+        let mut current =
+            Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
+                .await
+                .unwrap();
         loop {
             let r = stdout()
                 .lock()

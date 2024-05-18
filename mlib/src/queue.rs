@@ -70,7 +70,7 @@ impl Queue {
 
     #[tracing::instrument(skip(player))]
     #[cfg(feature = "ytdl")]
-    pub async fn current(player: &PlayerLink) -> Result<Current, Error> {
+    pub async fn current(player: &PlayerLink, opt: CurrentOptions) -> Result<Current, Error> {
         pub use crate::Item;
         use crate::{
             players::error::{Error as PlayerError, MpvError, MpvErrorCode},
@@ -78,9 +78,11 @@ impl Queue {
         };
 
         use futures_util::future::OptionFuture;
+        use tracing::Instrument;
 
         tracing::trace!("getting current");
         let metadata = async {
+            tracing::trace!("getting");
             let media_title = player.media_title().await?;
             let filename = Item::from(player.filename().await?);
             let id = filename.id();
@@ -126,7 +128,7 @@ impl Queue {
                 .flatten()
                 .map(|m| (m.index, m.title));
 
-            tracing::trace!("metadata done");
+            tracing::trace!("done");
             Ok((
                 title,
                 playing,
@@ -137,14 +139,20 @@ impl Queue {
                 categories,
                 chapter,
             ))
-        };
+        }
+        .instrument(tracing::trace_span!("metadata"));
 
         let next = async {
+            tracing::trace!("getting");
             let current_idx = player.queue_pos().await?;
-            let next = Self::up_next(player, current_idx).await?;
-            tracing::trace!("next done");
+            let next = match opt {
+                CurrentOptions::GetNext => Self::up_next(player, current_idx).await?,
+                CurrentOptions::None => None,
+            };
+            tracing::trace!("done");
             Ok::<_, Error>((current_idx, next))
-        };
+        }
+        .instrument(tracing::trace_span!("up next"));
 
         let (
             (current_idx, next),
@@ -175,28 +183,28 @@ impl Queue {
 
         tracing::trace!("getting queue_size");
         let size = player.queue_size().await?;
-        Ok(if size == 1 {
-            None
-        } else {
-            let queue_index = match queue_index.into() {
-                Some(idx) => idx,
-                None => {
-                    tracing::trace!("getting queue_pos");
-                    player.queue_pos().await?
-                }
-            };
-            tracing::trace!("getting queue_at");
-            let next = player.queue_at((queue_index + 1) % size).await?.filename;
-            Some(match VideoLink::try_from(next) {
-                Ok(l) => {
-                    tracing::trace!("resolving link");
-                    l.resolve_link().await
-                }
-                Err(next) => crate::item::clean_up_path(&next)
-                    .unwrap_or(&next)
-                    .to_owned(),
-            })
-        })
+        if size == 1 {
+            return Ok(None);
+        }
+        let queue_index = match queue_index.into() {
+            Some(idx) => idx,
+            None => {
+                tracing::trace!("getting queue_pos");
+                player.queue_pos().await?
+            }
+        };
+        tracing::trace!("getting queue_at");
+        let next = player.queue_at((queue_index + 1) % size).await?.filename;
+        let next = Some(match VideoLink::try_from(next) {
+            Ok(l) => {
+                tracing::trace!("resolving link");
+                l.resolve_link().await
+            }
+            Err(next) => crate::item::clean_up_path(&next)
+                .unwrap_or(&next)
+                .to_owned(),
+        });
+        Ok(next)
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &SongIdent> {
@@ -221,6 +229,13 @@ impl IntoIterator for Queue {
     fn into_iter(self) -> Self::IntoIter {
         self.items.into_iter()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Default)]
+pub enum CurrentOptions {
+    GetNext,
+    #[default]
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
