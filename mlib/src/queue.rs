@@ -119,7 +119,12 @@ impl Queue {
                 .map(|s| s.categories)
                 .unwrap_or_default();
 
-            let chapter = player.chapter_metadata().await?.map(|m| (m.index, m.title));
+            let chapter = player
+                .chapter_metadata()
+                .await
+                .ok()
+                .flatten()
+                .map(|m| (m.index, m.title));
 
             tracing::trace!("metadata done");
             Ok((
