@@ -12,9 +12,14 @@ use futures_util::{join, stream, Stream, StreamExt};
 use libmpv::{FileState, GetData, Mpv, MpvNode};
 use regex::Regex;
 use tokio::sync::{broadcast, watch, Mutex};
+use tracing::Instrument;
 
 use crate::{
-    players::{error::MpvError, event::event_listener, legacy_socket_for, MessageKind},
+    players::{
+        error::MpvError,
+        event::{event_listener, OwnedLibMpvEvent},
+        legacy_socket_for, MessageKind,
+    },
     Item,
 };
 
@@ -100,6 +105,33 @@ impl Player {
     }
 }
 
+async fn last_queue_reseter(
+    mut events: broadcast::Receiver<PlayerEvent>,
+    players: Arc<Mutex<PlayersDaemon>>,
+) {
+    tracing::info!("starting");
+    let mut last_pos = 0;
+    while let Ok(e) = events.recv().await {
+        let OwnedLibMpvEvent::PropertyChange { name, change, .. } = e.event else {
+            continue;
+        };
+        if name != "playlist-pos" {
+            continue;
+        }
+        let Ok(pos) = change.into_int() else {
+            continue;
+        };
+        if pos < last_pos {
+            let _ = players
+                .lock()
+                .await
+                .last_queue_clear(PlayerIndex::of(e.player_index));
+        }
+        last_pos = pos;
+    }
+    tracing::info!("terminating");
+}
+
 impl PlayersDaemon {
     pub(crate) async fn create(
         this: Arc<Mutex<Self>>,
@@ -141,14 +173,22 @@ impl PlayersDaemon {
             Ok(())
         })?);
 
-        let events = event_listener(mpv.clone(), index, move || async move {
-            if let Err(e) = this.lock().await.quit(PlayerIndex::of(index)).await {
-                match e {
-                    MpvError::NoMpvInstance => {}
-                    e => tracing::error!(?index, ?e, "failed to quit from player"),
+        let events = event_listener(mpv.clone(), index, {
+            let this = this.clone();
+            async move {
+                if let Err(e) = this.lock().await.quit(PlayerIndex::of(index)).await {
+                    match e {
+                        MpvError::NoMpvInstance => {}
+                        e => tracing::error!(?index, ?e, "failed to quit from player"),
+                    }
                 }
             }
         });
+
+        tokio::spawn(
+            last_queue_reseter(events.subscribe(), this)
+                .instrument(tracing::info_span!("queue wraparound reseter", index)),
+        );
 
         mpv.playlist_load_files(&items)?;
 

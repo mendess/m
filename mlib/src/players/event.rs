@@ -233,14 +233,9 @@ impl EventSubscriber {
     }
 }
 
-pub(super) fn event_listener<S, Fut>(
-    mpv: Arc<Mpv>,
-    player_index: usize,
-    shutdown: S,
-) -> EventSubscriber
+pub(super) fn event_listener<S>(mpv: Arc<Mpv>, player_index: usize, shutdown: S) -> EventSubscriber
 where
-    S: FnOnce() -> Fut + Send + 'static,
-    Fut: Future<Output = ()> + Send,
+    S: Future<Output = ()> + Send + 'static,
 {
     let (tx, _) = broadcast::channel(10);
     tokio::task::spawn_blocking({
@@ -298,7 +293,7 @@ where
                     player_index,
                     event: Event::Shutdown.into(),
                 });
-                tokio::spawn(async move { shutdown().await });
+                tokio::spawn(shutdown);
                 tracing::debug!(?player_index, "player shutting down");
                 Ok(())
             };
