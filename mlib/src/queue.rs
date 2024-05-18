@@ -12,6 +12,12 @@ use crate::{
 
 use futures_util::future::OptionFuture;
 
+#[derive(Debug, Clone)]
+pub struct SongIdent {
+    pub index: usize,
+    pub item: Item,
+}
+
 pub struct Queue {
     items: Vec<SongIdent>,
     current_idx: usize,
@@ -107,7 +113,7 @@ impl Queue {
                 .map(|s| s.categories)
                 .unwrap_or_default();
 
-            let chapter = player.chapter_metadata().await?.map(|m| m.title);
+            let chapter = player.chapter_metadata().await?.map(|m| (m.index, m.title));
 
             tracing::trace!("metadata done");
             Ok((
@@ -194,15 +200,9 @@ impl Queue {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SongIdent {
-    pub index: usize,
-    pub item: Item,
-}
-
 pub struct Current {
     pub title: String,
-    pub chapter: Option<String>,
+    pub chapter: Option<(usize, String)>,
     pub playing: bool,
     pub volume: f64,
     pub progress: Option<f64>,

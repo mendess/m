@@ -37,10 +37,11 @@ enum UiUpdate {
     Pause {
         is_paused: bool,
     },
-    Chapter {
+    ChapterName {
         title: String,
         total_time: f64,
     },
+    ChapterNumber(usize),
     Position(PlaybackPosition),
     Quit,
     ClearChapter,
@@ -173,7 +174,11 @@ async fn event_listener() -> impl Stream<Item = UiUpdate> {
                         let mut map = change.into_map().ok()?;
                         let title = map.remove("title")?.into_string().ok()?;
                         let total_time = players::duration().await.ok()?;
-                        Some(UiUpdate::Chapter { title, total_time })
+                        Some(UiUpdate::ChapterName { title, total_time })
+                    }
+                    "chapter" => {
+                        let index = change.into_int().ok()?;
+                        Some(UiUpdate::ChapterNumber(index as _))
                     }
                     _ => None,
                 },
@@ -227,9 +232,12 @@ pub async fn interactive() -> anyhow::Result<()> {
                     }
                     UiUpdate::Volume(volume) => current.volume = volume,
                     UiUpdate::Pause { is_paused } => current.playing = !is_paused,
-                    UiUpdate::Chapter { title, total_time } => {
-                        current.chapter = Some(title);
+                    UiUpdate::ChapterName { title, total_time } => {
+                        current.chapter.get_or_insert_with(Default::default).1 = title;
                         current.duration = Duration::from_secs_f64(total_time);
+                    }
+                    UiUpdate::ChapterNumber(index) => {
+                        current.chapter.get_or_insert_with(Default::default).0 = index;
                     }
                     UiUpdate::Position(PlaybackPosition {
                         percent_position,

@@ -58,7 +58,7 @@ pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<
     let minus = "-".repeat((PROGRESS_BAR_LEN as usize).saturating_sub(plus.len()));
     let song = match &current.chapter {
         Some(c) => {
-            format!("§bVideo§r: {}\n§bSong§r:  {}", current.title, c)
+            format!("§bVideo§r: {}\n§bSong§r:  {}", current.title, c.1)
         }
         None => current.title.clone(),
     };
