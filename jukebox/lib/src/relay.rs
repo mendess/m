@@ -1,6 +1,6 @@
+pub mod rooms;
 pub mod socket_server;
 pub mod web_server;
-pub mod rooms;
 
 use tokio::io;
 

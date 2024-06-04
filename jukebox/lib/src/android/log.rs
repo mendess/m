@@ -63,7 +63,7 @@ where
         env.get_static_field(
             env.find_class("xyz/mendess/jukebox/JukeboxLib")?,
             "LOG_TAG",
-            "Ljava/lang/String;"
+            "Ljava/lang/String;",
         )?
     };
     env.call_static_method(

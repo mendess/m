@@ -39,7 +39,7 @@ esac
 [[ "$TERMINAL" ]] &&
     [[ ! "$SESSION_KIND" == gui ]] &&
     command -V pstree &>/dev/null &&
-    pstree -s $$ | tr '\n' ' ' | grep -vEq "\\?|login|lemon|tmux|$TERMINAL" &&
+    pstree -s $$ | tr '\n' ' ' | grep -vEq "\\?|sshd|login|lemon|tmux|$TERMINAL" &&
     SESSION_KIND=gui
 
 # =========== LYRICS HELPERS ============
@@ -788,6 +788,10 @@ dequeue() {
         pop)
             to_remove=("$(cat "$(last_queue)")")
             ;;
+        *)
+            error "invalid argument" "$1"
+            return 1
+            ;;
     esac
     [[ "${#to_remove[@]}" -lt 1 ]] && return
     flock "$PLAYLIST_LOCK"
@@ -1041,6 +1045,16 @@ main() {
                 update_panel &
                 disown
             fi
+            ;;
+        set-pause)
+            mpv_do '["set_property", "pause", true]'
+            update_panel &
+            disown
+            ;;
+        set-play)
+            mpv_do '["set_property", "pause", false]'
+            update_panel &
+            disown
             ;;
         quit)
             ## Kill the most recent player
