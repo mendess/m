@@ -5,9 +5,9 @@ use std::{
 
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use mpris_server::{
-    async_trait, builder::MetadataBuilder, LoopStatus, Metadata, PlaybackRate, PlaybackStatus,
-    PlayerInterface, Playlist, PlaylistId, PlaylistOrdering, PlaylistsInterface, RootInterface,
-    Time, TrackId, TrackListInterface, Uri, Volume,
+    builder::MetadataBuilder, LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface,
+    Playlist, PlaylistId, PlaylistOrdering, PlaylistsInterface, RootInterface, Time, TrackId,
+    TrackListInterface, Uri, Volume,
 };
 use tokio::sync::Mutex;
 use zbus::fdo;
@@ -39,7 +39,6 @@ fn to_zbus_err<E: ToString>(e: E) -> zbus::Error {
     zbus::Error::FDO(Box::new(to_fdo_err(e)))
 }
 
-#[async_trait]
 impl RootInterface for MprisPlayer {
     #[tracing::instrument(skip(self))]
     async fn raise(&self) -> fdo::Result<()> {
@@ -107,7 +106,6 @@ impl RootInterface for MprisPlayer {
     }
 }
 
-#[async_trait]
 impl PlayerInterface for MprisPlayer {
     #[tracing::instrument(skip(self))]
     async fn next(&self) -> fdo::Result<()> {
@@ -447,7 +445,6 @@ impl From<PlayerIndex> for Playlist {
     }
 }
 
-#[async_trait]
 impl PlaylistsInterface for MprisPlayer {
     #[tracing::instrument(skip(self))]
     async fn activate_playlist(&self, playlist_id: PlaylistId) -> fdo::Result<()> {
@@ -466,7 +463,7 @@ impl PlaylistsInterface for MprisPlayer {
         _order: PlaylistOrdering,
         _reverse_order: bool,
     ) -> fdo::Result<Vec<Playlist>> {
-        let daemon = __self.daemon.lock().await;
+        let daemon = self.daemon.lock().await;
         let players = daemon.list();
         let slice = players
             .get((index as usize)..)
@@ -495,7 +492,6 @@ impl PlaylistsInterface for MprisPlayer {
     }
 }
 
-#[async_trait]
 impl TrackListInterface for MprisPlayer {
     #[tracing::instrument(skip(self))]
     async fn get_tracks_metadata(&self, track_ids: Vec<TrackId>) -> fdo::Result<Vec<Metadata>> {

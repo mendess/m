@@ -86,7 +86,7 @@ pub enum MpvErrorCode {
 impl From<libmpv::MpvError> for MpvErrorCode {
     fn from(e: libmpv::MpvError) -> Self {
         if (-20..=0i32).contains(&e) {
-            unsafe { std::mem::transmute(e) }
+            unsafe { std::mem::transmute::<i32, MpvErrorCode>(e) }
         } else {
             Self::Unknown
         }

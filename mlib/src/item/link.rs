@@ -377,7 +377,7 @@ impl PlaylistLink {
 
     pub fn as_video_link(&self) -> Result<&VideoLink, &Self> {
         if VideoLink::is_video_link(&self.0) {
-            Ok(unsafe { std::mem::transmute(self) })
+            Ok(unsafe { std::mem::transmute::<&PlaylistLink, &VideoLink>(self) })
         } else {
             Err(self)
         }
