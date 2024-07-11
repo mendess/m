@@ -1,3 +1,6 @@
+#[cfg(feature = "ytdl")]
+mod title_cache;
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, ffi::OsStr, fmt::Display, ops::Deref, str::FromStr};
@@ -212,8 +215,9 @@ impl VideoLink {
     /// Resolve a link by trying to find it in the playlist and then querying youtube for it's
     /// title.
     #[cfg(all(feature = "ytdl", feature = "playlist"))]
+    #[tracing::instrument]
     pub async fn resolve_link(&self) -> String {
-        use crate::playlist::Playlist;
+        use crate::{playlist::Playlist, ytdl::YtdlBuilder};
         use tokio::sync::OnceCell;
         use tracing::debug;
 
@@ -227,9 +231,23 @@ impl VideoLink {
             Ok(Some(name)) => name,
             e => {
                 debug!("failed to find link in playlist: {e:?}");
-                use crate::ytdl::YtdlBuilder;
+
+                match title_cache::get(self).await {
+                    Ok(Some(title)) => return title,
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!(error = ?e, "failed to fetch from title cache");
+                    }
+                }
+
                 match YtdlBuilder::new(self).get_title().request().await {
-                    Ok(r) => r.title(),
+                    Ok(r) => {
+                        let title = r.title();
+                        if let Err(e) = title_cache::put(self, &title).await {
+                            tracing::warn!(error = ?e, "failed to cache title");
+                        }
+                        title
+                    }
                     Err(e) => {
                         tracing::warn!("failed to resolve link using yt dl: {e:?}");
                         self.to_string()

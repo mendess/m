@@ -45,7 +45,6 @@ impl Item {
     pub async fn fetch_item_title(&self) -> String {
         use crate::ytdl::YtdlBuilder;
         match self {
-            // TODO: should be able to move here
             Item::Link(l) => match l.as_video() {
                 Some(l) => l.resolve_link().await,
                 None => l.to_string(),
