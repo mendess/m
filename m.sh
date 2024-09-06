@@ -1300,6 +1300,7 @@ main() {
             ;;
         shuffle | shuf)
             ## Shuffle the playlist
+            queue -r
             mpv_do '["playlist-shuffle"]' .error -r
             ;;
         r)
