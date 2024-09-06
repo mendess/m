@@ -753,6 +753,9 @@ dequeue() {
         prev)
             dequeue -1
             ;;
+        cur|curr|current)
+            dequeue +0
+            ;;
         +[0-9]*)
             to_remove=("$(($(mpv_get playlist-pos -r .data) + ${1#+}))")
             ;;
