@@ -1292,7 +1292,7 @@ main() {
             ## Usage: m load file
             out="${2:--}"
             [[ "$out" = - ]] && out=/dev/stdin
-            xargs -L 1 -I{} "$0" q '{}' < "$out"
+            xargs -I{} "$0" q '{}' < "$out"
             ;;
         socket)
             ## Get the socket in use
