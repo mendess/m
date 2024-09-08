@@ -1,4 +1,6 @@
 pub mod link;
+#[cfg(all(feature = "ytdl", feature = "playlist"))]
+mod title_cache;
 
 use std::{
     ffi::OsStr,
@@ -52,12 +54,31 @@ impl Item {
             Item::File(f) => clean_up_path(&f)
                 .map(ToString::to_string)
                 .unwrap_or_else(|| f.to_string_lossy().into_owned()),
-            Item::Search(s) => YtdlBuilder::new(s)
-                .get_title()
-                .search()
-                .await
-                .map(|b| b.title())
-                .unwrap_or_else(|l| l.to_string()),
+            Item::Search(s) => {
+                tracing::debug!("fetching title of search {s:?}");
+                match title_cache::get_by_search(s).await {
+                    Ok(Some(title)) => return title,
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::error!(?s, error = ?e, "failed to fetch cache of search");
+                    }
+                };
+                let title = YtdlBuilder::new(s)
+                    .get_title()
+                    .search()
+                    .await
+                    .map(|b| b.title());
+
+                match title {
+                    Ok(title) => {
+                        if let Err(e) = title_cache::put_by_search(s, &title).await {
+                            tracing::warn!(error = ?e, "failed to cache title");
+                        }
+                        title
+                    }
+                    Err(e) => e.to_string(),
+                }
+            }
         }
     }
 }

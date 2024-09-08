@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.3.43"
+version = "0.3.44"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -51,6 +51,7 @@ tokio-stream = { version = "0.1.15", features = ["io-util"] }
 tracing = "0.1.40"
 tracing-log = "0.2.0"
 whoami = "1.5.1"
+base64 = "0.22"
 
 [workspace.dependencies.tokio]
 version = "1.37.0"
@@ -59,4 +60,4 @@ features = ["macros", "rt-multi-thread", "rt", "parking_lot"]
 
 [workspace.dependencies.namespaced-tmp]
 git = "https://github.com/mendess/namespaced-tmp"
-features = ["user"]
+features = ["user", "async"]
