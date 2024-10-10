@@ -651,7 +651,7 @@ interpret_song() {
         fi
     fi
     [[ "${#targets[@]}" -gt 0 ]] &&
-        mapfile -t INTERPRET_targets < <(printf "%s\n" "${targets[@]}" | sort -u | shuf)
+        mapfile -t INTERPRET_targets < <(printf "%s\n" "${targets[@]}")
     return 0
 }
 
@@ -1292,7 +1292,7 @@ main() {
             ## Usage: m load file
             out="${2:--}"
             [[ "$out" = - ]] && out=/dev/stdin
-            xargs -I{} "$0" q '{}' < "$out"
+            tr '\n' '\0' < "$out" | xargs -0 -I{} "$0" q '{}'
             ;;
         socket)
             ## Get the socket in use
