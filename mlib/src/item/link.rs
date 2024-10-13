@@ -1,3 +1,4 @@
+use derive_more::derive::From;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, ffi::OsStr, fmt::Display, ops::Deref, str::FromStr};
@@ -11,7 +12,7 @@ pub trait IntoVideo {
     fn into_video(self) -> VideoLink;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Link {
     Video(VideoLink),
@@ -97,12 +98,6 @@ impl Link {
             Self::Playlist(l) => Some(l),
             Self::OtherPlatform(_) => None,
         }
-    }
-}
-
-impl From<VideoLink> for Link {
-    fn from(l: VideoLink) -> Self {
-        Self::Video(l)
     }
 }
 

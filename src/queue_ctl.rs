@@ -5,7 +5,12 @@ use crate::{
     util::{dl_dir, selector::selector, with_video::with_video_env, DisplayEither, DurationFmt},
 };
 
-use std::{collections::HashSet, io::Write, path::PathBuf, pin::Pin};
+use std::{
+    collections::HashSet,
+    io::Write,
+    path::PathBuf,
+    pin::{pin, Pin},
+};
 
 use anyhow::Context;
 use futures_util::{
@@ -31,7 +36,7 @@ use tokio::{
     process::Command as Fork,
 };
 use tokio_stream::wrappers::LinesStream;
-use tracing::debug;
+use tracing::{debug, info_span, Instrument};
 
 pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     if link {
@@ -145,7 +150,7 @@ where
     let mut notify_tasks = FuturesUnordered::new();
     let items = items.into_iter();
     let item_count = items.len();
-    let mut expanded_items = expand_playlists(items).inspect(|_| n_targets += 1);
+    let mut expanded_items = pin!(expand_playlists(items).inspect(|_| n_targets += 1));
     while let Some(mut item) = expanded_items.next().await {
         check_cache_ref(dl_dir().await?, &mut item).await;
         print!("Queuing song: {} ... ", item);
@@ -522,7 +527,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
 }
 
 fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item = Item> {
-    let expand_playlist = |l: &'_ PlaylistLink| {
+    fn expand_playlist(l: &'_ PlaylistLink) -> Result<impl Stream<Item = VideoLink>, Error> {
         Result::<_, Error>::Ok(
             YtdlBuilder::new(l)
                 .request_playlist()?
@@ -540,20 +545,44 @@ fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item 
                 })
                 .map(|b| VideoLink::from_id(b.id())),
         )
-    };
+    }
 
-    stream::iter(items).flat_map(move |i| match i {
-        Item::Link(mut l) => {
-            if let Some(playlist) = l.as_playlist_mut() {
-                match expand_playlist(playlist) {
-                    Ok(s) => Box::pin(s.map(|l| Item::Link(l.into()))),
-                    Err(_) => Box::pin(stream::once(ready(Item::Link(l))))
-                        as Pin<Box<dyn Stream<Item = Item>>>,
-                }
-            } else {
-                Box::pin(stream::once(ready(Item::Link(l))))
-            }
+    fn single(l: impl Into<Item>) -> Pin<Box<dyn Stream<Item = Item>>> {
+        Box::pin(stream::once(ready(l.into())))
+    }
+
+    async fn check_if_empty<S: Stream<Item = VideoLink> + 'static>(
+        s: S,
+    ) -> Option<Pin<Box<dyn Stream<Item = Item>>>> {
+        let mut s = Box::pin(s.map(|l| Item::Link(l.into())).peekable());
+        if s.as_mut().peek().await.is_none() {
+            tracing::warn!("playlist is empty");
+            None
+        } else {
+            Some(s)
         }
-        x => Box::pin(stream::once(ready(x))),
-    })
+    }
+
+    stream::iter(items)
+        .then(move |i| async {
+            let expanded = match &i {
+                Item::Link(l) => {
+                    if let Some(playlist) = l.as_playlist() {
+                        match expand_playlist(playlist) {
+                            Ok(s) => {
+                                check_if_empty(s)
+                                    .instrument(info_span!("expanding playlist", link = ?l))
+                                    .await
+                            }
+                            Err(_) => None,
+                        }
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            expanded.unwrap_or_else(|| single(i))
+        })
+        .flatten()
 }

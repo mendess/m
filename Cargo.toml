@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.3.45"
+version = "0.3.46"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -37,6 +37,7 @@ whoami.workspace = true
 members = ["mlib", "cli-daemon"]
 
 [workspace.dependencies]
+derive_more = "1"
 async_once = "0.2.6"
 cli-daemon = { path = "./cli-daemon" }
 dirs = "5.0.1"

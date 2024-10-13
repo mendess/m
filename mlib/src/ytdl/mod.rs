@@ -37,13 +37,17 @@ mod sealed {
     impl<T> Sealed for super::Thumbnail<T> {}
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct TitleRequest<T>(T);
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Title<T> {
     title: String,
     tail: T,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct DurationRequest<T>(T);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Duration<T> {
     duration: std::time::Duration,
     tail: T,
@@ -74,14 +78,18 @@ impl<'s> From<&'s Search> for LinkRequest<'s, Search> {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct LinkRequest<'l, L>(&'l L);
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct VidId(String);
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct ThumbnailRequest<T>(T);
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Thumbnail<T> {
     thumb: String,
     tail: T,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct YtdlBuilder<T>(T);
 
 impl<'l, L> YtdlBuilder<LinkRequest<'l, L>>
@@ -93,6 +101,7 @@ where
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Ytdl<T>(T);
 
 #[derive(Error, Debug)]
@@ -212,6 +221,7 @@ where
     })
 }
 
+#[derive(Debug)]
 #[pin_project]
 pub struct YtdlStream<Y> {
     #[pin]

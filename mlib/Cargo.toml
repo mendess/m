@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.9.4"
+version = "0.9.5"
 edition = "2021"
 
 [dependencies]
@@ -10,6 +10,7 @@ base64 = { workspace = true , optional = true }
 chrono = { version = "0.4.38", optional = true }
 cli-daemon = { workspace = true, optional = true }
 csv-async = { version = "1.3.0", features = ["tokio"], optional = true }
+derive_more = { workspace = true, features = ["from"] }
 dirs = { workspace = true, optional = true }
 form_urlencoded = { version = "1.2.1", default-features = false }
 futures-util = { workspace = true, optional = true }

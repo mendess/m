@@ -12,13 +12,15 @@ use std::{
     string::FromUtf8Error,
 };
 
+use derive_more::derive::From;
 pub use link::{Link, PlaylistId, PlaylistLink, VideoId};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use self::link::Id;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
+#[from(forward)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Item {
     Link(Link),
