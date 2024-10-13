@@ -1264,7 +1264,7 @@ checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "m"
-version = "0.3.44"
+version = "0.3.45"
 dependencies = [
  "anyhow",
  "clap",
@@ -1362,7 +1362,7 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "arc-swap",
  "async_once",

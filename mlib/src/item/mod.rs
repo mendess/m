@@ -146,7 +146,7 @@ impl From<String> for Item {
 }
 
 pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
-    let front_striped = s.trim_end_matches("=m");
+    let front_striped = s.strip_suffix("=m").or_else(|| s.strip_suffix("=mart"))?;
     let start_idx = front_striped.char_indices().rfind(|(_, c)| *c == '=')?.0;
     if front_striped.len() == start_idx {
         return None;
@@ -223,6 +223,14 @@ mod test {
         assert_eq!(
             None,
             id_from_path(&PathBuf::from("Some-song-title-AAA=m.mkv"))
+        )
+    }
+
+    #[test]
+    fn art_id() {
+        assert_eq!(
+            Some(VideoId::new("AAA")),
+            id_from_path(&Path::new("Song Name 😎=AAA=mart.jpg"))
         )
     }
 }
