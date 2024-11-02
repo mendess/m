@@ -12,7 +12,7 @@ use std::{
     pin::{pin, Pin},
 };
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use futures_util::{
     future::ready,
     stream::{self, FuturesUnordered},
@@ -494,11 +494,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                 .collect()
         }
         "clipboard" => {
-            use clipboard::{ClipboardContext, ClipboardProvider};
-            let clipboard = ClipboardContext::new()
-                .and_then(|mut c| c.get_contents())
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            vec![Item::from(clipboard)]
+            vec![Item::from(get_clipboard_contents()?)]
         }
         _ => return Ok(()),
     };
@@ -524,6 +520,33 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
         players::queue_loop(true).await?;
     }
     Ok(())
+}
+
+fn get_clipboard_contents() -> anyhow::Result<String> {
+    use arboard::Clipboard;
+    use wl_clipboard_rs::paste::{get_contents, ClipboardType, Error, MimeType, Seat};
+    let mut clip = Clipboard::new()?;
+    match clip.get().text() {
+        Ok(content) => Ok(content),
+        Err(_) => {
+            use std::io::Read;
+
+            let result = get_contents(ClipboardType::Regular, Seat::Unspecified, MimeType::Text);
+            match result {
+                Ok((mut pipe, _)) => {
+                    let mut contents = vec![];
+                    pipe.read_to_end(&mut contents)?;
+                    Ok(String::from_utf8_lossy(&contents).into_owned())
+                }
+
+                Err(e @ (Error::NoSeats | Error::ClipboardEmpty | Error::NoMimeType)) => {
+                    bail!("clipboard is empty: {e:?}")
+                }
+
+                Err(err) => Err(err)?,
+            }
+        }
+    }
 }
 
 fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item = Item> {

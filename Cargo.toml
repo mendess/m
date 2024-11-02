@@ -1,16 +1,17 @@
 [package]
 name = "m"
-version = "0.3.46"
+version = "0.3.47"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0.86"
+arboard = "3.4.1"
+wl-clipboard-rs = "0.9.1"
 clap = { version = "4.5.4", features = ["derive"] }
 clap_complete = "4.5.2"
 cli-daemon.workspace = true
-clipboard = "0.5.0"
 config = "0.14.0"
 crossterm = "0.27.0"
 dirs.workspace = true
