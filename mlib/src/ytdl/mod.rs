@@ -18,75 +18,142 @@ use tokio_stream::wrappers::LinesStream;
 
 use crate::{
     item::{
-        link::{Id, VideoLink},
+        link::{ChannelLink, Id, VideoLink},
         PlaylistLink,
     },
-    Error, Link, Search, VideoId,
+    Error, Search, VideoId,
 };
 use thiserror::Error;
+use trait_gen::trait_gen;
 
 mod sealed {
+    use trait_gen::trait_gen;
+
     pub trait Sealed {}
-    impl<T> Sealed for super::Title<T> {}
-    impl<T> Sealed for super::Duration<T> {}
-    impl<T> Sealed for super::ThumbnailRequest<T> {}
-    impl Sealed for super::VidId {}
-    impl<T> Sealed for super::TitleRequest<T> {}
-    impl<T> Sealed for super::DurationRequest<T> {}
-    impl<L> Sealed for super::LinkRequest<'_, L> {}
-    impl<T> Sealed for super::Thumbnail<T> {}
+    #[trait_gen(U ->
+        super::Title<T>,        super::Duration<T>,        super::Thumbnail<T>,
+        super::TitleRequest<T>, super::DurationRequest<T>, super::ThumbnailRequest<T>,
+        super::LinkRequest<'_, T>,
+    )]
+    impl<T> Sealed for U {}
+    #[trait_gen(T ->
+        crate::item::VideoLink,   crate::item::PlaylistLink,
+        crate::item::ChannelLink, crate::item::Search,
+        Box<crate::item::VideoId>,
+    )]
+    impl Sealed for T {}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct TitleRequest<T>(T);
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Title<T> {
-    title: String,
-    tail: T,
+pub trait YtdlParam<'l>: sealed::Sealed {
+    type Link;
+    fn collect(cmd: &mut Command);
+    fn link_and_param_count(&self) -> (&'l Self::Link, usize);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct DurationRequest<T>(T);
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Duration<T> {
-    duration: std::time::Duration,
-    tail: T,
+pub trait IntoResponse: sealed::Sealed {
+    type Output: ?Sized + 'static;
+    fn response<S>(buf: &mut Vec<S>) -> Self::Output
+    where
+        S: AsRef<str>;
 }
 
-impl<'l> From<&'l Link> for LinkRequest<'l, Link> {
-    fn from(l: &'l Link) -> Self {
-        Self(l)
-    }
+macro_rules! impl_request {
+    ($name:ident => $output:ident with $arg:literal == $field:ident : |$buf:ident| $transform:block) => {
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+        pub struct $name<T>(T);
+        impl<'l, L, T: YtdlParam<'l, Link = L>> YtdlParam<'l> for $name<T> {
+            type Link = L;
+
+            fn collect(cmd: &mut tokio::process::Command) {
+                cmd.arg($arg);
+                T::collect(cmd);
+            }
+
+            fn link_and_param_count(&self) -> (&'l Self::Link, usize) {
+                let (link, count) = self.0.link_and_param_count();
+                (link, 1 + count)
+            }
+        }
+
+        impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for $name<T> {
+            type Output = $output<Y>;
+            fn response<S>($buf: &mut Vec<S>) -> Self::Output
+            where
+                S: AsRef<str>,
+            {
+                Self::Output {
+                    $field: $transform,
+                    tail: T::response($buf),
+                }
+            }
+        }
+    };
 }
 
-impl<'l> From<&'l VideoLink> for LinkRequest<'l, VideoLink> {
-    fn from(l: &'l VideoLink) -> Self {
-        Self(l)
-    }
-}
-impl<'l> From<&'l PlaylistLink> for LinkRequest<'l, PlaylistLink> {
-    fn from(l: &'l PlaylistLink) -> Self {
-        Self(l)
-    }
-}
-impl<'s> From<&'s Search> for LinkRequest<'s, Search> {
-    fn from(s: &'s Search) -> Self {
-        Self(s)
-        // unsafe { std::mem::transmute(s.as_str().trim_start_matches("ytdl://")) }
-    }
-}
+impl_request!(TitleRequest => Title with "--get-title" == title: |buf| {
+    buf.remove(0).as_ref().to_string()
+});
+
+impl_request!(DurationRequest => Duration with "--get-duration" == duration: |buf| {
+    use std::time::Duration;
+
+    const CTORS: &[fn(u64) -> Duration] = &[
+        Duration::from_secs,
+        |m| Duration::from_secs(m * 60),
+        |h| Duration::from_secs(h * 60 * 60),
+    ];
+
+    let dur = buf.pop().unwrap();
+    dur
+        .as_ref()
+        .split(':')
+        .rev()
+        .map_while(|n| n.parse::<u64>().ok())
+        .zip(CTORS)
+        .map(|(n, d)| d(n))
+        .sum()
+});
+
+impl_request!(ThumbnailRequest => Thumbnail with "--get-thumbnail" == thumb: |buf| {
+    let i = buf.len().saturating_sub(1).saturating_sub(
+        buf.iter()
+            .rev()
+            .position(|e| e.as_ref().starts_with("http"))
+            .unwrap(),
+    );
+    buf.remove(i).as_ref().to_string()
+});
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct LinkRequest<'l, L>(&'l L);
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct VidId(String);
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct ThumbnailRequest<T>(T);
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Thumbnail<T> {
-    thumb: String,
-    tail: T,
+impl<'l, L> YtdlParam<'l> for LinkRequest<'l, L> {
+    type Link = L;
+
+    fn collect(cmd: &mut Command) {
+        cmd.arg("--get-id");
+    }
+
+    fn link_and_param_count(&self) -> (&'l Self::Link, usize) {
+        (self.0, 1)
+    }
+}
+
+impl<L> IntoResponse for LinkRequest<'_, L> {
+    type Output = Box<VideoId>;
+    fn response<S>(buf: &mut Vec<S>) -> Self::Output
+    where
+        S: AsRef<str>,
+    {
+        VideoId::new(buf.pop().unwrap().as_ref()).boxed()
+    }
+}
+
+#[trait_gen(T -> ChannelLink, VideoLink, PlaylistLink, Search)]
+impl<'l> From<&'l T> for LinkRequest<'l, T> {
+    fn from(l: &'l T) -> Self {
+        Self(l)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -102,7 +169,7 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Ytdl<T>(T);
+pub struct Ytdl<T: ?Sized>(T);
 
 #[derive(Error, Debug)]
 pub enum YtdlError {
@@ -139,9 +206,8 @@ where
     T: YtdlParam<'l, Link = VideoLink>,
 {
     pub async fn request(self) -> Result<Ytdl<Y>, Error> {
-        let n_fields = self.0.n_params();
-        let link = self.0.link();
-        request_impl::<_, T, _>(link.as_ref(), n_fields)?
+        let (link, n_fields) = self.0.link_and_param_count();
+        request_impl::<_, T, _>(link, n_fields)?
             .next()
             .await
             .ok_or_else(|| {
@@ -160,20 +226,22 @@ where
     T: YtdlParam<'l, Link = Search>,
 {
     pub async fn search(self) -> Result<Ytdl<Y>, Error> {
-        let n_fields = self.0.n_params();
-        request_impl::<_, T, _>(
-            self.0.link().as_str().trim_start_matches("ytdl://"),
-            n_fields,
-        )?
-        .next()
-        .await
-        .ok_or_else(|| {
-            Error::from(YtdlError::InsufisientFields {
-                expected: n_fields,
-                found: 0,
-                fields: vec![],
-            })
-        })?
+        let (link, n_fields) = self.0.link_and_param_count();
+        request_impl::<_, T, _>(link.as_str().trim_start_matches("ytdl://"), n_fields)?
+            .next()
+            .await
+            .ok_or_else(|| {
+                Error::from(YtdlError::InsufisientFields {
+                    expected: n_fields,
+                    found: 0,
+                    fields: vec![],
+                })
+            })?
+    }
+
+    pub fn search_multiple(&self) -> Result<YtdlStream<Y>, Error> {
+        let (link, n_fields) = self.0.link_and_param_count();
+        request_impl::<&str, T, Y>(link.as_str().trim_start_matches("ytdl://"), n_fields)
     }
 }
 
@@ -183,20 +251,19 @@ where
     T: YtdlParam<'l, Link = PlaylistLink>,
 {
     pub fn request_playlist(&self) -> Result<YtdlStream<Y>, Error> {
-        request_impl::<_, T, _>(&self.0.link().without_video_id(), self.0.n_params())
+        let (link, n_fields) = self.0.link_and_param_count();
+        request_impl::<_, T, _>(link.without_video_id(), n_fields)
     }
 }
 
 impl<'l, Y, T> YtdlBuilder<T>
 where
     T: IntoResponse<Output = Y>,
-    T: YtdlParam<'l, Link = Search>,
+    T: YtdlParam<'l, Link = ChannelLink>,
 {
-    pub fn search_multiple(&self) -> Result<YtdlStream<Y>, Error> {
-        request_impl::<&str, T, Y>(
-            self.0.link().as_str().trim_start_matches("ytdl://"),
-            self.0.n_params(),
-        )
+    pub fn request_channel(&self) -> Result<YtdlStream<Y>, Error> {
+        let (link, n_fields) = self.0.link_and_param_count();
+        request_impl::<_, T, _>(link, n_fields)
     }
 }
 
@@ -209,6 +276,7 @@ where
     let mut cmd = Command::new("yt-dlp");
     cmd.arg(link);
     T::collect(&mut cmd);
+    tracing::debug!(args = ?cmd.as_std().get_args(), "running ytdl");
 
     let mut child = cmd.kill_on_drop(true).stdout(Stdio::piped()).spawn()?;
 
@@ -261,186 +329,48 @@ impl<Y> Stream for YtdlStream<Y> {
     }
 }
 
-impl<R: Response> Ytdl<R> {
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Title<T: ?Sized> {
+    title: String,
+    tail: T,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Duration<T: ?Sized> {
+    duration: std::time::Duration,
+    tail: T,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Thumbnail<T: ?Sized> {
+    thumb: String,
+    tail: T,
+}
+
+impl<R: getters::GetId> Ytdl<R> {
     pub fn id(&self) -> &VideoId {
-        VideoId::new(self.0.id())
+        self.0.id()
     }
 }
 
-pub trait YtdlParam<'l>: sealed::Sealed {
-    type Link;
-    fn collect(cmd: &mut Command);
-    fn link(&self) -> &'l Self::Link;
-    fn n_params(&self) -> usize;
-}
-
-impl<'l, L, T: YtdlParam<'l, Link = L>> YtdlParam<'l> for TitleRequest<T> {
-    type Link = L;
-
-    fn collect(cmd: &mut Command) {
-        cmd.arg("--get-title");
-        T::collect(cmd);
+impl<R: getters::GetTitle> Ytdl<R> {
+    pub fn title(self) -> String {
+        self.0.title()
     }
 
-    fn link(&self) -> &'l Self::Link {
-        self.0.link()
-    }
-
-    fn n_params(&self) -> usize {
-        1 + self.0.n_params()
+    pub fn title_ref(&self) -> &str {
+        self.0.title_ref()
     }
 }
 
-impl<'l, L, T: YtdlParam<'l, Link = L>> YtdlParam<'l> for DurationRequest<T> {
-    type Link = L;
-
-    fn collect(cmd: &mut Command) {
-        cmd.arg("--get-duration");
-        T::collect(cmd);
-    }
-
-    fn link(&self) -> &'l Self::Link {
-        self.0.link()
-    }
-
-    fn n_params(&self) -> usize {
-        1 + self.0.n_params()
+impl<R: getters::GetDuration> Ytdl<R> {
+    pub fn duration(&self) -> std::time::Duration {
+        self.0.duration()
     }
 }
 
-impl<'l, L, T: YtdlParam<'l, Link = L>> YtdlParam<'l> for ThumbnailRequest<T> {
-    type Link = L;
-
-    fn collect(cmd: &mut Command) {
-        cmd.arg("--get-thumbnail");
-        T::collect(cmd);
-    }
-
-    fn link(&self) -> &'l Self::Link {
-        self.0.link()
-    }
-
-    fn n_params(&self) -> usize {
-        1 + self.0.n_params()
-    }
-}
-
-impl<'l, L> YtdlParam<'l> for LinkRequest<'l, L> {
-    type Link = L;
-
-    fn collect(cmd: &mut Command) {
-        cmd.arg("--get-id");
-    }
-
-    fn link(&self) -> &'l Self::Link {
-        self.0
-    }
-
-    fn n_params(&self) -> usize {
-        1
-    }
-}
-
-pub trait IntoResponse: sealed::Sealed {
-    type Output: 'static;
-    fn response<S>(buf: &mut Vec<S>) -> Self::Output
-    where
-        S: AsRef<str>;
-}
-
-impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for TitleRequest<T> {
-    type Output = Title<Y>;
-    fn response<S>(buf: &mut Vec<S>) -> Self::Output
-    where
-        S: AsRef<str>,
-    {
-        Self::Output {
-            title: buf.remove(0).as_ref().to_string(),
-            tail: T::response(buf),
-        }
-    }
-}
-
-impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for DurationRequest<T> {
-    type Output = Duration<Y>;
-
-    fn response<S>(buf: &mut Vec<S>) -> Self::Output
-    where
-        S: AsRef<str>,
-    {
-        use std::time::Duration;
-
-        const CTORS: &[fn(u64) -> Duration] = &[
-            Duration::from_secs,
-            |m| Duration::from_secs(m * 60),
-            |h| Duration::from_secs(h * 60 * 60),
-        ];
-
-        let dur = buf.pop().unwrap();
-        let total = dur
-            .as_ref()
-            .split(':')
-            .rev()
-            .map_while(|n| n.parse::<u64>().ok())
-            .zip(CTORS)
-            .map(|(n, d)| d(n))
-            .sum();
-
-        Self::Output {
-            duration: total,
-            tail: T::response(buf),
-        }
-    }
-}
-
-impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for ThumbnailRequest<T> {
-    type Output = Thumbnail<Y>;
-
-    fn response<S>(buf: &mut Vec<S>) -> Self::Output
-    where
-        S: AsRef<str>,
-    {
-        let i = buf.len().saturating_sub(1).saturating_sub(
-            buf.iter()
-                .rev()
-                .position(|e| e.as_ref().starts_with("http"))
-                .unwrap(),
-        );
-        Self::Output {
-            thumb: buf.remove(i).as_ref().to_string(),
-            tail: T::response(buf),
-        }
-    }
-}
-
-impl<L> IntoResponse for LinkRequest<'_, L> {
-    type Output = VidId;
-    fn response<S>(buf: &mut Vec<S>) -> Self::Output
-    where
-        S: AsRef<str>,
-    {
-        VidId(buf.pop().unwrap().as_ref().to_string())
-    }
-}
-
-pub trait Response: sealed::Sealed {
-    fn id(&self) -> &str;
-}
-
-impl<R: Response> Response for Title<R> {
-    fn id(&self) -> &str {
-        self.tail.id()
-    }
-}
-
-impl<R: Response> Response for Duration<R> {
-    fn id(&self) -> &str {
-        self.tail.id()
-    }
-}
-
-impl Response for VidId {
-    fn id(&self) -> &str {
-        &self.0
+impl<R: getters::GetThumbnail> Ytdl<R> {
+    pub fn thumbnail(&self) -> &str {
+        self.0.thumbnail()
     }
 }

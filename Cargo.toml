@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.3.47"
+version = "0.3.48"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -38,9 +38,10 @@ whoami.workspace = true
 members = ["mlib", "cli-daemon"]
 
 [workspace.dependencies]
-derive_more = "1"
 async_once = "0.2.6"
+base64 = "0.22"
 cli-daemon = { path = "./cli-daemon" }
+derive_more = "1"
 dirs = "5.0.1"
 futures-util = "0.3.30"
 memchr = "2.7.2"
@@ -48,12 +49,13 @@ once_cell = "1.19.0"
 regex = "1.10.4"
 serde = { version = "1.0.202", features = ["derive"] }
 serde_json = "1.0.117"
+static_assertions = "1.1.0"
 tempfile = "3.10.1"
 tokio-stream = { version = "0.1.15", features = ["io-util"] }
 tracing = "0.1.40"
 tracing-log = "0.2.0"
+trait-gen = "0.3.2"
 whoami = "1.5.1"
-base64 = "0.22"
 
 [workspace.dependencies.tokio]
 version = "1.37.0"

@@ -1398,7 +1398,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -1455,7 +1455,7 @@ checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
 name = "m"
-version = "0.3.47"
+version = "0.3.48"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1555,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.9.5"
+version = "0.9.6"
 dependencies = [
  "arc-swap",
  "async_once",
@@ -1580,6 +1580,7 @@ dependencies = [
  "serde",
  "serde-map-to-array",
  "serde_json",
+ "static_assertions",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1587,6 +1588,7 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
+ "trait-gen",
  "url",
  "whoami",
  "zbus",
@@ -2070,6 +2072,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d37c51ca738a55da99dc0c4a34860fd675453b8b36209178c2249bb13651284"
 dependencies = [
  "toml_edit 0.21.1",
+]
+
+[[package]]
+name = "proc-macro-error"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
+dependencies = [
+ "proc-macro-error-attr",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "version_check",
+]
+
+[[package]]
+name = "proc-macro-error-attr"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "version_check",
 ]
 
 [[package]]
@@ -2931,6 +2957,18 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "trait-gen"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54f6a8162ff4155b3270c94a3fe01334b708a33398543c12584461430b01715f"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

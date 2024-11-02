@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.9.5"
+version = "0.9.6"
 edition = "2021"
 
 [dependencies]
@@ -27,10 +27,12 @@ regex.workspace = true
 serde = { workspace = true, features = ["derive"], optional = true }
 serde-map-to-array = { version = "1.1.1", features = ["std"], optional = true }
 serde_json = { workspace = true, optional = true }
+static_assertions = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { version = "1.0.61", optional = true }
 tokio-stream = { workspace = true, features = ["fs", "io-util"], optional = true }
 tracing = { workspace = true, optional = true }
+trait-gen = { workspace = true, optional = true }
 url = { version = "2.5.0", features = ["serde"] }
 whoami = { workspace = true, optional = true }
 zbus = { version = "4.2.1", default-features = false, optional = true, features = ["tokio"] }
@@ -61,6 +63,7 @@ ytdl = [
     "dep:thiserror",
     "dep:tokio",
     "dep:tokio-stream",
+    "dep:trait-gen",
 ]
 player = [
     "serde",

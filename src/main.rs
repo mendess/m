@@ -251,8 +251,18 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                                 }
                             }
                         }
-                        Link::Playlist(_) => {}
-                        Link::OtherPlatform(_) => {}
+                        Link::Playlist(link) => {
+                            tracing::warn!(?link, "donwloading playlists is not supported")
+                        }
+                        Link::Channel(link) => {
+                            tracing::warn!(?link, "donwloading channels is not supported")
+                        }
+                        Link::OtherPlatform(link) => {
+                            tracing::warn!(
+                                ?link,
+                                "donwloading from other platforms is not supported"
+                            )
+                        }
                     },
                     Item::File(_) => {}
                     Item::Search(_) => {}
@@ -358,14 +368,24 @@ pub struct SongQuery {
 
 impl SongQuery {
     pub async fn new(strings: Vec<String>) -> Self {
+        tracing::debug!(?strings, "parsing song query");
         let mut items = vec![];
         let mut words = vec![];
         for x in strings {
             match Link::try_from(x) {
-                Ok(l) => items.push(Item::Link(l)),
+                Ok(l) => {
+                    tracing::debug!(link = ?l, "found link");
+                    items.push(Item::Link(l))
+                }
                 Err(s) => match tokio::fs::metadata(&s).await {
-                    Ok(_) => items.push(Item::File(s.into())),
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => words.push(s),
+                    Ok(_) => {
+                        tracing::debug!(file = ?s, "found file");
+                        items.push(Item::File(s.into()))
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                        tracing::debug!(word = ?s, "using as search word");
+                        words.push(s)
+                    }
                     Err(e) => {
                         tracing::error!("error checking if {:?} was a path to a file: {:?}", s, e)
                     }

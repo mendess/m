@@ -5,27 +5,25 @@ use crate::{
     util::{dl_dir, selector::selector, with_video::with_video_env, DisplayEither, DurationFmt},
 };
 
-use std::{
-    collections::HashSet,
-    io::Write,
-    path::PathBuf,
-    pin::{pin, Pin},
-};
+use std::{collections::HashSet, io::Write, path::PathBuf, pin::pin};
 
 use anyhow::{bail, Context};
 use futures_util::{
     future::ready,
-    stream::{self, FuturesUnordered},
+    stream::{self, BoxStream, FuturesUnordered},
     Stream, StreamExt, TryStreamExt,
 };
 use itertools::Itertools;
 use mlib::{
-    item::{link::VideoLink, PlaylistLink},
+    item::{
+        link::{ChannelLink, VideoLink},
+        PlaylistLink,
+    },
     players::{self, error::MpvError, PlayerLink, SmartQueueOpts, SmartQueueSummary},
     playlist::Playlist,
     queue::{Current, Item, Queue},
     ytdl::YtdlBuilder,
-    Error, Search,
+    Error, Link, Search, VideoId,
 };
 use rand::{prelude::SliceRandom, rngs};
 use serde::Deserialize;
@@ -36,7 +34,7 @@ use tokio::{
     process::Command as Fork,
 };
 use tokio_stream::wrappers::LinesStream;
-use tracing::{debug, info_span, Instrument};
+use tracing::debug;
 
 pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
     if link {
@@ -550,61 +548,59 @@ fn get_clipboard_contents() -> anyhow::Result<String> {
 }
 
 fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item = Item> {
-    fn expand_playlist(l: &'_ PlaylistLink) -> Result<impl Stream<Item = VideoLink>, Error> {
-        Result::<_, Error>::Ok(
-            YtdlBuilder::new(l)
-                .request_playlist()?
-                .filter_map(|r| async {
-                    match r {
-                        Ok(x) => Some(x),
-                        Err(e) => {
-                            crate::error!(
-                                "failed to parse playlist item when expanding playlist: {:?}",
-                                e
-                            );
-                            None
-                        }
+    use mlib::ytdl::YtdlStream;
+
+    async fn expand(
+        stream: YtdlStream<Box<VideoId>>,
+    ) -> Result<Option<BoxStream<'static, Item>>, Error> {
+        let s = stream
+            .filter_map(|r| async {
+                match r {
+                    Ok(x) => Some(x),
+                    Err(e) => {
+                        crate::error!(
+                            "failed to parse playlist item when expanding playlist: {:?}",
+                            e
+                        );
+                        None
                     }
-                })
-                .map(|b| VideoLink::from_id(b.id())),
-        )
-    }
-
-    fn single(l: impl Into<Item>) -> Pin<Box<dyn Stream<Item = Item>>> {
-        Box::pin(stream::once(ready(l.into())))
-    }
-
-    async fn check_if_empty<S: Stream<Item = VideoLink> + 'static>(
-        s: S,
-    ) -> Option<Pin<Box<dyn Stream<Item = Item>>>> {
+                }
+            })
+            .map(|b| VideoLink::from_id(b.id()));
         let mut s = Box::pin(s.map(|l| Item::Link(l.into())).peekable());
         if s.as_mut().peek().await.is_none() {
             tracing::warn!("playlist is empty");
-            None
+            Ok(None)
         } else {
-            Some(s)
+            Ok(Some(s))
         }
+    }
+
+    async fn expand_playlist(
+        l: &'_ PlaylistLink,
+    ) -> Result<Option<BoxStream<'static, Item>>, Error> {
+        expand(YtdlBuilder::new(l).request_playlist()?).await
+    }
+
+    async fn expand_channel(l: &ChannelLink) -> Result<Option<BoxStream<'static, Item>>, Error> {
+        expand(YtdlBuilder::new(l).request_channel()?).await
+    }
+
+    fn single(l: impl Into<Item>) -> BoxStream<'static, Item> {
+        Box::pin(stream::once(ready(l.into())))
     }
 
     stream::iter(items)
         .then(move |i| async {
             let expanded = match &i {
-                Item::Link(l) => {
-                    if let Some(playlist) = l.as_playlist() {
-                        match expand_playlist(playlist) {
-                            Ok(s) => {
-                                check_if_empty(s)
-                                    .instrument(info_span!("expanding playlist", link = ?l))
-                                    .await
-                            }
-                            Err(_) => None,
-                        }
-                    } else {
-                        None
-                    }
-                }
+                Item::Link(l) => match l {
+                    Link::Playlist(l) => expand_playlist(l).await.ok(),
+                    Link::Channel(c) => expand_channel(c).await.ok(),
+                    _ => None,
+                },
                 _ => None,
-            };
+            }
+            .flatten();
             expanded.unwrap_or_else(|| single(i))
         })
         .flatten()

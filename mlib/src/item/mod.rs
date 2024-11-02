@@ -13,7 +13,7 @@ use std::{
 };
 
 use derive_more::derive::From;
-pub use link::{Link, PlaylistId, PlaylistLink, VideoId};
+pub use link::{ChannelLink, Link, PlaylistId, PlaylistLink, VideoId, VideoLink};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

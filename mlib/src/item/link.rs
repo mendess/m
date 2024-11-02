@@ -1,7 +1,7 @@
 use derive_more::derive::From;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, ffi::OsStr, fmt::Display, ops::Deref, str::FromStr};
+use std::{borrow::Cow, ops::Deref};
 use url::Url;
 
 pub trait IntoPlaylist {
@@ -12,11 +12,65 @@ pub trait IntoVideo {
     fn into_video(self) -> VideoLink;
 }
 
+pub trait Id {
+    const QUERY_PARAM: &'static str;
+
+    fn new(s: &str) -> &Self;
+
+    fn boxed(&self) -> Box<Self>;
+}
+
+macro_rules! impl_link {
+    ($($type:ty),*$(,)?) => {
+        $(
+            static_assertions::assert_impl_all!($type: TryFrom<url::Url, Error = url::Url>, AsRef<str>);
+
+            impl TryFrom<String> for $type {
+                type Error = String;
+                fn try_from(value: String) -> Result<Self, Self::Error> {
+                    value.parse().ok().and_then(|url| <Self as TryFrom<Url>>::try_from(url).ok()).ok_or(value)
+                }
+            }
+
+            impl std::fmt::Display for $type {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    let s: &str = self.as_ref();
+                    write!(f, "{s}")
+                }
+            }
+
+            impl AsRef<std::ffi::OsStr> for $type {
+                fn as_ref(&self) -> &std::ffi::OsStr {
+                    let s: &str = self.as_ref();
+                    s.as_ref()
+                }
+            }
+
+            impl ::std::str::FromStr for $type {
+                type Err = &'static str;
+
+                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                    Self::try_from(
+                            s
+                            .parse::<url::Url>()
+                            .map_err(|_| "not a valid url")?
+                        )
+                        .map_err(|_| ::std::concat!("not a valid ", ::std::stringify!($type)))
+                }
+            }
+        )*
+    };
+}
+
+impl_link!(Link, VideoLink, PlaylistLink, ChannelLink);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Link {
     Video(VideoLink),
     Playlist(PlaylistLink),
+    Channel(ChannelLink),
+    #[from(ignore)]
     OtherPlatform(url::Url),
 }
 
@@ -29,17 +83,11 @@ impl Link {
         Self::Playlist(PlaylistLink::from_id(id))
     }
 
-    pub fn from_url(s: Url) -> Self {
-        PlaylistLink::from_url(s)
-            .map(Self::Playlist)
-            .or_else(|s| VideoLink::from_url(s).map(Self::Video))
-            .unwrap_or_else(Self::OtherPlatform)
-    }
-
     pub fn video_id(&self) -> Option<&VideoId> {
         match self {
             Self::Video(l) => Some(l.id()),
             Self::Playlist(l) => l.video_id(),
+            Self::Channel(_) => None,
             Self::OtherPlatform(_) => None,
         }
     }
@@ -48,6 +96,7 @@ impl Link {
         match self {
             Self::Video(_) => None,
             Self::Playlist(l) => Some(l.id()),
+            Self::Channel(_) => None,
             Self::OtherPlatform(_) => None,
         }
     }
@@ -56,6 +105,7 @@ impl Link {
         match self {
             Self::Video(l) => l.as_str(),
             Self::Playlist(l) => l.as_str(),
+            Self::Channel(l) => l.as_str(),
             Self::OtherPlatform(url) => url.as_str(),
         }
     }
@@ -64,6 +114,7 @@ impl Link {
         match self {
             Self::Video(l) => l.into_string(),
             Self::Playlist(l) => l.into_string(),
+            Self::Channel(l) => l.into_string(),
             Self::OtherPlatform(url) => url.into(),
         }
     }
@@ -72,6 +123,7 @@ impl Link {
         match self {
             Self::Video(l) => Some(l),
             Self::Playlist(l) => l.as_video_link().ok(),
+            Self::Channel(_) => None,
             Self::OtherPlatform(_) => None,
         }
     }
@@ -80,7 +132,8 @@ impl Link {
         match self {
             Self::Video(l) => Ok(l),
             Self::Playlist(l) => l.into_video_link().map_err(Self::Playlist),
-            Self::OtherPlatform(url) => Err(Self::OtherPlatform(url)),
+            c @ Self::Channel(_) => Err(c),
+            o @ Self::OtherPlatform(_) => Err(o),
         }
     }
 
@@ -88,6 +141,7 @@ impl Link {
         match self {
             Self::Video(_) => None,
             Self::Playlist(l) => Some(l),
+            Self::Channel(_) => None,
             Self::OtherPlatform(_) => None,
         }
     }
@@ -96,23 +150,21 @@ impl Link {
         match self {
             Self::Video(_) => None,
             Self::Playlist(l) => Some(l),
+            Self::Channel(_) => None,
             Self::OtherPlatform(_) => None,
         }
     }
 }
 
-impl FromStr for Link {
-    type Err = &'static str;
+impl TryFrom<Url> for Link {
+    type Error = Url;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse()
+    fn try_from(url: Url) -> Result<Self, Self::Error> {
+        PlaylistLink::try_from(url)
             .map(Self::Playlist)
-            .or_else(|_| s.parse().map(Self::Video))
-            .or_else(|_| {
-                s.parse()
-                    .map(Self::OtherPlatform)
-                    .map_err(|_| "invalid url")
-            })
+            .or_else(|url| VideoLink::try_from(url).map(Self::Video))
+            .or_else(|url| ChannelLink::try_from(url).map(Self::Channel))
+            .or_else(|url| Ok(Self::OtherPlatform(url)))
     }
 }
 
@@ -125,30 +177,9 @@ fn id_from_link<T: Id + ?Sized>(s: &Url) -> Option<&T> {
         })
 }
 
-impl Display for Link {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Video(v) => v.fmt(f),
-            Self::Playlist(v) => v.fmt(f),
-            Self::OtherPlatform(v) => v.fmt(f),
-        }
-    }
-}
-
-impl AsRef<OsStr> for Link {
-    fn as_ref(&self) -> &OsStr {
-        match self {
-            Self::Video(l) => l.as_ref(),
-            Self::Playlist(l) => l.as_ref(),
-            Self::OtherPlatform(url) => url.as_str().as_ref(),
-        }
-    }
-}
-
-impl TryFrom<String> for Link {
-    type Error = String;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Url::parse(&value).ok().map(Self::from_url).ok_or(value)
+impl AsRef<str> for Link {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
@@ -166,14 +197,6 @@ impl VideoLink {
 
     pub fn as_str(&self) -> &str {
         self.0.as_str()
-    }
-
-    pub fn from_url(s: Url) -> Result<Self, Url> {
-        if Self::is_video_link(&s) {
-            Ok(Self(s))
-        } else {
-            Err(s)
-        }
     }
 
     pub fn from_id(s: &VideoId) -> Self {
@@ -250,33 +273,21 @@ impl VideoLink {
     }
 }
 
-impl FromStr for VideoLink {
-    type Err = &'static str;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = Url::parse(s).map_err(|_| "not a url")?;
-        Self::from_url(url).map_err(|_| "not a video url")
+impl AsRef<str> for VideoLink {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
     }
 }
 
-impl Display for VideoLink {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0.as_str())
-    }
-}
+impl TryFrom<Url> for VideoLink {
+    type Error = Url;
 
-impl AsRef<OsStr> for VideoLink {
-    fn as_ref(&self) -> &OsStr {
-        self.0.as_str().as_ref()
-    }
-}
-
-impl TryFrom<String> for VideoLink {
-    type Error = String;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Url::parse(&value)
-            .ok()
-            .and_then(|url| Self::from_url(url).ok())
-            .ok_or(value)
+    fn try_from(s: Url) -> Result<Self, Self::Error> {
+        if Self::is_video_link(&s) {
+            Ok(Self(s))
+        } else {
+            Err(s)
+        }
     }
 }
 
@@ -320,6 +331,11 @@ impl Id for VideoId {
     fn new(s: &str) -> &Self {
         unsafe { std::mem::transmute(s) }
     }
+
+    fn boxed(&self) -> Box<Self> {
+        let b: Box<str> = Box::from(self.as_str());
+        unsafe { std::mem::transmute(b) }
+    }
 }
 
 /*
@@ -337,16 +353,6 @@ impl PlaylistLink {
     // fn is_playlist_link(s: &str) -> bool {
     //     s.starts_with("http") && s.contains(Self::QUERY_PARAM)
     // }
-
-    pub fn from_url(s: Url) -> Result<Self, Url> {
-        if s.scheme().starts_with("http")
-            && s.query_pairs().any(|(k, _)| k == PlaylistId::QUERY_PARAM)
-        {
-            Ok(Self(s))
-        } else {
-            Err(s)
-        }
-    }
 
     pub fn from_id(s: &PlaylistId) -> Self {
         let mut base = Url::parse("https://youtube.com/playlist").unwrap();
@@ -388,7 +394,7 @@ impl PlaylistLink {
     }
 
     pub fn into_video_link(self) -> Result<VideoLink, Self> {
-        VideoLink::from_url(self.0).map_err(Self)
+        VideoLink::try_from(self.0).map_err(Self)
     }
 
     pub fn as_video_link(&self) -> Result<&VideoLink, &Self> {
@@ -400,33 +406,22 @@ impl PlaylistLink {
     }
 }
 
-impl FromStr for PlaylistLink {
-    type Err = &'static str;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = Url::parse(s).map_err(|_| "not a url")?;
-        Self::from_url(url).map_err(|_| "invalid playlist link")
+impl AsRef<str> for PlaylistLink {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
-impl Display for PlaylistLink {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0.as_str())
-    }
-}
-
-impl AsRef<OsStr> for PlaylistLink {
-    fn as_ref(&self) -> &OsStr {
-        self.0.as_str().as_ref()
-    }
-}
-
-impl TryFrom<String> for PlaylistLink {
-    type Error = String;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Url::parse(&value)
-            .ok()
-            .and_then(|url| Self::from_url(url).ok())
-            .ok_or(value)
+impl TryFrom<Url> for PlaylistLink {
+    type Error = Url;
+    fn try_from(s: Url) -> Result<Self, Self::Error> {
+        if s.scheme().starts_with("http")
+            && s.query_pairs().any(|(k, _)| k == PlaylistId::QUERY_PARAM)
+        {
+            Ok(Self(s))
+        } else {
+            Err(s)
+        }
     }
 }
 
@@ -452,6 +447,11 @@ impl Id for PlaylistId {
     fn new(s: &str) -> &Self {
         unsafe { std::mem::transmute(s) }
     }
+
+    fn boxed(&self) -> Box<Self> {
+        let b: Box<str> = Box::from(self.as_str());
+        unsafe { std::mem::transmute(b) }
+    }
 }
 
 impl Deref for PlaylistId {
@@ -462,10 +462,41 @@ impl Deref for PlaylistId {
     }
 }
 
-pub(crate) trait Id {
-    const QUERY_PARAM: &'static str;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct ChannelLink(Url);
 
-    fn new(s: &str) -> &Self;
+impl ChannelLink {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn into_string(self) -> String {
+        self.0.into()
+    }
+}
+
+impl AsRef<str> for ChannelLink {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl TryFrom<Url> for ChannelLink {
+    type Error = Url;
+    fn try_from(s: Url) -> Result<Self, Self::Error> {
+        if s.scheme().starts_with("http")
+            && s.path()
+                .split('/')
+                .nth(1)
+                .is_some_and(|s| s.starts_with('@'))
+        {
+            Ok(Self(s))
+        } else {
+            Err(s)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -479,7 +510,7 @@ mod test {
         const AFTER: &str =
             "https://www.youtube.com/playlist?list=PL17PSucW5L7nEPyX3tqEzq_wmyYk2IkXr";
 
-        let playlist_link = PlaylistLink::from_url(BEFORE.parse().unwrap())
+        let playlist_link = PlaylistLink::try_from(BEFORE.to_string())
             .unwrap()
             .without_video_id();
         assert_eq!(AFTER, playlist_link.as_str());
