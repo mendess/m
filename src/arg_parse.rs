@@ -51,8 +51,8 @@ pub enum Command {
         #[arg(short, long)]
         notify: bool,
         /// Print the filename/link instead
-        #[arg(short = 'i', long)]
-        link: bool,
+        #[arg(short = 'i', long, action = clap::ArgAction::Count)]
+        link: u8,
     },
 
     /// Shows lyrics for the current song

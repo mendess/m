@@ -36,20 +36,42 @@ use tokio::{
 use tokio_stream::wrappers::LinesStream;
 use tracing::debug;
 
-pub async fn current(link: bool, notify: bool) -> anyhow::Result<()> {
-    if link {
-        let link = Queue::link(PlayerLink::current())
-            .await
-            .context("loading the queue to fetch the link")?;
-        tracing::debug!("{:?}", link);
-        notify!("{}", link);
-        return Ok(());
-    }
-    let current = Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
-        .await
-        .context("loading the current queue")?;
+pub enum CurrentDisplayMode {
+    Default,
+    Link,
+    LinkId,
+}
 
-    display_current(&current, notify).await
+pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<()> {
+    match mode {
+        CurrentDisplayMode::Default => {
+            let current =
+                Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
+                    .await
+                    .context("loading the current queue")?;
+
+            display_current(&current, notify).await
+        }
+        CurrentDisplayMode::Link | CurrentDisplayMode::LinkId => {
+            let link = Queue::link(PlayerLink::current())
+                .await
+                .context("loading the queue to fetch the link")?;
+            tracing::debug!("{:?}", link);
+            match mode {
+                CurrentDisplayMode::Default => unreachable!(),
+                CurrentDisplayMode::Link => notify!("{}", link),
+                CurrentDisplayMode::LinkId => {
+                    notify!(
+                        "{}",
+                        link.id()
+                            .ok_or_else(|| anyhow::anyhow!("no id for this video"))?
+                            .as_str()
+                    )
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<()> {

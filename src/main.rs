@@ -141,7 +141,17 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 links.for_each(|_| ready(())).await;
             }
         }
-        Command::Current { link, notify } => queue_ctl::current(link, notify).await?,
+        Command::Current { link, notify } => {
+            queue_ctl::current(
+                match link {
+                    0 => queue_ctl::CurrentDisplayMode::Default,
+                    1 => queue_ctl::CurrentDisplayMode::Link,
+                    _ => queue_ctl::CurrentDisplayMode::LinkId,
+                },
+                notify,
+            )
+            .await?
+        }
         Command::Now(a) => queue_ctl::now(a).await?,
         Command::CleanDownloads => {
             let ids = PlaylistIds::load().await?;
