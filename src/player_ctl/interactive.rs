@@ -138,9 +138,9 @@ async fn current_position() -> Option<PlaybackPosition> {
     })
 }
 
-async fn event_listener() -> impl Stream<Item = UiUpdate> {
-    let event_stream = players::subscribe().await.unwrap();
-    event_stream
+async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players::Error> {
+    let event_stream = players::subscribe().await?;
+    Ok(event_stream
         .filter_map(|r| ready(r.ok()))
         .filter_map(|ev| async move {
             match ev.event {
@@ -184,7 +184,7 @@ async fn event_listener() -> impl Stream<Item = UiUpdate> {
                 },
                 _ => None,
             }
-        })
+        }))
 }
 
 pub async fn interactive() -> anyhow::Result<()> {
@@ -193,7 +193,7 @@ pub async fn interactive() -> anyhow::Result<()> {
     crate::notify!("Loading....");
     let mut input_task = pin!(input_task());
     let mut ui_task = pin!(async {
-        let mut event_listener = pin!(event_listener().await);
+        let mut event_listener = pin!(event_listener().await?);
         let mut current =
             Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
                 .await
@@ -254,10 +254,11 @@ pub async fn interactive() -> anyhow::Result<()> {
                 Ok(None) => {}
             }
         }
+        Ok::<_, anyhow::Error>(())
     });
     tokio::select! {
         _ = &mut input_task => {}
-        _ = &mut ui_task => {}
+        r = &mut ui_task => r?,
     }
     Ok(())
 }
