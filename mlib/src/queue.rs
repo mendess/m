@@ -253,11 +253,13 @@ pub struct Current {
 }
 
 fn slice_queue(mut queue: Vec<QueueItem>, at_most: usize) -> (Vec<SongIdent>, usize, bool) {
-    let (mut current_idx, st) = queue
+    let Some((mut current_idx, st)) = queue
         .iter()
         .enumerate()
         .find_map(|(idx, item)| item.status.map(|st| (idx, st)))
-        .unwrap();
+    else {
+        return (vec![], 0, false);
+    };
 
     let mut start_index = current_idx.saturating_sub(at_most / 5);
     current_idx -= start_index; // start index is the new base, so current_idx has to become
