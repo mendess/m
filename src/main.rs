@@ -411,46 +411,48 @@ async fn search_params_to_items(
     search: bool,
     category: Option<String>,
 ) -> anyhow::Result<Vec<Item>> {
-    let SongQuery { mut items, words } = {
-        tracing::debug!(?what, "parsing query");
-        let mut query = SongQuery::new(what).await;
-        if let Some(cat) = category {
-            let cat = &cat;
-            let cat_items = Playlist::stream()
-                .await?
-                .filter_map(|s| async { s.ok() })
-                .filter_map(|s| async move {
-                    s.categories
-                        .iter()
-                        .any(|c| c.contains(cat))
-                        .then_some(s.link)
-                })
-                .map(Link::Video)
-                .map(Item::Link)
-                .collect::<Vec<_>>()
-                .await;
-            query.items.extend(cat_items);
-            query.items.shuffle(&mut rand::rngs::OsRng);
-        }
-        tracing::debug!(?query, "created song query");
-        query
-    };
-    let link = if words.is_empty() {
-        return Ok(items);
-    } else if search {
-        Item::Search(Search::new(words.join(" ")))
-    } else {
-        Item::Link(
-            handle_search_result(
-                Playlist::load()
-                    .await?
-                    .partial_name_search_mut(words.iter().map(String::as_str)),
-            )?
-            .delete()
-            .link
-            .into(),
-        )
-    };
-    items.push(link);
+    tracing::debug!(?what, "parsing query");
+
+    let SongQuery { mut items, words } = SongQuery::new(what).await;
+
+    if let Some(cat) = category {
+        let cat = &cat;
+        let cat_items = Playlist::stream()
+            .await?
+            .filter_map(|s| async { s.ok() })
+            .filter_map(|s| async move {
+                s.categories
+                    .iter()
+                    .any(|c| c.contains(cat))
+                    .then_some(s.link)
+            })
+            .map(Link::Video)
+            .map(Item::Link)
+            .collect::<Vec<_>>()
+            .await;
+        items.extend(cat_items);
+        items.shuffle(&mut rand::rngs::OsRng);
+    }
+
+    if !words.is_empty() {
+        let link = if search {
+            Item::Search(Search::new(words.join(" ")))
+        } else {
+            Item::Link(
+                handle_search_result(
+                    Playlist::load()
+                        .await?
+                        .partial_name_search_mut(words.iter().map(String::as_str)),
+                )?
+                .delete()
+                .link
+                .into(),
+            )
+        };
+        items.push(link);
+    }
+    if items.is_empty() {
+        anyhow::bail!("no arguments passed")
+    }
     Ok(items)
 }
