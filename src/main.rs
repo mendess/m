@@ -300,9 +300,10 @@ async fn run() -> anyhow::Result<()> {
         Ok(args) => args,
         Err(e) => {
             if let SessionKind::Gui = SessionKind::current().await {
-                error!("Invalid arguments"; content: "{:?}", e)
+                anyhow::bail!("{e}")
+            } else {
+                e.exit()
             }
-            e.exit()
         }
     };
     if let Some(id) = args.socket {

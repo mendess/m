@@ -268,7 +268,7 @@ where
                 events.enable_event(events::mpv_event_id::StartFile)?;
                 let mut first_event = true;
                 loop {
-                    let Some(ev) = events.wait_event(-1.0) else {
+                    let Some(ev) = events.wait_event(-1. /* never timeout */) else {
                         tracing::debug!("got none event");
                         continue;
                     };

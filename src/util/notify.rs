@@ -190,13 +190,11 @@ impl<'path> Notify<'path> {
                     cmd.arg(img);
                 }
                 cmd.args(["-a", "m"]);
-                cmd.arg(format!(
-                    "{}{}",
-                    if self.error { "Error: " } else { "" },
+                cmd.arg(
                     triplets(&self.title.replace('\t', ""))
                         .map(|(s, _)| s)
-                        .collect::<String>()
-                ));
+                        .collect::<String>(),
+                );
                 if let Some(content) = &self.content {
                     cmd.arg(
                         triplets(
