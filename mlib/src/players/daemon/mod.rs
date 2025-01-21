@@ -1,3 +1,5 @@
+mod tasks;
+
 use std::{
     any::type_name,
     num::TryFromIntError,
@@ -731,7 +733,7 @@ async fn handle_messages(
     .map_err(From::from)
 }
 
-async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = PlayerEvent> {
+async fn event_stream(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = PlayerEvent> {
     let (current_default, events) = {
         let daemon = daemon.lock().await;
         (
@@ -768,28 +770,6 @@ async fn handle_events(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = 
 pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
     if let Some(builder) = super::connection::PLAYERS.build_daemon_process().await {
         let players = Arc::new(Mutex::new(PlayersDaemon::default()));
-        #[cfg(feature = "mpris")]
-        let signal_mpris_events = {
-            let players = players.clone();
-            // do it like this so that the await on the "new_with_all" function can't block this
-            // from calling "run_with_events".
-            async move {
-                use super::mpris::MprisPlayer;
-                match mpris_server::Server::new_with_all("m", MprisPlayer::new(players.clone()))
-                    .await
-                {
-                    Ok(server) => {
-                        super::mpris::signal_mpris_events(server, handle_events(players).await)
-                            .await
-                    }
-                    Err(e) => {
-                        tracing::error!(?e, "failed to initialize mpris server");
-                    }
-                };
-            }
-        };
-        #[cfg(not(feature = "mpris"))]
-        let signal_mpris_events = std::future::ready(());
         let run_with_events = builder.run_with_events(
             {
                 let players = players.clone();
@@ -797,19 +777,14 @@ pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
             },
             {
                 let players = players.clone();
-                move || handle_events(players)
+                move || event_stream(players)
             },
         );
-        #[cfg(feature = "statistics")]
-        let stats_task =
-            super::connection::register_statistics_listener(handle_events(players).await);
-        #[cfg(not(feature = "statistics"))]
-        let stats_task = std::future::ready(Ok::<_, super::Error>(()));
 
-        let (run_with_events, _, stats_task) =
-            join!(run_with_events, signal_mpris_events, stats_task);
+        let background_tasks = tasks::register_global_tasks(players);
+
+        let (run_with_events, _) = join!(run_with_events, background_tasks);
         run_with_events?;
-        stats_task?;
     }
     Ok(())
 }

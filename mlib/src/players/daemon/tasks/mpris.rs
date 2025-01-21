@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::players::daemon;
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use mpris_server::{
     builder::MetadataBuilder, LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface,
@@ -17,14 +18,14 @@ use crate::{
     Item,
 };
 
-use super::{event::PlayerEvent, Direction};
+use daemon::{event::PlayerEvent, Direction};
 
 pub struct MprisPlayer {
-    pub(super) daemon: Arc<Mutex<super::daemon::PlayersDaemon>>,
+    pub(super) daemon: Arc<Mutex<daemon::PlayersDaemon>>,
 }
 
 impl MprisPlayer {
-    pub(super) fn new(daemon: Arc<Mutex<super::daemon::PlayersDaemon>>) -> Self {
+    pub fn new(daemon: Arc<Mutex<daemon::PlayersDaemon>>) -> Self {
         Self { daemon }
     }
 }
@@ -219,10 +220,10 @@ impl PlayerInterface for MprisPlayer {
             .queue_is_looping(current)
             .map_err(to_fdo_err)
             .map(|status| match status {
-                super::LoopStatus::Inf | super::LoopStatus::Force | super::LoopStatus::N(_) => {
+                daemon::LoopStatus::Inf | daemon::LoopStatus::Force | daemon::LoopStatus::N(_) => {
                     LoopStatus::Playlist
                 }
-                super::LoopStatus::No => LoopStatus::None,
+                daemon::LoopStatus::No => LoopStatus::None,
             })
     }
 
@@ -599,7 +600,7 @@ impl TrackListInterface for MprisPlayer {
     }
 }
 
-pub(super) async fn signal_mpris_events<S>(server: mpris_server::Server<MprisPlayer>, events: S)
+pub async fn signal_mpris_events<S>(server: mpris_server::Server<MprisPlayer>, events: S)
 where
     S: Stream<Item = PlayerEvent>,
 {

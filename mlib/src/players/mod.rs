@@ -6,11 +6,8 @@ pub mod event;
 mod legacy_back_compat;
 #[cfg(feature = "player")]
 mod libmpv_parsing;
-#[cfg(feature = "mpris")]
-mod mpris;
 
-use core::fmt;
-use std::{io, ops::Deref, path::PathBuf, str::FromStr};
+use std::{fmt, io, ops::Deref, path::PathBuf, str::FromStr};
 
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};

@@ -70,6 +70,7 @@ player = [
     "player-connection",
 
     "dep:libmpv",
+    "dep:parking_lot",
     "tokio/io-util",
 ]
 player-connection = [
