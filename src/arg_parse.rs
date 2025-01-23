@@ -17,6 +17,8 @@ pub struct Args {
 
 #[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
 pub enum Command {
+    SetPlay,
+    SetPause,
     /// Toggle pause
     #[command(alias = "p")]
     Pause,
@@ -122,10 +124,14 @@ pub enum Command {
     ToggleVideo,
 
     /// Get all songs in the playlist, optionaly filtered by category
-    Songs { category: Option<String> },
+    Songs {
+        category: Option<String>,
+    },
 
     /// Save the playlist to a file to be restored later
-    Dump { file: PathBuf },
+    Dump {
+        file: PathBuf,
+    },
 
     /// Load a file of songs to play
     Load {
@@ -151,11 +157,15 @@ pub enum Command {
     },
 
     /// Info
-    Info { song: Vec<String> },
+    Info {
+        song: Vec<String>,
+    },
 
     /// Generate auto complete script
     #[serde(skip)]
-    AutoComplete { shell: Shell },
+    AutoComplete {
+        shell: Shell,
+    },
 
     /// Just download the missing songs
     Download {

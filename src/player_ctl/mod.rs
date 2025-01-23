@@ -9,12 +9,20 @@ use mlib::{players, queue::Queue};
 
 use crate::{chosen_index, notify};
 
+pub async fn resume() -> anyhow::Result<()> {
+    Ok(chosen_index().resume().await?)
+}
+
+pub async fn pause() -> anyhow::Result<()> {
+    Ok(chosen_index().pause().await?)
+}
+
 pub async fn quit() -> anyhow::Result<()> {
     Ok(chosen_index().quit().await?)
 }
 
 /// cycle pause
-pub async fn pause() -> anyhow::Result<()> {
+pub async fn cycle_pause() -> anyhow::Result<()> {
     Ok(chosen_index().cycle_pause().await?)
 }
 

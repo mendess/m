@@ -132,6 +132,7 @@ enum MessageKind {
     // actions
     CyclePause,
     Pause,
+    Resume,
     QueueClear,
     LoadFile { item: Item },
     LoadList { path: PathBuf },
@@ -404,6 +405,7 @@ commands! {
     cycle_pause as CyclePause;
     /// Pause the player.
     pause as Pause;
+    resume as Resume;
     /// Clears the queue, except for the currently playing song.
     queue_clear as QueueClear;
     /// Adds a file to the queue.

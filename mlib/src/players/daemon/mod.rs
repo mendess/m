@@ -281,7 +281,6 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    #[cfg(feature = "mpris")]
     pub(super) async fn resume(&self, index: PlayerIndex) -> MpvResult<()> {
         self.current_player(index)?.unpause()?;
         Ok(())
@@ -672,6 +671,7 @@ async fn handle_messages(
         )),
         MessageKind::CyclePause => call!(players.cycle_pause(index)),
         MessageKind::Pause => call!(players.pause(index)),
+        MessageKind::Resume => call!(players.resume(index)),
         MessageKind::QueueClear => call!(players.queue_clear(index)),
         MessageKind::LoadFile { item } => call!(players.load_file(index, item)),
         MessageKind::LoadList { path } => call!(players.load_list(index, path)),

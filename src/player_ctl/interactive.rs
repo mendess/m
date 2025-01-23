@@ -97,7 +97,7 @@ async fn input_task() {
                 ..
             }) => {
                 let _ = match (c, modifiers) {
-                    ('p', _) => player_ctl::pause().await,
+                    ('p', _) => player_ctl::cycle_pause().await,
                     ('l', Mod::NONE) => player_ctl::next_file(1).await,
                     ('h', Mod::NONE) => player_ctl::prev_file(1).await,
                     ('j', Mod::NONE) => player_ctl::vd(2).await,
