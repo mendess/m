@@ -1,5 +1,7 @@
 use std::{
+    ffi::{OsStr, OsString},
     io,
+    os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -127,27 +129,77 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
     CheckCacheDecision::Skip
 }
 
-pub async fn download(dl_dir: PathBuf, link: &VideoLink, just_audio: bool) -> Result<(), Error> {
+pub struct GetDlPath<'v> {
+    output_format: PathBuf,
+    link: &'v VideoLink,
+}
+
+impl GetDlPath<'_> {
+    pub async fn get(&self) -> Result<PathBuf, Error> {
+        let o = OsStr::new;
+        let mut output = Command::new("youtube-dl")
+            .args([
+                o("-o"),
+                self.output_format.as_os_str(),
+                o("--add-metadata"),
+                o(self.link.as_str()),
+                o("--print"),
+                o("filename"),
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?
+            .wait_with_output()
+            .await?;
+        if output.status.success() {
+            while output.stdout.last() == Some(&b'\n') {
+                output.stdout.pop();
+            }
+            Ok(PathBuf::from(OsString::from_vec(output.stdout)))
+        } else {
+            Err(YtdlError::NonZeroStatus {
+                status_code: output.status,
+                stderr: String::from_utf8(output.stderr)
+                    .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
+            }
+            .into())
+        }
+    }
+}
+
+pub async fn download(
+    dl_dir: PathBuf,
+    link: &VideoLink,
+    just_audio: bool,
+) -> Result<GetDlPath<'_>, Error> {
+    tokio::fs::create_dir_all(&dl_dir).await?;
     let mut output_format = dl_dir;
     output_format.push("%(title)s=%(id)s=m.%(ext)s");
     let mut cmd = Command::new("youtube-dl");
     if just_audio {
         cmd.arg("-x");
     }
-    let output = cmd
+    let o = OsStr::new;
+    let mut output = cmd
         .args([
-            "-o",
-            &*output_format.to_string_lossy(),
-            "--add-metadata",
-            link.as_str(),
+            o("-o"),
+            output_format.as_os_str(),
+            o("--add-metadata"),
+            o(link.as_str()),
         ])
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?
         .wait_with_output()
         .await?;
     if output.status.success() {
-        Ok(())
+        while output.stdout.last() == Some(&b'\n') {
+            output.stdout.pop();
+        }
+        Ok(GetDlPath {
+            output_format,
+            link,
+        })
     } else {
         Err(YtdlError::NonZeroStatus {
             status_code: output.status,

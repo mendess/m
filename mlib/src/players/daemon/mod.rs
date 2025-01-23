@@ -3,7 +3,6 @@ mod tasks;
 use std::{
     any::type_name,
     num::TryFromIntError,
-    ops::Deref,
     path::PathBuf,
     sync::{Arc, OnceLock},
     time::{Duration, SystemTime},
@@ -13,11 +12,10 @@ use futures_util::{join, stream, Stream, StreamExt};
 use libmpv::{FileState, GetData, Mpv, MpvNode};
 use regex::Regex;
 use tokio::sync::{broadcast, watch, Mutex};
-use tracing::Instrument;
 
 use crate::players::event::event_listener;
 use crate::{
-    players::{error::MpvError, event::OwnedLibMpvEvent, legacy_socket_for, MessageKind},
+    players::{error::MpvError, legacy_socket_for, MessageKind},
     Item,
 };
 
@@ -28,36 +26,42 @@ use super::{
     Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
 };
 
-#[derive(Default)]
-struct Players {
-    players: Vec<Option<Player>>,
-}
+// make fields mod private
+use players::Players;
+mod players {
+    use super::*;
+    #[derive(Default)]
+    pub struct Players {
+        players: Vec<Option<Arc<Player>>>,
+    }
 
-impl Players {
-    async fn add(&mut self, player: Player) -> usize {
-        for (i, slot) in self.players.iter_mut().enumerate() {
-            if slot.is_none() {
-                *slot = Some(player);
-                return i;
+    impl Players {
+        pub fn add(&mut self, player: Arc<Player>) -> usize {
+            for (i, slot) in self.players.iter_mut().enumerate() {
+                if slot.is_none() {
+                    *slot = Some(player);
+                    return i;
+                }
             }
+            self.players.push(Some(player));
+            self.players.len() - 1
         }
-        self.players.push(Some(player));
-        self.players.len() - 1
-    }
 
-    async fn quit(&mut self, index: usize) -> Option<Player> {
-        self.players.get_mut(index).and_then(Option::take)
-    }
+        pub fn quit(&mut self, index: usize) -> Option<Arc<Player>> {
+            self.players.get_mut(index).and_then(Option::take)
+        }
 
-    fn get_mut(&mut self, index: usize) -> Option<&mut Player> {
-        self.players.get_mut(index).and_then(|p| p.as_mut())
-    }
-}
+        pub fn get(&self, index: usize) -> Option<&Player> {
+            self.players.get(index).and_then(|p| p.as_deref())
+        }
 
-impl Deref for Players {
-    type Target = [Option<Player>];
-    fn deref(&self) -> &Self::Target {
-        &self.players
+        pub fn iter(&self) -> impl Iterator<Item = Option<&Player>> {
+            self.players.iter().map(|p| p.as_deref())
+        }
+
+        pub fn len(&self) -> usize {
+            self.players.len()
+        }
     }
 }
 
@@ -66,12 +70,14 @@ pub(super) struct PlayersDaemon {
     players: Players,
 }
 
+type SharedPlayersDaemon = Arc<Mutex<PlayersDaemon>>;
+
 impl PlayersDaemon {
     fn subscribe_to_current(&self) -> Option<broadcast::Receiver<PlayerEvent>> {
         self.current_default
             .borrow()
-            .and_then(|i| self.players[i].as_ref())
-            .map(|p| p.events.subscribe())
+            .and_then(|i| self.players.get(i))
+            .map(|p| p.subscribe())
     }
 }
 
@@ -85,47 +91,136 @@ impl Default for PlayersDaemon {
     }
 }
 
-struct Player {
-    handle: Arc<Mpv>,
-    events: event::EventSubscriber,
-    last_queue: Option<(usize, SystemTime)>,
-}
+use player::{MpvExt, Player};
+mod player {
+    use super::*;
+    use libmpv::MpvNodeArrayIter;
+    use std::ops::Deref;
+    use tasks::preemptive_dl::PreemptiveDownload;
 
-impl Player {
-    fn new(handle: Arc<Mpv>, events: event::EventSubscriber) -> Self {
-        Self {
-            handle,
-            events,
-            last_queue: None,
+    pub struct Player {
+        handle: Arc<Mpv>,
+        events: event::EventSubscriber,
+        last_queue: parking_lot::Mutex<Option<(usize, SystemTime)>>,
+        pre_cacher: OnceLock<tasks::preemptive_dl::PreemptiveDownload>,
+    }
+
+    impl Player {
+        pub fn new(handle: Arc<Mpv>, events: event::EventSubscriber) -> Self {
+            Self {
+                handle,
+                events,
+                last_queue: parking_lot::Mutex::new(None),
+                pre_cacher: OnceLock::new(),
+            }
+        }
+
+        pub fn get_last_queue(&self) -> Option<usize> {
+            const THREE_HOURS: Duration = Duration::from_secs(60 * 60 * 3);
+
+            let mut last_queue = self.last_queue.lock();
+            match &*last_queue {
+                Some((idx, set)) => {
+                    if set.elapsed().unwrap_or_default() > THREE_HOURS {
+                        *last_queue = None;
+                        None
+                    } else {
+                        Some(*idx)
+                    }
+                }
+                None => None,
+            }
+        }
+
+        pub fn set_last_queue(&self, index: usize) {
+            *self.last_queue.lock() = Some((index, SystemTime::now()));
+        }
+
+        pub fn clear_last_queue(&self) {
+            *self.last_queue.lock() = None;
+        }
+
+        pub fn handle(&self) -> &Mpv {
+            &self.handle
+        }
+
+        pub fn subscribe(&self) -> broadcast::Receiver<PlayerEvent> {
+            self.events.subscribe()
+        }
+
+        pub fn preemptive_download(&self) -> &PreemptiveDownload {
+            self.pre_cacher
+                .get_or_init(|| PreemptiveDownload::new(Arc::downgrade(&self.handle)))
         }
     }
-}
 
-async fn last_queue_reseter(
-    mut events: broadcast::Receiver<PlayerEvent>,
-    players: Arc<Mutex<PlayersDaemon>>,
-) {
-    tracing::info!("starting");
-    let mut last_pos = 0;
-    while let Ok(e) = events.recv().await {
-        let OwnedLibMpvEvent::PropertyChange { name, change, .. } = e.event else {
-            continue;
-        };
-        if name != "playlist-pos" {
-            continue;
+    impl Deref for Player {
+        type Target = Mpv;
+        fn deref(&self) -> &Self::Target {
+            self.handle()
         }
-        let Ok(pos) = change.into_int() else {
-            continue;
-        };
-        if pos < last_pos {
-            let _ = players
-                .lock()
-                .await
-                .last_queue_clear(PlayerIndex::of(e.player_index));
-        }
-        last_pos = pos;
     }
-    tracing::info!("terminating");
+
+    pub trait MpvExt {
+        fn simple_prop<T: GetData>(&self, prop: &str) -> MpvResult<T>;
+        fn playlist(&self) -> MpvResult<PlaylistIntoIter>;
+    }
+
+    impl MpvExt for Mpv {
+        fn simple_prop<T: GetData>(&self, prop: &str) -> MpvResult<T> {
+            self.get_property::<T>(prop).map_err(|e| {
+                if let libmpv::Error::Raw(code) = e {
+                    use MpvErrorCode::*;
+                    const CODES: [MpvErrorCode; 4] = [
+                        PropertyNotFound,
+                        PropertyFormat,
+                        PropertyUnavailable,
+                        PropertyError,
+                    ];
+                    if CODES.iter().any(|c| *c as i32 == code) {
+                        tracing::error!("failed to get property {prop}: {code:x}");
+                    }
+                }
+                e.into()
+            })
+        }
+
+        fn playlist(&self) -> MpvResult<PlaylistIntoIter> {
+            let node = self.simple_prop::<MpvNode>("playlist")?;
+            node.to_array().ok_or_else(|| MpvError::InvalidData {
+                expected: type_name::<Vec<QueueItem>>().to_string(),
+                got: format!("{node:?}"),
+                error: "wrong node type".into(),
+            })?;
+            Ok(PlaylistIntoIter { node })
+        }
+    }
+
+    pub struct PlaylistIntoIter {
+        node: MpvNode,
+    }
+
+    pub struct PlaylistIter<'s> {
+        array: MpvNodeArrayIter<'s>,
+    }
+
+    impl<'s> IntoIterator for &'s PlaylistIntoIter {
+        type Item = MpvResult<QueueItem>;
+        type IntoIter = PlaylistIter<'s>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            Self::IntoIter {
+                array: self.node.to_array().unwrap(),
+            }
+        }
+    }
+
+    impl Iterator for PlaylistIter<'_> {
+        type Item = MpvResult<QueueItem>;
+        fn next(&mut self) -> Option<Self::Item> {
+            self.array.next().map(libmpv_parsing::parse_queue_item)
+        }
+    }
 }
 
 impl PlayersDaemon {
@@ -141,7 +236,7 @@ impl PlayersDaemon {
             .iter()
             .position(|slot| slot.is_none())
             .unwrap_or(this_ref.players.len());
-        let items = items
+        let prepared_items = items
             .iter()
             .flat_map(|i| match i.try_into() {
                 Ok(x) => Some(x),
@@ -169,7 +264,7 @@ impl PlayersDaemon {
             Ok(())
         })?);
 
-        let events = event_listener(mpv.clone(), index, {
+        let events = event_listener(Arc::downgrade(&mpv), index, {
             let this = this.clone();
             async move {
                 if let Err(e) = this.lock().await.quit(PlayerIndex::of(index)).await {
@@ -181,14 +276,19 @@ impl PlayersDaemon {
             }
         });
 
-        tokio::spawn(
-            last_queue_reseter(events.subscribe(), this)
-                .instrument(tracing::info_span!("queue wraparound reseter", index)),
-        );
+        let player = Arc::new(Player::new(mpv, events));
 
-        mpv.playlist_load_files(&items)?;
+        tokio::spawn(tasks::last_queue_monitor::reset(Arc::downgrade(&player)));
 
-        let index = this_ref.players.add(Player::new(mpv, events)).await;
+        player.handle().playlist_load_files(&prepared_items)?;
+
+        for i in items {
+            if let Item::Link(crate::Link::Video(video)) = i {
+                player.preemptive_download().song_queued(&video);
+            }
+        }
+
+        let index = this_ref.players.add(player);
         tracing::debug!("setting current default to {index}");
         this_ref.current_default.send_replace(Some(index));
         Ok(PlayerIndex::of(index))
@@ -214,51 +314,40 @@ impl PlayersDaemon {
     }
 
     pub(super) fn last_queue(&mut self, index: PlayerIndex) -> MpvResult<Option<usize>> {
-        const THREE_HOURS: Duration = Duration::from_secs(60 * 60 * 3);
-
         let pl = index
             .0
             .or_else(|| *self.current_default.borrow())
-            .and_then(|index| self.players.get_mut(index))
+            .and_then(|index| self.players.get(index))
             .ok_or(MpvError::NoMpvInstance)?;
 
-        let (idx, set) = match pl.last_queue.as_ref() {
-            Some(lq) => lq,
-            None => return Ok(None),
-        };
-        if set.elapsed().unwrap_or_default() > THREE_HOURS {
-            pl.last_queue = None;
-            Ok(None)
-        } else {
-            Ok(Some(*idx))
-        }
+        Ok(pl.get_last_queue())
     }
 
-    pub(super) fn last_queue_clear(&mut self, index: PlayerIndex) -> MpvResult<()> {
+    pub(super) fn last_queue_clear(&self, index: PlayerIndex) -> MpvResult<()> {
         let pl = index
             .0
             .or_else(|| *self.current_default.borrow())
-            .and_then(|index| self.players.get_mut(index))
+            .and_then(|index| self.players.get(index))
             .ok_or(MpvError::NoMpvInstance)?;
 
-        pl.last_queue = None;
+        pl.clear_last_queue();
 
         Ok(())
     }
 
-    pub(super) fn last_queue_set(&mut self, index: PlayerIndex, to: usize) -> MpvResult<()> {
+    pub(super) fn last_queue_set(&self, index: PlayerIndex, to: usize) -> MpvResult<()> {
         let pl = index
             .0
             .or_else(|| *self.current_default.borrow())
-            .and_then(|index| self.players.get_mut(index))
+            .and_then(|index| self.players.get(index))
             .ok_or(MpvError::NoMpvInstance)?;
 
-        pl.last_queue = Some((to, SystemTime::now()));
+        pl.set_last_queue(to);
 
         Ok(())
     }
 
-    pub(super) fn current_player(&self, index: PlayerIndex) -> MpvResult<&Mpv> {
+    pub(super) fn current_player(&self, index: PlayerIndex) -> MpvResult<&Player> {
         let index = index.0.or_else(|| {
             let index = *self.current_default.borrow();
             tracing::debug!("current player is {index:?}");
@@ -266,8 +355,6 @@ impl PlayersDaemon {
         });
         index
             .and_then(|i| self.players.get(i))
-            .and_then(|m| m.as_ref())
-            .map(|p| &*p.handle)
             .ok_or(MpvError::NoMpvInstance)
     }
 
@@ -294,16 +381,22 @@ impl PlayersDaemon {
     }
 
     pub(super) async fn queue_clear(&self, index: PlayerIndex) -> MpvResult<()> {
-        self.current_player(index)?.playlist_clear()?;
+        let player = self.current_player(index)?;
+        player.playlist_clear()?;
+        player.preemptive_download().stop_all();
         Ok(())
     }
 
     pub(super) async fn load_file(&self, index: PlayerIndex, item: Item) -> MpvResult<()> {
-        self.current_player(index)?.playlist_load_files(&[(
+        let player = self.current_player(index)?;
+        player.playlist_load_files(&[(
             (&item).try_into().map_err(|_| MpvError::InvalidUtf8)?,
             FileState::AppendPlay,
             None,
         )])?;
+        if let Item::Link(crate::Link::Video(video)) = item {
+            player.preemptive_download().song_queued(&video);
+        }
         Ok(())
     }
 
@@ -337,21 +430,21 @@ impl PlayersDaemon {
                 }
             }
         }
-        #[cfg(feature = "statistics")]
-        let queue = match self.queue(index).await {
-            Ok(playlist) => Some(playlist),
-            Err(e) => {
-                tracing::error!(error = ?e, "failed to record statistics for skipped songs");
-                None
-            }
-        };
+
+        let item = player.simple_prop::<String>("path").map(Item::from);
+
         player.playlist_remove_index(to_remove)?;
-        #[cfg(feature = "statistics")]
-        if let Some(mut queue) = queue {
-            let item = queue.remove(to_remove);
-            if let Err(e) = crate::statistics::dequeued_song(Item::from(item.filename)).await {
-                tracing::error!(error = ?e, "failed to record statistics for skipped songs");
+
+        match item {
+            Ok(item) => {
+                if let Item::Link(crate::Link::Video(video)) = &item {
+                    player.preemptive_download().song_dequeued(video);
+                }
+                if let Err(e) = crate::statistics::dequeued_song(item).await {
+                    tracing::error!(error = ?e, "failed to record statistics for skipped songs");
+                }
             }
+            Err(e) => tracing::error!(error = ?e, "failed to get path property"),
         }
         Ok(())
     }
@@ -377,11 +470,7 @@ impl PlayersDaemon {
             .or_else(|| *self.current_default.borrow())
             .ok_or(MpvError::NoMpvInstance)?;
 
-        let player = self
-            .players
-            .quit(index)
-            .await
-            .ok_or(MpvError::NoMpvInstance)?;
+        let player = self.players.quit(index).ok_or(MpvError::NoMpvInstance)?;
 
         self.current_default.send_if_modified(|cur| {
             if *cur == Some(index) {
@@ -390,14 +479,14 @@ impl PlayersDaemon {
                     .iter()
                     .enumerate()
                     .skip(index)
-                    .chain(self.players[0..index].iter().enumerate())
+                    .chain(self.players.iter().enumerate().take(index))
                     .find_map(|(i, p)| p.as_ref().map(|_| i));
                 true
             } else {
                 false
             }
         });
-        player.handle.command("quit", &[])?;
+        player.handle().command("quit", &[])?;
 
         Ok(())
     }
@@ -528,7 +617,7 @@ impl PlayersDaemon {
     }
 
     fn simple_prop<T: GetData>(&self, index: PlayerIndex, prop: &str) -> MpvResult<T> {
-        simple_prop_logged(self.current_player(index)?, prop)
+        self.current_player(index)?.simple_prop(prop)
     }
 
     pub(super) async fn filename(&self, index: PlayerIndex) -> MpvResult<String> {
@@ -555,15 +644,10 @@ impl PlayersDaemon {
     }
 
     pub(super) async fn queue(&self, index: PlayerIndex) -> MpvResult<Vec<QueueItem>> {
-        let node = self.simple_prop::<MpvNode>(index, "playlist")?;
-        node.to_array()
-            .ok_or_else(|| MpvError::InvalidData {
-                expected: type_name::<Vec<QueueItem>>().to_string(),
-                got: format!("{node:?}"),
-                error: "wrong node type".into(),
-            })?
-            .map(libmpv_parsing::parse_queue_item)
-            .collect::<Result<Vec<_>, _>>()
+        self.current_player(index)?
+            .playlist()?
+            .into_iter()
+            .collect()
     }
 
     pub(super) fn queue_is_looping(&self, player: &Mpv) -> MpvResult<LoopStatus> {
@@ -634,7 +718,7 @@ fn simple_prop_logged<T: GetData>(mpv: &Mpv, prop: &str) -> MpvResult<T> {
 
 async fn handle_messages(
     Message { index, kind }: Message,
-    players: Arc<Mutex<PlayersDaemon>>,
+    players: SharedPlayersDaemon,
 ) -> MpvResult<Response> {
     macro_rules! call {
         ($pl:ident.$method:ident($($param:expr),*$(,)?)) => {
@@ -733,7 +817,7 @@ async fn handle_messages(
     .map_err(From::from)
 }
 
-async fn event_stream(daemon: Arc<Mutex<PlayersDaemon>>) -> impl Stream<Item = PlayerEvent> {
+async fn event_stream(daemon: SharedPlayersDaemon) -> impl Stream<Item = PlayerEvent> {
     let (current_default, events) = {
         let daemon = daemon.lock().await;
         (
