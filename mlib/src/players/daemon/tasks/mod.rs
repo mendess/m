@@ -1,14 +1,14 @@
-use super::PlayersDaemon;
+use super::SharedPlayersDaemon;
 use futures_util::join;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
+pub mod last_queue_monitor;
 #[cfg(feature = "mpris")]
 pub mod mpris;
+pub mod preemptive_dl;
 #[cfg(feature = "statistics")]
 pub mod statistics;
 
-pub async fn register_global_tasks(players: Arc<Mutex<PlayersDaemon>>) {
+pub async fn register_global_tasks(players: SharedPlayersDaemon) {
     #[cfg(feature = "mpris")]
     let signal_mpris_events = {
         let players = players.clone();

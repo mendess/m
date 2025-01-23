@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    sync::Arc,
-};
+use std::collections::{hash_map::Entry, HashMap};
 
 use crate::players::daemon;
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
@@ -10,7 +7,6 @@ use mpris_server::{
     Playlist, PlaylistId, PlaylistOrdering, PlaylistsInterface, RootInterface, Time, TrackId,
     TrackListInterface, Uri, Volume,
 };
-use tokio::sync::Mutex;
 use zbus::fdo;
 
 use crate::{
@@ -21,11 +17,11 @@ use crate::{
 use daemon::{event::PlayerEvent, Direction};
 
 pub struct MprisPlayer {
-    pub(super) daemon: Arc<Mutex<daemon::PlayersDaemon>>,
+    pub(super) daemon: daemon::SharedPlayersDaemon,
 }
 
 impl MprisPlayer {
-    pub fn new(daemon: Arc<Mutex<daemon::PlayersDaemon>>) -> Self {
+    pub fn new(daemon: daemon::SharedPlayersDaemon) -> Self {
         Self { daemon }
     }
 }

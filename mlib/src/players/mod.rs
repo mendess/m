@@ -361,7 +361,6 @@ impl PlayerLink {
             // TODO: this entire logic needs some refactoring
             // there are a lot of edge cases
             // - the queue might have shrunk since the last time we queued
-            // - the queue might have looped around
 
             tracing::debug!("current position: {}", current);
             let mut target = (current + 1) % count;

@@ -9,7 +9,7 @@ use libmpv::{
     Format, Mpv, MpvNode, MpvNodeValue,
 };
 #[cfg(feature = "player")]
-use std::{future::Future, sync::Arc, thread, time::Duration};
+use std::{future::Future, sync::Weak, thread, time::Duration};
 #[cfg(feature = "player")]
 use tokio::sync::broadcast;
 
@@ -244,7 +244,7 @@ impl EventSubscriber {
 }
 
 #[cfg(feature = "player")]
-pub(super) fn event_listener<S>(mpv: Arc<Mpv>, player_index: usize, shutdown: S) -> EventSubscriber
+pub(super) fn event_listener<S>(mpv: Weak<Mpv>, player_index: usize, shutdown: S) -> EventSubscriber
 where
     S: Future<Output = ()> + Send + 'static,
 {
@@ -254,6 +254,9 @@ where
         move || {
             let task = move || -> MpvResult<()> {
                 thread::sleep(Duration::from_secs_f32(0.5));
+                let Some(mpv) = mpv.upgrade() else {
+                    return Ok(());
+                };
                 let mut events = mpv.create_event_context();
                 tracing::debug!(?player_index, "setting up event listener");
                 events.observe_property("filename", Format::String, 0)?;
@@ -300,6 +303,7 @@ where
                     });
                     first_event = false;
                 }
+                drop(mpv);
                 let _ = tx.send(PlayerEvent {
                     player_index,
                     event: Event::Shutdown.into(),
