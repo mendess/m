@@ -37,7 +37,7 @@ async fn do_it(cache_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
             return;
         };
         static UPDATE_QUEUE_SEMAPHORE: Semaphore = Semaphore::const_new(1);
-        let _permit = UPDATE_QUEUE_SEMAPHORE.acquire().await;
+        let permit = UPDATE_QUEUE_SEMAPHORE.acquire().await;
 
         let Ok(from) = player.simple_prop::<i64>("playlist-count") else {
             return;
@@ -67,6 +67,7 @@ async fn do_it(cache_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
         tracing::debug!(?current_pos);
         if to == current_pos as usize {
             tracing::debug!("playing this song right now. Waiting for a chance to replace");
+            drop(permit);
             drop(player);
             tokio::time::sleep(Duration::from_secs(60)).await;
             continue;
