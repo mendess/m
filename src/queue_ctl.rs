@@ -150,6 +150,7 @@ where
     I: IntoIterator<Item = Item>,
     I::IntoIter: ExactSizeIterator,
 {
+    tracing::debug!(options = ?q, "queueing songs");
     let player = match players::current().await? {
         Some(index) => PlayerLink::of(index),
         None => {
@@ -171,8 +172,9 @@ where
     let items = items.into_iter();
     let item_count = items.len();
     let mut expanded_items = pin!(expand_playlists(items).inspect(|_| n_targets += 1));
+    let dl_dir = dl_dir().await?;
     while let Some(mut item) = expanded_items.next().await {
-        check_cache_ref(dl_dir().await?, &mut item).await;
+        check_cache_ref(&dl_dir, &mut item).await;
         print!("Queuing song: {} ... ", item);
         std::io::stdout().flush()?;
         let SmartQueueSummary {
@@ -416,6 +418,7 @@ pub async fn load(file: PathBuf, shuf: bool) -> anyhow::Result<()> {
         items.shuffle(&mut rngs::OsRng);
     }
 
+    tracing::debug!("loading {} items", items.len());
     queue(Default::default(), items)
         .await?
         .queue_loop(true)
@@ -428,17 +431,22 @@ pub async fn play(
     items: impl IntoIterator<Item = Item>,
     with_video: bool,
 ) -> anyhow::Result<PlayerLink> {
-    let mut items = items.into_iter().collect::<Vec<_>>();
-    tracing::info!("playing {:?}", items);
-    stream::iter(items.iter_mut())
-        .for_each_concurrent(16, |i| async {
-            let dl_dir = match dl_dir().await {
-                Ok(d) => d,
-                Err(_) => return,
-            };
-            check_cache_ref(dl_dir, i).await
+    let dl_dir = match dl_dir().await {
+        Ok(d) => Some(d),
+        Err(_) => None,
+    };
+    let items = expand_playlists(items)
+        .map(|mut i| async {
+            if let Some(dl_dir) = &dl_dir {
+                check_cache_ref(dl_dir, &mut i).await;
+            }
+            i
         })
+        .buffered(16)
+        .collect::<Vec<_>>()
         .await;
+
+    tracing::info!("playing {:?}", items);
 
     tracing::info!("pausing previous mpv instance");
     match players::pause().await {
@@ -616,7 +624,19 @@ fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item 
         .then(move |i| async {
             let expanded = match &i {
                 Item::Link(l) => match l {
-                    Link::Playlist(l) => expand_playlist(l).await.ok(),
+                    Link::Playlist(l) => expand_playlist(l)
+                        .await
+                        .map(|opt_items| {
+                            opt_items.or_else(|| {
+                                l.clone()
+                                    .into_video_link()
+                                    .map(Link::from)
+                                    .map(Item::from)
+                                    .map(single)
+                                    .ok()
+                            })
+                        })
+                        .ok(),
                     Link::Channel(c) => expand_channel(c).await.ok(),
                     _ => None,
                 },

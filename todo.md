@@ -6,7 +6,7 @@
  - [x] notify
  - [x] mpv_do
  - [x] selector
- - [ ] with_video
+ - [x] with_video
  - [x] check_cache
      - [x] download daemon
  - [x] partial name search
@@ -73,7 +73,7 @@
      - [x] no_move
      - [x] clear
      - [x] category
-     - [ ] preemptive download
+     - [x] preemptive download
  - [x] dequeue            Dequeue a song
  - [x] dump               Save the playlist to a file to be restored later
      depends on now
@@ -85,9 +85,9 @@
  - [ ] lyrics             Shows lyrics for the current song
      - depends on current
  - [x] playlist           Interactively asks the user what songs they want to play from their playlist
- - [ ] info               Shows info on a random link or playlist item
+ - [x] info               Shows info on a random link or playlist item
 
 ## After
 
-- update lemons to use mlib
-- implement events instead of using update_bar script
+- [x] update lemons to use mlib
+- [x] implement events instead of using update_bar script

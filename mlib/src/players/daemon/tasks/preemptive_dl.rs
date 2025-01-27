@@ -1,8 +1,8 @@
 use crate::{
-    downloaded::download,
+    downloaded::{download, search_cache_for},
     item::{link::Id, VideoLink},
     players::daemon::player::MpvExt,
-    VideoId,
+    Item, Link, VideoId,
 };
 use libmpv::{FileState, Mpv};
 use parking_lot::Mutex;
@@ -16,19 +16,26 @@ pub struct Task {
 #[tracing::instrument(skip_all, fields(%song))]
 async fn do_it(cache_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
     let path = {
-        static CONCURRENT_DOWNLOADS: Semaphore = Semaphore::const_new(4);
-        let _permit = CONCURRENT_DOWNLOADS.acquire().await;
-        match download(cache_dir.join("m").join("preemptive-dl"), song, false).await {
-            Ok(path) => match path.get().await {
-                Ok(path) => path,
-                Err(e) => {
-                    tracing::error!(error = ?e, "failed to get file path for downloaded song");
-                    return;
+        let dl_dir = cache_dir.join("m").join("preemptive-dl");
+
+        match search_cache_for(&dl_dir, song).await {
+            Ok(Some(path)) => path,
+            Ok(None) | Err(_) => {
+                static CONCURRENT_DOWNLOADS: Semaphore = Semaphore::const_new(4);
+                let _permit = CONCURRENT_DOWNLOADS.acquire().await;
+                match download(dl_dir, song, false).await {
+                    Ok(path) => match path.get().await {
+                        Ok(path) => path,
+                        Err(e) => {
+                            tracing::error!(error = ?e, "failed to get file path for downloaded song");
+                            return;
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!(error = ?e, "failed to preemptively download song");
+                        return;
+                    }
                 }
-            },
-            Err(e) => {
-                tracing::error!(error = ?e, "failed to preemptively download song");
-                return;
             }
         }
     };
@@ -89,7 +96,6 @@ async fn do_it(cache_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
             tracing::error!(error = ?e, "failed to move the cached version to the position the uncached one");
             return;
         };
-        break;
     }
 }
 
@@ -137,10 +143,17 @@ impl PreemptiveDownload {
         }
     }
 
-    pub fn song_queued(&self, item: &VideoLink) {
-        self.inflight
-            .lock()
-            .insert(item.id().boxed(), Task::new(item, self.player.clone()));
+    pub fn song_queued(&self, item: &Item) {
+        match item {
+            Item::Link(Link::Video(video_id)) => {
+                self.inflight.lock().insert(
+                    video_id.id().boxed(),
+                    Task::new(video_id, self.player.clone()),
+                );
+            }
+            Item::File(_) => {}
+            i => tracing::warn!(item = ?i, "ignoring"),
+        }
     }
 
     pub fn song_dequeued(&self, item: &VideoLink) {

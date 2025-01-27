@@ -290,9 +290,7 @@ impl PlayersDaemon {
         player.handle().playlist_load_files(&prepared_items)?;
 
         for i in items {
-            if let Item::Link(crate::Link::Video(video)) = i {
-                player.preemptive_download().song_queued(&video);
-            }
+            player.preemptive_download().song_queued(&i);
         }
 
         let index = this_ref.players.add(player);
@@ -401,9 +399,7 @@ impl PlayersDaemon {
             FileState::AppendPlay,
             None,
         )])?;
-        if let Item::Link(crate::Link::Video(video)) = item {
-            player.preemptive_download().song_queued(&video);
-        }
+        player.preemptive_download().song_queued(&item);
         Ok(())
     }
 

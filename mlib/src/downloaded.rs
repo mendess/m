@@ -18,6 +18,7 @@ use crate::{
     ytdl::YtdlError,
     Error,
 };
+use derive_more::derive::From;
 
 pub async fn clean_downloads<P: AsRef<Path>>(
     dl_dir: P,
@@ -39,6 +40,7 @@ pub async fn clean_downloads<P: AsRef<Path>>(
     )
 }
 
+#[must_use]
 pub enum CheckCacheDecision {
     Download(VideoLink),
     Skip,
@@ -65,12 +67,56 @@ pub async fn is_in_cache(dl_dir: &Path, link: &VideoLink) -> bool {
     .unwrap()
 }
 
-pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDecision {
-    enum R {
-        F(PathBuf),
-        Error,
-        None,
-    }
+#[derive(Debug, From)]
+pub enum GlobLibError {
+    Iter(glob::GlobError),
+    Pat(glob::PatternError),
+}
+
+pub async fn search_cache_for(
+    dl_dir: &Path,
+    link: &VideoLink,
+) -> Result<Option<PathBuf>, GlobLibError> {
+    let mut s = dl_dir.to_string_lossy().into_owned();
+    s.push_str("/*=");
+    s.push_str(link.id());
+    s.push_str("=m.*");
+    tokio::task::spawn_blocking(move || {
+        tracing::debug!("searching cache using glob: {:?}", s);
+        let file = glob::glob(&s).map(Paths::collect::<Vec<_>>);
+        let mut files = match file {
+            Ok(files) => files,
+            Err(e) => return Err(e.into()),
+        };
+        let file = match files.pop() {
+            Some(Ok(file)) if files.is_empty() => file,
+            None => return Ok(None),
+            Some(last) => {
+                if !files.is_empty() {
+                    tracing::warn!(
+                        "glob {:?} matched multiple files: {:?}[{:?}]",
+                        s,
+                        files,
+                        last
+                    );
+                }
+                let last = match last {
+                    Ok(last) => last,
+                    Err(e) => return Err(e.into()),
+                };
+                if !files.is_empty() {
+                    tracing::warn!("picking last one: {}", last.display());
+                }
+                last
+            }
+        };
+        Ok(Some(file))
+    })
+    .await
+    .unwrap()
+}
+
+pub async fn check_cache_ref(dl_dir: &Path, item: &mut Item) -> CheckCacheDecision {
     let link = match item {
         Item::Link(l) => match l.as_video() {
             Some(v) => v,
@@ -81,50 +127,18 @@ pub async fn check_cache_ref(dl_dir: PathBuf, item: &mut Item) -> CheckCacheDeci
     if !matches!(playlist::find_song(link.id()).await, Ok(Some(_))) {
         return CheckCacheDecision::Skip;
     }
-    let mut s = dl_dir.to_string_lossy().into_owned();
-    s.push_str("/*=");
-    s.push_str(link.id());
-    s.push_str("=m.*");
-    let file = tokio::task::spawn_blocking(move || {
-        tracing::debug!("searching cache using glob: {:?}", s);
-        let file = glob::glob(&s).map(Paths::collect::<Vec<_>>);
-        let mut files = match file {
-            Ok(files) => files,
-            Err(e) => {
-                tracing::error!("parsing glob pattern {:?}: {:?}", s, e);
-                return R::Error;
-            }
-        };
-        let file = match files.pop() {
-            Some(Ok(file)) if files.is_empty() => file,
-            None => {
-                return R::None;
-            }
-            Some(last) => {
-                tracing::warn!(
-                    "glob {:?} matched multiple files: {:?}[{:?}]",
-                    s,
-                    files,
-                    last
-                );
-                let Ok(last) = last else {
-                    return R::Error;
-                };
-                tracing::warn!("picking last one: {}", last.display());
-                last
-            }
-        };
-        R::F(file)
-    })
-    .await
-    .unwrap();
-    match file {
-        R::F(file) => *item = Item::File(file),
-        R::None => {
+    match search_cache_for(&dl_dir, link).await {
+        Ok(Some(file)) => *item = Item::File(file),
+        Ok(None) => {
             tracing::debug!("song {:?} not found, deciding to download", link);
             return CheckCacheDecision::Download(link.clone());
         }
-        _ => {}
+        Err(GlobLibError::Pat(pat)) => {
+            tracing::error!(error = ?pat, "failed to parse glob pattern");
+        }
+        Err(GlobLibError::Iter(e)) => {
+            tracing::error!(error = ?e, "failed to iterate files");
+        }
     };
     CheckCacheDecision::Skip
 }
@@ -180,22 +194,20 @@ pub async fn download(
         cmd.arg("-x");
     }
     let o = OsStr::new;
-    let mut output = cmd
+    tracing::info!("downloading {}", link.as_str());
+    let output = cmd
         .args([
             o("-o"),
             output_format.as_os_str(),
             o("--add-metadata"),
             o(link.as_str()),
         ])
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()?
         .wait_with_output()
         .await?;
     if output.status.success() {
-        while output.stdout.last() == Some(&b'\n') {
-            output.stdout.pop();
-        }
         Ok(GetDlPath {
             output_format,
             link,

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::download_ctl::daemon::Status;
 
@@ -185,7 +185,7 @@ pub async fn daemon_status() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn check_cache_ref(path: PathBuf, item: &mut Item) {
+pub async fn check_cache_ref(path: &Path, item: &mut Item) {
     match mlib::downloaded::check_cache_ref(path, item).await {
         CheckCacheDecision::Skip => {}
         CheckCacheDecision::Download(l) => match DAEMON.exchange(Message::Queue(l)).await {
