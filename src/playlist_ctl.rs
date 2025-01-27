@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use crate::notify;
 use crate::util::selector;
+use crate::{error, notify};
 use anyhow::{bail, Context};
 use futures_util::TryStreamExt;
 use futures_util::{future::ready, Stream};
@@ -153,7 +153,7 @@ async fn add_song(mut link: VideoLink, categories: HashSet<String>) -> anyhow::R
     Ok(())
 }
 
-pub(crate) async fn info(song: Vec<String>) -> anyhow::Result<()> {
+pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()> {
     let song_iter = song
         .iter()
         .map(String::as_str)
@@ -163,6 +163,13 @@ pub(crate) async fn info(song: Vec<String>) -> anyhow::Result<()> {
 
     match item {
         PartialSearchResult::None => {
+            if just_id {
+                match Item::from(song.join(" ")).id() {
+                    Some(id) => println!("{}", id.as_str()),
+                    None => error!("song doens't have an id"),
+                }
+                return Ok(());
+            }
             let vid = match Item::from(song.join(" ")) {
                 Item::Link(Link::Video(l)) => YtdlBuilder::new(&l).get_title().request().await?,
                 Item::Search(s) => YtdlBuilder::new(&s).get_title().search().await?,
@@ -185,6 +192,10 @@ pub(crate) async fn info(song: Vec<String>) -> anyhow::Result<()> {
             )
         }
         PartialSearchResult::One(s) => {
+            if just_id {
+                println!("{}", s.link.id().as_str());
+                return Ok(());
+            }
             notify!(
                 "song info:";
                 content:

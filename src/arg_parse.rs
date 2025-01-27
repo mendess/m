@@ -158,6 +158,8 @@ pub enum Command {
 
     /// Info
     Info {
+        #[arg(short, long)]
+        id: bool,
         song: Vec<String>,
     },
 

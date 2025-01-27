@@ -224,7 +224,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 .await
             )?;
         }
-        Command::Info { song } => playlist_ctl::info(song).await?,
+        Command::Info { id, song } => playlist_ctl::info(song, id).await?,
         Command::AutoComplete { shell } => {
             clap_complete::generate(
                 shell,
