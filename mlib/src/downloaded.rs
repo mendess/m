@@ -127,7 +127,7 @@ pub async fn check_cache_ref(dl_dir: &Path, item: &mut Item) -> CheckCacheDecisi
     if !matches!(playlist::find_song(link.id()).await, Ok(Some(_))) {
         return CheckCacheDecision::Skip;
     }
-    match search_cache_for(&dl_dir, link).await {
+    match search_cache_for(dl_dir, link).await {
         Ok(Some(file)) => *item = Item::File(file),
         Ok(None) => {
             tracing::debug!("song {:?} not found, deciding to download", link);
@@ -155,7 +155,6 @@ impl GetDlPath<'_> {
             .args([
                 o("-o"),
                 self.output_format.as_os_str(),
-                o("--add-metadata"),
                 o(self.link.as_str()),
                 o("--print"),
                 o("filename"),
@@ -200,6 +199,7 @@ pub async fn download(
             o("-o"),
             output_format.as_os_str(),
             o("--add-metadata"),
+            o("--embed-chapters"),
             o(link.as_str()),
         ])
         .stdout(Stdio::null())
