@@ -2,14 +2,14 @@ use std::collections::HashSet;
 
 use crate::notify;
 use crate::util::selector;
-use anyhow::Context;
+use anyhow::{bail, Context};
 use futures_util::TryStreamExt;
 use futures_util::{future::ready, Stream};
 use itertools::Itertools;
 use mlib::item::link::VideoLink;
 use mlib::players::PlayerLink;
 use mlib::playlist::PartialSearchResult;
-use mlib::Search;
+use mlib::Item;
 use mlib::{
     playlist::{self, Playlist, PlaylistIds, Song},
     queue::Queue,
@@ -163,12 +163,16 @@ pub(crate) async fn info(song: Vec<String>) -> anyhow::Result<()> {
 
     match item {
         PartialSearchResult::None => {
-            let vid = match VideoLink::try_from(song.into_iter().collect::<String>()) {
-                Ok(l) => YtdlBuilder::new(&l).get_title().request().await?,
-                Err(e) => {
-                    YtdlBuilder::new(&Search::new(e))
+            let vid = match Item::from(song.join(" ")) {
+                Item::Link(Link::Video(l)) => YtdlBuilder::new(&l).get_title().request().await?,
+                Item::Search(s) => YtdlBuilder::new(&s).get_title().search().await?,
+                i => {
+                    let Some(id) = i.id() else {
+                        bail!("info for {i} not suported");
+                    };
+                    YtdlBuilder::new(&VideoLink::from_id(id))
                         .get_title()
-                        .search()
+                        .request()
                         .await?
                 }
             };
