@@ -304,13 +304,12 @@ impl PlayersDaemon {
         self.current_default.borrow().map(PlayerIndex::of)
     }
 
-    pub(super) fn list(&self) -> Vec<PlayerIndex> {
+    pub(super) fn list(&self) -> impl Iterator<Item = PlayerIndex> {
         self.players
             .iter()
             .enumerate()
             .filter_map(|(i, p)| p.is_some().then_some(i))
             .map(PlayerIndex::of)
-            .collect()
     }
 
     #[cfg(feature = "mpris")]
@@ -733,7 +732,7 @@ async fn handle_messages(
                 .await
                 .map(Response::Create)
         }
-        MessageKind::PlayerList => Ok(Response::PlayerList(players.lock().await.list())),
+        MessageKind::PlayerList => Ok(Response::PlayerList(players.lock().await.list().collect())),
         MessageKind::LastQueue => players
             .lock()
             .await
