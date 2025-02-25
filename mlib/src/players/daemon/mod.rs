@@ -578,7 +578,7 @@ impl PlayersDaemon {
                 return match e {
                     libmpv::Error::Raw(code) if code == MEC::PropertyUnavailable as i32 => Ok(None),
                     _ => Err(e.into()),
-                }
+                };
             }
         };
         let title = t
@@ -813,7 +813,6 @@ async fn handle_messages(
             call!(players.playback_time(index) => Real)
         }
     }
-    .map_err(From::from)
 }
 
 async fn event_stream(daemon: SharedPlayersDaemon) -> impl Stream<Item = PlayerEvent> {

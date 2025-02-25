@@ -41,7 +41,7 @@ impl<'s, M, R, E> DaemonProcess<'s, M, R, E> {
     }
 }
 
-impl<'s, M, R, E> DaemonProcess<'s, M, R, E> {
+impl<M, R, E> DaemonProcess<'_, M, R, E> {
     /// Provide a means of gracefully shuting down the daemon. Sending on this channel causes the
     /// daemon to terminate.
     pub fn with_shutdown(self, shutdown: oneshot::Receiver<()>) -> Self {
@@ -75,7 +75,7 @@ impl<'s, M, R, E> DaemonProcess<'s, M, R, E> {
     }
 }
 
-impl<'s, M, R, E> DaemonProcess<'s, M, R, E>
+impl<M, R, E> DaemonProcess<'_, M, R, E>
 where
     E: Serialize + Send + Sync + 'static,
     M: DeserializeOwned + Serialize + Send + 'static,
