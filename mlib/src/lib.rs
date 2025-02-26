@@ -1,5 +1,5 @@
+#![warn(rust_2024_compatibility)]
 #![warn(clippy::dbg_macro)]
-#![warn(rust_2018_idioms)]
 
 #[cfg(feature = "downloads")]
 pub mod downloaded;

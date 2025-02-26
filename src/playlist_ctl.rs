@@ -61,7 +61,7 @@ pub async fn new(link: Link, categories: Vec<String>) -> anyhow::Result<VideoLin
 pub async fn add_playlist(
     link: &Link,
     categories: Vec<String>,
-) -> anyhow::Result<impl Stream<Item = anyhow::Result<VideoLink>>> {
+) -> anyhow::Result<impl Stream<Item = anyhow::Result<VideoLink>> + use<>> {
     let link = match link.as_playlist() {
         Some(s) => s,
         None => return Err(anyhow::anyhow!("Not a playlist link")),

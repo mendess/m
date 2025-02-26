@@ -1,7 +1,7 @@
 [package]
 name = "mlib"
 version = "0.10.4"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 arc-swap = { version = "1.7.1", optional = true }

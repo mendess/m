@@ -282,7 +282,9 @@ macro_rules! commands {(
 }
 
 impl PlayerLink {
-    pub async fn subscribe(&self) -> Result<impl Stream<Item = io::Result<PlayerEvent>>, Error> {
+    pub async fn subscribe(
+        &self,
+    ) -> Result<impl Stream<Item = io::Result<PlayerEvent>> + use<>, Error> {
         Ok(self.daemon.subscribe().await?)
     }
 }

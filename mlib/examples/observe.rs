@@ -28,7 +28,10 @@ async fn main() -> Result<(), mlib::Error> {
     players::start_daemon_if_running_as_daemon().await?;
     players::subscribe()
         .await?
-        .for_each(|e| ready(tracing::info!(event = ?e, "new event")))
+        .for_each(|e| {
+            tracing::info!(event = ?e, "new event");
+            ready(())
+        })
         .await;
     Ok(())
 }

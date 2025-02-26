@@ -8,22 +8,22 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use futures_util::{join, stream, Stream, StreamExt};
+use futures_util::{Stream, StreamExt, join, stream};
 use libmpv::{FileState, GetData, Mpv, MpvNode};
 use regex::Regex;
-use tokio::sync::{broadcast, watch, Mutex};
+use tokio::sync::{Mutex, broadcast, watch};
 
 use crate::players::event::event_listener;
 use crate::{
-    players::{error::MpvError, legacy_socket_for, MessageKind},
     Item,
+    players::{MessageKind, error::MpvError, legacy_socket_for},
 };
 
 use super::libmpv_parsing;
 use super::{
+    Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
     error::{MpvErrorCode, MpvResult},
     event::{self, PlayerEvent},
-    Direction, LoopStatus, Message, Metadata, PlayerIndex, QueueItem, Response,
 };
 
 // make fields mod private
