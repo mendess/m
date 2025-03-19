@@ -1,6 +1,6 @@
 use std::{
     future::Future,
-    io::{self, stdout, Write},
+    io::{self, Write, stdout},
     pin::pin,
     thread,
     time::Duration,
@@ -8,14 +8,14 @@ use std::{
 
 use crate::{player_ctl, util::RawMode};
 use crossterm::{
+    QueueableCommand,
     cursor::{self, MoveTo},
     event::{self, Event, KeyCode, KeyEvent},
     terminal::{Clear, ClearType},
-    QueueableCommand,
 };
-use futures_util::{future::ready, join, Stream, StreamExt};
+use futures_util::{Stream, StreamExt, future::ready, join};
 use mlib::{
-    players::{self, event::OwnedLibMpvEvent, PlayerLink},
+    players::{self, PlayerLink, event::OwnedLibMpvEvent},
     queue::Queue,
 };
 use tokio::{sync::mpsc, time::timeout};
@@ -50,21 +50,23 @@ enum UiUpdate {
 async fn input_task() {
     fn read() -> mpsc::Receiver<io::Result<event::Event>> {
         let (tx, rx) = mpsc::channel(100);
-        thread::spawn(move || loop {
-            if tx.is_closed() {
-                break;
-            }
-            match event::poll(Duration::from_millis(100)) {
-                Ok(true) => {
-                    if tx.blocking_send(event::read()).is_err() {
+        thread::spawn(move || {
+            loop {
+                if tx.is_closed() {
+                    break;
+                }
+                match event::poll(Duration::from_millis(100)) {
+                    Ok(true) => {
+                        if tx.blocking_send(event::read()).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        // no need to check, we will break anyway
+                        let _ = tx.blocking_send(Err(e));
                         break;
                     }
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    // no need to check, we will break anyway
-                    let _ = tx.blocking_send(Err(e));
-                    break;
                 }
             }
         });

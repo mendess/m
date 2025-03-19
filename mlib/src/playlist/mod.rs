@@ -2,7 +2,7 @@ mod uniq_vec;
 
 use csv_async::{AsyncReaderBuilder, AsyncWriterBuilder, StringRecord};
 use dirs::config_dir;
-use futures_util::{stream::TryStreamExt, Stream};
+use futures_util::{Stream, stream::TryStreamExt};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,7 +19,7 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt},
 };
 
-use crate::{item::link::VideoLink, Error, VideoId};
+use crate::{Error, VideoId, item::link::VideoLink};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
@@ -104,7 +104,7 @@ impl Playlist {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::PlaylistFileNotFound(playlist_path))
+                return Err(Error::PlaylistFileNotFound(playlist_path));
             }
             Err(e) => return Err(e.into()),
         };
@@ -129,7 +129,7 @@ impl Playlist {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::PlaylistFileNotFound(playlist_path))
+                return Err(Error::PlaylistFileNotFound(playlist_path));
             }
             Err(e) => return Err(e.into()),
         };

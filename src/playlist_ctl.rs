@@ -2,19 +2,19 @@ use std::collections::HashSet;
 
 use crate::util::selector;
 use crate::{error, notify};
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use futures_util::TryStreamExt;
-use futures_util::{future::ready, Stream};
+use futures_util::{Stream, future::ready};
 use itertools::Itertools;
+use mlib::Item;
 use mlib::item::link::VideoLink;
 use mlib::players::PlayerLink;
 use mlib::playlist::PartialSearchResult;
-use mlib::Item;
 use mlib::{
+    Link,
     playlist::{self, Playlist, PlaylistIds, Song},
     queue::Queue,
     ytdl::YtdlBuilder,
-    Link,
 };
 use regex::Regex;
 
@@ -36,7 +36,7 @@ pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn cat() -> anyhow::Result<()> {
+pub async fn ls_categories() -> anyhow::Result<()> {
     let playlist = Playlist::load().await?;
     let mut cat = playlist.categories().collect::<Vec<_>>();
     cat.sort_unstable_by_key(|(_, count)| *count);

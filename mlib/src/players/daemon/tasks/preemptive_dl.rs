@@ -1,13 +1,13 @@
 use crate::{
-    downloaded::{download, search_cache_for},
-    item::{link::Id, VideoLink},
-    players::daemon::player::MpvExt,
     Item, Link, VideoId,
+    downloaded::{download, search_cache_for},
+    item::{VideoLink, link::Id},
+    players::daemon::player::MpvExt,
 };
 use libmpv::{FileState, Mpv};
 use parking_lot::Mutex;
 use std::{collections::HashMap, path::Path, sync::Weak, time::Duration};
-use tokio::sync::{oneshot, Semaphore};
+use tokio::sync::{Semaphore, oneshot};
 
 pub struct Task {
     cancel: Option<oneshot::Sender<()>>,

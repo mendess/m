@@ -3,8 +3,8 @@ pub mod selector;
 pub mod session_kind;
 pub mod with_video;
 
-use mlib::item::link::VideoLink;
 use mlib::VideoId;
+use mlib::item::link::VideoLink;
 use std::fmt::Display;
 use std::io;
 use std::path::PathBuf;
@@ -56,24 +56,6 @@ pub async fn dl_dir() -> anyhow::Result<PathBuf> {
     })
     .await
     .cloned()
-}
-
-pub async fn update_bar() -> io::Result<()> {
-    let mut update_panel = dirs::config_dir()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "config dir not found"))?;
-    update_panel.push("m");
-    update_panel.push("update_panel.sh");
-    tracing::debug!(
-        "checking if update panel script (at {}) exists",
-        update_panel.display()
-    );
-    let metadata = tokio::fs::metadata(&update_panel).await;
-    tracing::debug!("metadata check for script {:?}", metadata);
-    if metadata.is_ok() {
-        Command::new("sh").arg(update_panel).spawn()?.wait().await?;
-    }
-
-    Ok(())
 }
 
 pub async fn preview_video(l: &VideoId) -> anyhow::Result<()> {

@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use super::error::MpvResult;
 #[cfg(feature = "player")]
 use libmpv::{
-    events::{self, Event, PropertyData},
     Format, Mpv, MpvNode, MpvNodeValue,
+    events::{self, Event, PropertyData},
 };
 #[cfg(feature = "player")]
 use std::{future::Future, sync::Weak, thread, time::Duration};

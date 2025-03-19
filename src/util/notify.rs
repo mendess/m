@@ -1,14 +1,14 @@
 use std::{
-    io::{self, stdout, StdoutLock, Write},
+    io::{self, StdoutLock, Write, stdout},
     path::Path,
 };
 
 use crate::util::session_kind::SessionKind;
 use crossterm::{
+    QueueableCommand,
     cursor::MoveToNextLine,
     style::{Attribute, Color, Print, SetAttribute, SetForegroundColor},
     tty::IsTty,
-    QueueableCommand,
 };
 use tokio::process::Command;
 

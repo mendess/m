@@ -12,18 +12,18 @@ use tokio::{fs, process::Command};
 use tokio_stream::wrappers::ReadDirStream;
 
 use crate::{
+    Error,
     item::{id_from_path, link::VideoLink},
     playlist::{self, PlaylistIds},
     queue::Item,
     ytdl::YtdlError,
-    Error,
 };
 use derive_more::derive::From;
 
 pub async fn clean_downloads<P: AsRef<Path>>(
     dl_dir: P,
     ids: &PlaylistIds,
-) -> Result<impl Stream<Item = Result<PathBuf, io::Error>> + '_, crate::Error> {
+) -> Result<impl Stream<Item = Result<PathBuf, io::Error>>, crate::Error> {
     let files = fs::read_dir(dl_dir).await?;
     Ok(
         ReadDirStream::new(files).try_filter_map(move |f| async move {

@@ -2,9 +2,9 @@ use std::time::Duration;
 
 pub use crate::Item;
 use crate::{
+    Error, Link,
     item::id_from_path,
     players::{PlayerLink, QueueItem},
-    Error, Link,
 };
 
 use serde::{Deserialize, Serialize};
@@ -73,8 +73,9 @@ impl Queue {
     pub async fn current(player: &PlayerLink, opt: CurrentOptions) -> Result<Current, Error> {
         pub use crate::Item;
         use crate::{
+            Error,
             players::error::{Error as PlayerError, MpvError, MpvErrorCode},
-            playlist, Error,
+            playlist,
         };
 
         use futures_util::future::OptionFuture;
@@ -262,8 +263,11 @@ fn slice_queue(mut queue: Vec<QueueItem>, at_most: usize) -> (Vec<SongIdent>, us
     };
 
     let mut start_index = current_idx.saturating_sub(at_most / 5);
-    current_idx -= start_index; // start index is the new base, so current_idx has to become
-                                // relative to that base.
+
+    // start index is the new base, so current_idx has to become
+    // relative to that base.
+    current_idx -= start_index;
+
     let mut end_index = start_index.saturating_add(at_most);
     if end_index > queue.len() {
         let delta = end_index - queue.len();

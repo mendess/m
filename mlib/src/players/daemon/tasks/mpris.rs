@@ -1,20 +1,20 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 
 use crate::players::daemon;
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use mpris_server::{
-    builder::MetadataBuilder, LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface,
-    Playlist, PlaylistId, PlaylistOrdering, PlaylistsInterface, RootInterface, Time, TrackId,
-    TrackListInterface, Uri, Volume,
+    LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, Playlist, PlaylistId,
+    PlaylistOrdering, PlaylistsInterface, RootInterface, Time, TrackId, TrackListInterface, Uri,
+    Volume, builder::MetadataBuilder,
 };
 use zbus::fdo;
 
 use crate::{
-    players::{event, PlayerIndex},
     Item,
+    players::{PlayerIndex, event},
 };
 
-use daemon::{event::PlayerEvent, Direction};
+use daemon::{Direction, event::PlayerEvent};
 
 pub struct MprisPlayer {
     pub(super) daemon: daemon::SharedPlayersDaemon,

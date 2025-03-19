@@ -3,8 +3,8 @@ use std::any::type_name;
 use libmpv::{MpvNode, MpvNodeMapIter};
 
 use super::{
-    error::{MpvError, MpvResult},
     QueueItem, QueueItemStatus,
+    error::{MpvError, MpvResult},
 };
 
 pub(super) fn parse_queue_item(node: MpvNode) -> MpvResult<QueueItem> {

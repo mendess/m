@@ -2,28 +2,28 @@ use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
     download_ctl::check_cache_ref,
     notify,
-    util::{dl_dir, selector::selector, with_video::with_video_env, DisplayEither, DurationFmt},
+    util::{DisplayEither, DurationFmt, dl_dir, selector::selector, with_video::with_video_env},
 };
 
 use std::{collections::HashSet, io::Write, path::PathBuf, pin::pin};
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use futures_util::{
+    Stream, StreamExt, TryStreamExt,
     future::ready,
     stream::{self, BoxStream, FuturesUnordered},
-    Stream, StreamExt, TryStreamExt,
 };
 use itertools::Itertools;
 use mlib::{
+    Error, Link, Search, VideoId,
     item::{
-        link::{ChannelLink, VideoLink},
         PlaylistLink,
+        link::{ChannelLink, VideoLink},
     },
-    players::{self, error::MpvError, PlayerLink, SmartQueueOpts, SmartQueueSummary},
+    players::{self, PlayerLink, SmartQueueOpts, SmartQueueSummary, error::MpvError},
     playlist::Playlist,
     queue::{Current, Item, Queue},
     ytdl::YtdlBuilder,
-    Error, Link, Search, VideoId,
 };
 use rand::{prelude::SliceRandom, rngs};
 use serde::Deserialize;
@@ -331,7 +331,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 None => {
                     return Err(anyhow::anyhow!(
                         "Nothing before the first song in the queue"
-                    ))
+                    ));
                 }
             };
             player.queue_remove(prev).await?;
@@ -485,10 +485,12 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
             .await?;
             match song_name {
                 None => return Ok(()),
-                Some(name) => vec![playlist
-                    .find_song(|s| s.name == name)
-                    .map(|idx| Item::Link(idx.link.clone().into()))
-                    .unwrap_or_else(|| Item::Search(Search::new(name)))],
+                Some(name) => vec![
+                    playlist
+                        .find_song(|s| s.name == name)
+                        .map(|idx| Item::Link(idx.link.clone().into()))
+                        .unwrap_or_else(|| Item::Search(Search::new(name))),
+                ],
             }
         }
         "random" => match playlist.songs.choose(&mut rngs::OsRng) {
@@ -552,7 +554,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
 
 fn get_clipboard_contents() -> anyhow::Result<String> {
     use arboard::Clipboard;
-    use wl_clipboard_rs::paste::{get_contents, ClipboardType, Error, MimeType, Seat};
+    use wl_clipboard_rs::paste::{ClipboardType, Error, MimeType, Seat, get_contents};
     let mut clip = Clipboard::new()?;
     match clip.get().text() {
         Ok(content) => Ok(content),

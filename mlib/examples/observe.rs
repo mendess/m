@@ -4,7 +4,7 @@ use futures_util::StreamExt;
 use mlib::players;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
+use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 
 fn init() {
     LogTracer::init().expect("Failed to set logger");

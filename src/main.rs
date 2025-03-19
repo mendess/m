@@ -6,26 +6,26 @@ mod playlist_ctl;
 mod queue_ctl;
 mod util;
 
-use arg_parse::{Args, Command, DeleteSong, EntityStatus, New};
+use arg_parse::{Args, Command, DeleteSong, EntityStatus, New, Play};
 use clap::{CommandFactory, Parser};
-use futures_util::{future::ready, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
+use futures_util::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, future::ready};
 use itertools::Itertools;
 use mlib::{
+    Link, Search,
     downloaded::{self, clean_downloads},
     item::link::VideoLink,
     players::{self, PlayerIndex, PlayerLink},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
     ytdl::YtdlBuilder,
-    Link, Search,
 };
 use rand::seq::SliceRandom;
-use std::{process::ExitCode, sync::Mutex};
+use std::{pin::pin, process::ExitCode, sync::Mutex};
 use tokio::io;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
-use util::session_kind::SessionKind;
+use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
+use util::{selector::CustomKeybind, session_kind::SessionKind};
 
 use crate::{
     arg_parse::{AddPlaylist, Queue},
@@ -37,22 +37,8 @@ use crate::{
 async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     tracing::debug!(?cmd, "running command");
     match cmd {
-        Command::Socket { new } => {
-            if new.is_some() {
-                println!(
-                    "{}",
-                    players::legacy_socket_for(players::current().await?.unwrap_or_default() + 1)
-                        .await
-                );
-            } else {
-                match players::current().await? {
-                    Some(i) => println!("{}", players::legacy_socket_for(i).await),
-                    None => println!("/dev/null"),
-                }
-            }
-        }
         Command::Songs { category } => playlist_ctl::songs(category).await?,
-        Command::Cat => playlist_ctl::cat().await?,
+        Command::Cat => playlist_ctl::ls_categories().await?,
         Command::Quit => player_ctl::quit().await?,
         Command::SetPlay => player_ctl::resume().await?,
         Command::SetPause => player_ctl::pause().await?,
@@ -68,6 +54,67 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Prev(a) => player_ctl::prev(a).await?,
         Command::Shuffle => player_ctl::shuffle().await?,
         Command::Loop => player_ctl::toggle_loop().await?,
+        Command::ChCat => playlist_ctl::ch_cat().await?,
+        Command::Now(a) => queue_ctl::now(a).await?,
+        Command::Dump { file } => queue_ctl::dump(file).await?,
+        Command::Load { file, shuf } => queue_ctl::load(file, shuf).await?,
+        Command::DeleteSong(DeleteSong {
+            current,
+            partial_name,
+        }) => playlist_ctl::delete_song(current, partial_name).await?,
+        Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
+        Command::Playlist => queue_ctl::run_interactive_playlist().await?,
+        Command::Status { entity } => match entity {
+            EntityStatus::Players => player_ctl::status().await?,
+            EntityStatus::Cache => download_ctl::cache_status().await?,
+            EntityStatus::Downloads => download_ctl::daemon_status().await?,
+        },
+        Command::Interactive => player_ctl::interactive().await?,
+        Command::Lyrics => todo!("lyrics not implemented"),
+        Command::Info { id, song } => playlist_ctl::info(song, id).await?,
+        Command::Socket { new } => {
+            if new.is_some() {
+                println!(
+                    "{}",
+                    players::legacy_socket_for(players::current().await?.unwrap_or_default() + 1)
+                        .await
+                );
+            } else {
+                match players::current().await? {
+                    Some(i) => println!("{}", players::legacy_socket_for(i).await),
+                    None => println!("/dev/null"),
+                }
+            }
+        }
+        Command::Play(Play {
+            search,
+            what,
+            category,
+            video,
+        }) => {
+            queue_ctl::play(
+                search_params_to_items(what, search, category).await?,
+                video || with_video_env(),
+            )
+            .await?;
+        }
+        Command::Queue(Queue {
+            queue_opts,
+            play_opts,
+        }) => {
+            let items =
+                search_params_to_items(play_opts.what, play_opts.search, play_opts.category)
+                    .await?;
+            queue_ctl::queue(queue_opts, items).await?;
+        }
+        Command::AutoComplete { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut Args::command(),
+                "m",
+                &mut std::io::stdout().lock(),
+            );
+        }
         Command::New(New {
             search,
             queue,
@@ -90,9 +137,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 let results_ref = &results;
                 match selector::interative_select(
                     &titles,
-                    [(
-                        'p',
-                        Box::new(|_, i| {
+                    [CustomKeybind {
+                        key: 'p',
+                        action: &|_, i| {
                             async move {
                                 notify!("loading preview....");
                                 if let Err(e) = util::preview_video(results_ref[i].id()).await {
@@ -100,8 +147,8 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                                 }
                             }
                             .boxed()
-                        }),
-                    )],
+                        },
+                    }],
                 )
                 .await?
                 {
@@ -123,6 +170,10 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             link,
             categories,
         }) => {
+            if categories.is_empty() {
+                error!("empty category list"; content: "please provide at least one category");
+                return Ok(());
+            }
             let link =
                 Link::try_from(link).map_err(|s| anyhow::anyhow!("{} is not a valid link", s))?;
             let links = playlist_ctl::add_playlist(&link, categories).await?;
@@ -148,17 +199,15 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 match link {
                     0 => queue_ctl::CurrentDisplayMode::Default,
                     1 => queue_ctl::CurrentDisplayMode::Link,
-                    _ => queue_ctl::CurrentDisplayMode::LinkId,
+                    2.. => queue_ctl::CurrentDisplayMode::LinkId,
                 },
                 notify,
             )
             .await?
         }
-        Command::Now(a) => queue_ctl::now(a).await?,
         Command::CleanDownloads => {
             let ids = PlaylistIds::load().await?;
-            let to_delete = clean_downloads(dl_dir().await?, &ids).await?;
-            tokio::pin!(to_delete);
+            let mut to_delete = pin!(clean_downloads(dl_dir().await?, &ids).await?);
             while let Some(f) = to_delete.next().await {
                 match f {
                     Ok(f) => {
@@ -173,65 +222,6 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     }
                 }
             }
-        }
-        Command::Dump { file } => queue_ctl::dump(file).await?,
-        Command::Load { file, shuf } => queue_ctl::load(file, shuf).await?,
-        Command::Play(arg_parse::Play {
-            search,
-            what,
-            category,
-            video,
-        }) => {
-            queue_ctl::play(
-                search_params_to_items(what, search, category).await?,
-                video || with_video_env(),
-            )
-            .await?;
-        }
-        Command::ChCat => playlist_ctl::ch_cat().await?,
-        Command::DeleteSong(DeleteSong {
-            current,
-            partial_name,
-        }) => playlist_ctl::delete_song(current, partial_name).await?,
-        Command::Queue(Queue {
-            queue_opts,
-            play_opts,
-        }) => {
-            let items =
-                search_params_to_items(play_opts.what, play_opts.search, play_opts.category)
-                    .await?;
-            queue_ctl::queue(queue_opts, items).await?;
-        }
-        Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
-        Command::Playlist => queue_ctl::run_interactive_playlist().await?,
-        Command::Status { entity } => match entity {
-            EntityStatus::Players => player_ctl::status().await?,
-            EntityStatus::Cache => download_ctl::cache_status().await?,
-            EntityStatus::Downloads => download_ctl::daemon_status().await?,
-        },
-        Command::Interactive => player_ctl::interactive().await?,
-        Command::Lyrics => {
-            dbg!(
-                selector::interative_select(
-                    &["option 1", "option 2"],
-                    [(
-                        'p',
-                        Box::new(|e, _| {
-                            async move { notify!("{}", e; force_notify: true) }.boxed()
-                        })
-                    )]
-                )
-                .await
-            )?;
-        }
-        Command::Info { id, song } => playlist_ctl::info(song, id).await?,
-        Command::AutoComplete { shell } => {
-            clap_complete::generate(
-                shell,
-                &mut Args::command(),
-                "m",
-                &mut std::io::stdout().lock(),
-            );
         }
         Command::Download { what, category } => {
             let items = if what.is_none() && category.is_none() {
@@ -282,9 +272,6 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             }
         }
     }
-    tracing::debug!("updating bar");
-    // TODO: move this somewhere that only runs when actual updates happen
-    util::update_bar().await?;
 
     Ok(())
 }

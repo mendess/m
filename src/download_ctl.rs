@@ -2,13 +2,13 @@ use std::path::Path;
 
 use crate::download_ctl::daemon::Status;
 
-use self::daemon::{Message, DAEMON};
+use self::daemon::{DAEMON, Message};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use mlib::{
-    downloaded::{is_in_cache, CheckCacheDecision},
-    playlist::Playlist,
     Item,
+    downloaded::{CheckCacheDecision, is_in_cache},
+    playlist::Playlist,
 };
 
 mod daemon {
@@ -17,12 +17,12 @@ mod daemon {
     };
 
     use cli_daemon::Daemon;
-    use futures_util::{stream::FuturesUnordered, StreamExt};
+    use futures_util::{StreamExt, stream::FuturesUnordered};
     use mlib::{downloaded, item::link::VideoLink, playlist::Playlist};
     use once_cell::sync::Lazy;
     use serde::{Deserialize, Serialize};
     use tokio::{
-        sync::{mpsc, oneshot, Mutex},
+        sync::{Mutex, mpsc, oneshot},
         time::timeout,
     };
     use tracing::{error, info};

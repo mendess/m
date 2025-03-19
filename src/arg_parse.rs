@@ -185,7 +185,6 @@ fn parse_new(s: &str) -> Result<(), &'static str> {
 }
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub struct Play {
     /// Search the song on youtube
     #[arg(short, long)]
@@ -204,7 +203,6 @@ pub struct Play {
 }
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub struct New {
     /// Queue it too
     #[arg(short, long)]
@@ -216,7 +214,6 @@ pub struct New {
 }
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub struct AddPlaylist {
     /// Queue it too
     #[arg(short, long)]
@@ -226,7 +223,6 @@ pub struct AddPlaylist {
 }
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub struct Queue {
     #[command(flatten)]
     pub queue_opts: QueueOpts,
@@ -236,7 +232,6 @@ pub struct Queue {
 }
 
 #[derive(Debug, Clone, Parser, Default, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub struct QueueOpts {
     /// Resets the queue fairness
     #[arg(short, long)]
@@ -263,7 +258,6 @@ impl Deref for Queue {
 }
 
 #[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub enum DeQueue {
     /// The next song in the queue
     Next,
@@ -321,7 +315,6 @@ impl FromStr for DeQueueIndex {
 }
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub struct DeleteSong {
     #[arg(short, long)]
     pub current: bool,
@@ -329,7 +322,6 @@ pub struct DeleteSong {
 }
 
 #[derive(Debug, Clone, Copy, Parser, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub struct Amount {
     pub amount: Option<i32>,
 }
@@ -343,7 +335,6 @@ impl From<i32> for Amount {
 }
 
 #[derive(Debug, Clone, Copy, Parser, Serialize, Deserialize)]
-// #[structopt(global_settings = &[DisableVersion])]
 pub enum EntityStatus {
     Players,
     Cache,

@@ -17,11 +17,11 @@ use tokio::{
 use tokio_stream::wrappers::LinesStream;
 
 use crate::{
-    item::{
-        link::{ChannelLink, Id, VideoLink},
-        PlaylistLink,
-    },
     Error, Search, VideoId,
+    item::{
+        PlaylistLink,
+        link::{ChannelLink, Id, VideoLink},
+    },
 };
 use thiserror::Error;
 use trait_gen::trait_gen;

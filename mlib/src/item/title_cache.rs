@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use base64::{engine::GeneralPurpose, Engine};
+use base64::{Engine, engine::GeneralPurpose};
 
 use super::{Search, VideoId};
 

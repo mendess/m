@@ -1,9 +1,9 @@
 use super::session_kind::SessionKind;
+use futures_util::future::BoxFuture;
 use std::{
     fmt::Display,
-    io::{stdout, Write},
+    io::{Write, stdout},
     os::unix::prelude::ExitStatusExt,
-    pin::Pin,
     process::{ExitStatus, Stdio},
 };
 use tokio::{
@@ -125,10 +125,10 @@ where
     })
 }
 
-type CustomKeybind<'c, E> = (
-    char,
-    Box<dyn for<'e> Fn(&'e E, usize) -> Pin<Box<dyn std::future::Future<Output = ()> + 'e>> + 'c>,
-);
+pub struct CustomKeybind<'c, E> {
+    pub key: char,
+    pub action: &'c dyn Fn(&E, usize) -> BoxFuture<'_, ()>,
+}
 
 pub async fn interative_select<E: Display, const K: usize>(
     table: &[E],
@@ -136,11 +136,11 @@ pub async fn interative_select<E: Display, const K: usize>(
 ) -> anyhow::Result<Option<usize>> {
     use crate::util::RawMode;
     use crossterm::{
+        QueueableCommand,
         cursor::{self, MoveTo, MoveToNextLine},
         event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
         style::Print,
         terminal::{Clear, ClearType},
-        QueueableCommand,
     };
 
     if SessionKind::current().await == SessionKind::Gui {
@@ -192,8 +192,8 @@ pub async fn interative_select<E: Display, const K: usize>(
                 code: KeyCode::Char(ch),
                 ..
             }) => {
-                if let Some((_, f)) = custom_keybinds.iter().find(|(c, _)| ch == *c) {
-                    f(&table[selected], selected).await;
+                if let Some(ckey) = custom_keybinds.iter().find(|ckey| ch == ckey.key) {
+                    (ckey.action)(&table[selected], selected).await;
                 }
             }
             _ => {}
