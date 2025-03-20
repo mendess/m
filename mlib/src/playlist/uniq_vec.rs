@@ -43,6 +43,14 @@ impl<T: PartialEq> UniqVec<T> {
     pub fn into_vec(self) -> Vec<T> {
         self.v
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.v.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        self.v.iter_mut()
+    }
 }
 
 impl<T> Deref for UniqVec<T> {
@@ -58,5 +66,32 @@ impl<T> FromIterator<T> for UniqVec<T> {
         Self {
             v: FromIterator::from_iter(iter),
         }
+    }
+}
+
+impl<T> IntoIterator for UniqVec<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.v.into_iter()
+    }
+}
+
+impl<'s, T> IntoIterator for &'s UniqVec<T> {
+    type Item = &'s T;
+    type IntoIter = std::slice::Iter<'s, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'s, T> IntoIterator for &'s mut UniqVec<T> {
+    type Item = &'s mut T;
+    type IntoIter = std::slice::IterMut<'s, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.v.iter_mut()
     }
 }

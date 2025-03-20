@@ -160,7 +160,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?
                     .into()
             };
-            let link = playlist_ctl::new(link, categories).await?;
+            let link = playlist_ctl::new(link, categories.into_iter().collect()).await?;
             if queue {
                 queue_ctl::queue(Default::default(), Some(Item::Link(link.into()))).await?;
             }

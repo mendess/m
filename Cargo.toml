@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.3.60"
+version = "0.3.61"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -33,6 +33,7 @@ tracing-log.workspace = true
 tracing-subscriber = { version = "0.3.18", features = ["registry", "env-filter", "fmt"] }
 tracing.workspace = true
 whoami.workspace = true
+levenshtein = "1.0.5"
 
 [workspace]
 members = ["mlib", "cli-daemon"]

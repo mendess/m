@@ -1,15 +1,15 @@
-use std::collections::HashSet;
-
-use crate::util::selector;
+use crate::util::{self, selector};
 use crate::{error, notify};
 use anyhow::{Context, bail};
 use futures_util::TryStreamExt;
 use futures_util::{Stream, future::ready};
 use itertools::Itertools;
+use levenshtein::levenshtein;
 use mlib::Item;
 use mlib::item::link::VideoLink;
 use mlib::players::PlayerLink;
 use mlib::playlist::PartialSearchResult;
+use mlib::playlist::uniq_vec::UniqVec;
 use mlib::{
     Link,
     playlist::{self, Playlist, PlaylistIds, Song},
@@ -38,7 +38,7 @@ pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
 
 pub async fn ls_categories() -> anyhow::Result<()> {
     let playlist = Playlist::load().await?;
-    let mut cat = playlist.categories().collect::<Vec<_>>();
+    let mut cat = playlist.categories().into_iter().collect::<Vec<_>>();
     cat.sort_unstable_by_key(|(_, count)| *count);
     for (c, count) in cat {
         println!("{:5}  {}", count, c);
@@ -46,15 +46,34 @@ pub async fn ls_categories() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn new(link: Link, categories: Vec<String>) -> anyhow::Result<VideoLink> {
+pub async fn new(link: Link, mut categories: UniqVec<String>) -> anyhow::Result<VideoLink> {
     let link = link
         .into_video()
         .map_err(|link| anyhow::anyhow!("{} is not a video link", link))?;
     if Playlist::contains_song(link.id()).await? {
         return Err(anyhow::anyhow!("Song already in playlist"));
     }
+    let playlist = Playlist::load().await?;
+    let playlist_categories = playlist.categories();
+    for cat in &mut categories {
+        if !playlist_categories.contains_key(cat.as_str()) {
+            let close_matches = playlist_categories
+                .iter()
+                .filter(|(c, _)| levenshtein(c, cat) < 4)
+                .map(|(c, _)| *c)
+                .collect::<Vec<_>>();
+            if !close_matches.is_empty() {
+                println!("You said {cat}. Did you mean any of these?");
+                if let Some(index) = util::selector::interative_select(&close_matches, []).await? {
+                    *cat = close_matches[index].to_owned();
+                }
+            }
+        }
+    }
     notify!("Fetching song info");
-    add_song(link.clone(), categories.into_iter().collect()).await?;
+    let song = fetch_song_info(link.clone(), categories).await?;
+    Playlist::add_song(&song).await?;
+    notify!("Song added"; content: "{}", song);
     Ok(link)
 }
 
@@ -81,9 +100,9 @@ pub async fn add_playlist(
             }
         })
         .and_then(move |link| {
-            let categories = categories.iter().cloned().collect();
+            let categories = categories.clone(); // TODO this clone should not be needed
             async {
-                add_song(link.clone(), categories).await?;
+                Playlist::add_song(&fetch_song_info(link.clone(), categories).await?).await?;
                 Ok(link)
             }
         }))
@@ -135,22 +154,22 @@ pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Re
     Ok(())
 }
 
-async fn add_song(mut link: VideoLink, categories: HashSet<String>) -> anyhow::Result<()> {
+async fn fetch_song_info(
+    mut link: VideoLink,
+    categories: impl IntoIterator<Item: Into<String>>,
+) -> anyhow::Result<Song> {
     let b = YtdlBuilder::new(&link)
         .get_title()
         .get_duration()
         .request()
         .await?;
     link.shorten();
-    let song = Song {
+    Ok(Song {
         time: b.duration().as_secs(),
         link,
         name: b.title(),
-        categories: categories.into_iter().collect(),
-    };
-    Playlist::add_song(&song).await?;
-    notify!("Song added"; content: "{}", song);
-    Ok(())
+        categories: categories.into_iter().map(Into::into).collect(),
+    })
 }
 
 pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()> {

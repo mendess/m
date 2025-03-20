@@ -1548,6 +1548,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
+name = "levenshtein"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db13adb97ab515a3691f56e4dbab09283d0b86cb45abd991d8634a9d6f501760"
+
+[[package]]
 name = "libc"
 version = "0.2.170"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1606,7 +1612,7 @@ checksum = "30bde2b3dc3671ae49d8e2e9f044c7c005836e7a023ee57cffa25ab82764bb9e"
 
 [[package]]
 name = "m"
-version = "0.3.60"
+version = "0.3.61"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1618,6 +1624,7 @@ dependencies = [
  "dirs",
  "futures-util",
  "itertools",
+ "levenshtein",
  "memchr",
  "mlib",
  "namespaced-tmp",

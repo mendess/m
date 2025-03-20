@@ -506,12 +506,8 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
             .map(|l| Item::Link(l.link.into()))
             .collect(),
         "Category" => {
-            let category = selector(
-                playlist.categories().map(|(s, _)| s).unique(),
-                "Which category?",
-                30,
-            )
-            .await?;
+            let category =
+                selector(playlist.categories().keys().unique(), "Which category?", 30).await?;
             let category = match category {
                 Some(c) => c,
                 None => return Ok(()),

@@ -1,4 +1,4 @@
-mod uniq_vec;
+pub mod uniq_vec;
 
 use csv_async::{AsyncReaderBuilder, AsyncWriterBuilder, StringRecord};
 use dirs::config_dir;
@@ -137,7 +137,7 @@ impl Playlist {
         Ok(reader.into_deserialize())
     }
 
-    pub fn categories(&self) -> impl Iterator<Item = (&str, usize)> {
+    pub fn categories(&self) -> HashMap<&str, usize> {
         self.songs
             .iter()
             .flat_map(|s| s.categories.iter())
@@ -145,8 +145,6 @@ impl Playlist {
                 *set.entry(c).or_default() += 1;
                 set
             })
-            .into_iter()
-            .map(|(k, v)| (k.as_str(), v))
     }
 
     pub async fn contains_song(song: &str) -> io::Result<bool> {

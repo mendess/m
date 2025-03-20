@@ -183,11 +183,16 @@ pub async fn interative_select<E: Display, const K: usize>(
             }) => {
                 selected = (selected + 1).clamp(0, table.len().saturating_sub(1));
             }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }) => return Ok(None),
+            Event::Key(
+                KeyEvent {
+                    code: KeyCode::Char('d'),
+                    modifiers: KeyModifiers::CONTROL,
+                    ..
+                }
+                | KeyEvent {
+                    code: KeyCode::Esc, ..
+                },
+            ) => return Ok(None),
             Event::Key(KeyEvent {
                 code: KeyCode::Char(ch),
                 ..
