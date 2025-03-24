@@ -1,10 +1,14 @@
 use super::session_kind::SessionKind;
+use crate::error;
+use anyhow::bail;
 use futures_util::future::BoxFuture;
+use rustyline::error::ReadlineError;
 use std::{
-    fmt::Display,
-    io::{Write, stdout},
+    fmt::{Display, Write as _},
+    io::{Write as _, stdout},
     os::unix::prelude::ExitStatusExt,
     process::{ExitStatus, Stdio},
+    str::FromStr,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
@@ -30,6 +34,68 @@ where
             )
             .await
         }
+    }
+}
+
+pub async fn prompt<T>(prompt: &str) -> anyhow::Result<Option<T>>
+where
+    T: FromStr,
+    T::Err: Display,
+    anyhow::Error: From<T::Err>,
+{
+    prompt_validated(prompt, |_| Ok(())).await
+}
+
+pub async fn prompt_validated<T>(
+    prompt: &str,
+    mut validation: impl FnMut(&T) -> Result<(), String>,
+) -> anyhow::Result<Option<T>>
+where
+    T: FromStr,
+    T::Err: Display,
+    anyhow::Error: From<T::Err>,
+{
+    match SessionKind::current().await {
+        SessionKind::Cli => {
+            let mut editor = rustyline::DefaultEditor::new()?;
+            let mut rl_prompt = format!("{prompt}: ");
+            loop {
+                match editor.readline(&rl_prompt) {
+                    Ok(input) => match (!input.is_empty()).then(|| input.parse()) {
+                        Some(Ok(t)) => match validation(&t) {
+                            Ok(()) => return Ok(Some(t)),
+                            Err(reason) => {
+                                rl_prompt.clear();
+                                writeln!(rl_prompt, "error: {reason}. {prompt}: ").unwrap();
+                            }
+                        },
+                        Some(Err(e)) => {
+                            rl_prompt.clear();
+                            writeln!(rl_prompt, "error: {e}. {prompt}: ").unwrap();
+                        }
+                        None => return Ok(None),
+                    },
+                    Err(ReadlineError::Eof) => return Ok(None),
+                    Err(ReadlineError::Interrupted) => bail!("canceled"),
+                    Err(ReadlineError::WindowResized) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        }
+        SessionKind::Gui => loop {
+            match dmenu(std::iter::empty::<&str>(), prompt, 1).await {
+                Ok(Some(r)) if r.is_empty() => return Ok(None),
+                Ok(Some(r)) => match r.parse() {
+                    Ok(t) => match validation(&t) {
+                        Ok(()) => return Ok(Some(t)),
+                        Err(reason) => error!("invalid response"; content: "{reason}"),
+                    },
+                    Err(e) => error!("invalid response"; content: "{e}"),
+                },
+                Ok(None) => error!("please respond"),
+                Err(e) => error!("error reading user response"; content: "{e}"),
+            }
+        },
     }
 }
 

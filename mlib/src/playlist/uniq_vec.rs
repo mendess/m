@@ -63,9 +63,27 @@ impl<T> Deref for UniqVec<T> {
 
 impl<T> FromIterator<T> for UniqVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        Self {
-            v: FromIterator::from_iter(iter),
+        let mut v = Vec::new();
+        for i in iter {
+            v.push(i)
         }
+        Self { v }
+    }
+}
+
+impl<T> From<Vec<T>> for UniqVec<T>
+where
+    T: PartialEq,
+{
+    fn from(value: Vec<T>) -> Self {
+        for i in 0..value.len() {
+            for j in (i + 1)..value.len() {
+                if value[i] == value[j] {
+                    return Self::from_iter(value);
+                }
+            }
+        }
+        Self { v: value }
     }
 }
 

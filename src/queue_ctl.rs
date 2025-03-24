@@ -2,7 +2,7 @@ use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
     download_ctl::check_cache_ref,
     notify,
-    util::{DisplayEither, DurationFmt, dl_dir, selector::selector, with_video::with_video_env},
+    util::{DisplayEither, DurationFmt, dl_dir, prompt::selector, with_video::with_video_env},
 };
 
 use std::{collections::HashSet, io::Write, path::PathBuf, pin::pin};

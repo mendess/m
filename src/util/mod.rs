@@ -1,5 +1,5 @@
 pub mod notify;
-pub mod selector;
+pub mod prompt;
 pub mod session_kind;
 pub mod with_video;
 

@@ -25,12 +25,12 @@ use tokio::io;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
-use util::{selector::CustomKeybind, session_kind::SessionKind};
+use util::{prompt::CustomKeybind, session_kind::SessionKind};
 
 use crate::{
     arg_parse::{AddPlaylist, Queue},
     config::DownloadFormat,
-    util::{dl_dir, selector, with_video::with_video_env},
+    util::{dl_dir, prompt, with_video::with_video_env},
 };
 
 #[tracing::instrument]
@@ -121,10 +121,6 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             query: link,
             categories,
         }) => {
-            if categories.is_empty() {
-                error!("empty category list"; content: "please provide at least one category");
-                return Ok(());
-            }
             let link = if search {
                 let search = Search::multiple(link, 10);
                 notify!("searching for 10 videos....");
@@ -135,7 +131,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     .await?;
                 let titles = results.iter().map(|l| l.title_ref()).collect::<Vec<_>>();
                 let results_ref = &results;
-                match selector::interative_select(
+                match prompt::interative_select(
                     &titles,
                     [CustomKeybind {
                         key: 'p',
@@ -160,7 +156,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?
                     .into()
             };
-            let link = playlist_ctl::new(link, categories.into_iter().collect()).await?;
+            let link = playlist_ctl::new(link, categories.into()).await?;
             if queue {
                 queue_ctl::queue(Default::default(), Some(Item::Link(link.into()))).await?;
             }
@@ -170,13 +166,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             link,
             categories,
         }) => {
-            if categories.is_empty() {
-                error!("empty category list"; content: "please provide at least one category");
-                return Ok(());
-            }
             let link =
                 Link::try_from(link).map_err(|s| anyhow::anyhow!("{} is not a valid link", s))?;
-            let links = playlist_ctl::add_playlist(&link, categories).await?;
+            let links = playlist_ctl::add_playlist(&link, categories.into()).await?;
             if queue {
                 links
                     .for_each(|r| async move {

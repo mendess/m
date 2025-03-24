@@ -1,6 +1,6 @@
-use crate::util::{self, selector};
+use crate::util::{self, prompt};
 use crate::{error, notify};
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
 use futures_util::TryStreamExt;
 use futures_util::{Stream, future::ready};
 use itertools::Itertools;
@@ -53,23 +53,7 @@ pub async fn new(link: Link, mut categories: UniqVec<String>) -> anyhow::Result<
     if Playlist::contains_song(link.id()).await? {
         return Err(anyhow::anyhow!("Song already in playlist"));
     }
-    let playlist = Playlist::load().await?;
-    let playlist_categories = playlist.categories();
-    for cat in &mut categories {
-        if !playlist_categories.contains_key(cat.as_str()) {
-            let close_matches = playlist_categories
-                .iter()
-                .filter(|(c, _)| levenshtein(c, cat) < 4)
-                .map(|(c, _)| *c)
-                .collect::<Vec<_>>();
-            if !close_matches.is_empty() {
-                println!("You said {cat}. Did you mean any of these?");
-                if let Some(index) = util::selector::interative_select(&close_matches, []).await? {
-                    *cat = close_matches[index].to_owned();
-                }
-            }
-        }
-    }
+    category_prompt(&mut categories).await?;
     notify!("Fetching song info");
     let song = fetch_song_info(link.clone(), categories).await?;
     Playlist::add_song(&song).await?;
@@ -79,8 +63,9 @@ pub async fn new(link: Link, mut categories: UniqVec<String>) -> anyhow::Result<
 
 pub async fn add_playlist(
     link: &Link,
-    categories: Vec<String>,
+    mut categories: UniqVec<String>,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<VideoLink>> + use<>> {
+    category_prompt(&mut categories).await?;
     let link = match link.as_playlist() {
         Some(s) => s,
         None => return Err(anyhow::anyhow!("Not a playlist link")),
@@ -108,6 +93,40 @@ pub async fn add_playlist(
         }))
 }
 
+async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<()> {
+    let playlist = Playlist::load().await?;
+    let playlist_categories = playlist.categories();
+    if let Some(artist) = prompt::prompt("artist").await? {
+        categories.push(artist);
+    }
+    if let Some(genre) = prompt::prompt("genre").await? {
+        categories.push(genre);
+    }
+    if let Some(who) = prompt::prompt("who recomended this song").await? {
+        categories.push(who);
+    }
+    for cat in &mut *categories {
+        if !playlist_categories.contains_key(cat.as_str()) {
+            let close_matches = playlist_categories
+                .iter()
+                .filter(|(c, _)| levenshtein(c, cat) < 4)
+                .map(|(c, _)| *c)
+                .collect::<Vec<_>>();
+            if !close_matches.is_empty() {
+                println!("You said {cat}. Did you mean any of these?");
+                if let Some(index) = util::prompt::interative_select(&close_matches, []).await? {
+                    *cat = close_matches[index].to_owned();
+                }
+            }
+        }
+    }
+    ensure!(
+        !categories.is_empty(),
+        "please include at least one category"
+    );
+    Ok(())
+}
+
 pub async fn ch_cat() -> anyhow::Result<()> {
     let current = Queue::link(PlayerLink::current()).await?;
     let mut playlist = Playlist::load().await?;
@@ -120,7 +139,7 @@ pub async fn ch_cat() -> anyhow::Result<()> {
         None => return Err(anyhow::anyhow!("current song not in playlist")),
     };
 
-    while let Some(new_cat) = selector::selector(
+    while let Some(new_cat) = prompt::selector(
         current.categories.iter(),
         "Category name? (Esq to quit)",
         current.categories.len(),
