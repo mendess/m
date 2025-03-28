@@ -32,6 +32,10 @@ pub enum Error {
     #[error("csv: {0}")]
     Csv(#[from] csv_async::Error),
 
+    #[cfg(feature = "playlist")]
+    #[error("json: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+
     #[cfg(feature = "player-connection")]
     #[error("libmpv error: {0}")]
     MpvError(players::error::MpvError),

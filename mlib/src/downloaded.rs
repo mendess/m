@@ -124,7 +124,12 @@ pub async fn check_cache_ref(dl_dir: &Path, item: &mut Item) -> CheckCacheDecisi
         },
         _ => return CheckCacheDecision::Skip,
     };
-    if !matches!(playlist::find_song(link.id()).await, Ok(Some(_))) {
+    if !matches!(
+        playlist::Playlist::load()
+            .await
+            .map(|p| p.find_by_link(link).is_some()),
+        Ok(true)
+    ) {
         return CheckCacheDecision::Skip;
     }
     match search_cache_for(dl_dir, link).await {

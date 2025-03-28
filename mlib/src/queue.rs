@@ -78,7 +78,6 @@ impl Queue {
             playlist,
         };
 
-        use futures_util::future::OptionFuture;
         use tracing::Instrument;
 
         tracing::trace!("getting current");
@@ -115,11 +114,10 @@ impl Queue {
                     0.0
                 }
             };
-            let categories = OptionFuture::from(id.map(playlist::find_song))
-                .await
-                .transpose()?
-                .flatten()
-                .map(|s| s.categories)
+            let playlist = playlist::Playlist::load().await?;
+            let categories = id
+                .and_then(|id| playlist.find_by_id(id))
+                .map(|s| s.all_categories().map(|s| s.to_owned()).collect::<Vec<_>>())
                 .unwrap_or_default();
 
             let chapter = player
@@ -164,7 +162,7 @@ impl Queue {
             title,
             chapter,
             playing,
-            categories: categories.into_vec(),
+            categories,
             volume,
             progress,
             duration: Duration::from_secs_f64(duration),

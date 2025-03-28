@@ -54,7 +54,6 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Prev(a) => player_ctl::prev(a).await?,
         Command::Shuffle => player_ctl::shuffle().await?,
         Command::Loop => player_ctl::toggle_loop().await?,
-        Command::ChCat => playlist_ctl::ch_cat().await?,
         Command::Now(a) => queue_ctl::now(a).await?,
         Command::Dump { file } => queue_ctl::dump(file).await?,
         Command::Load { file, shuf } => queue_ctl::load(file, shuf).await?,
@@ -403,10 +402,8 @@ async fn search_params_to_items(
             .await?
             .filter_map(|s| async { s.ok() })
             .filter_map(|s| async move {
-                s.categories
-                    .iter()
-                    .any(|c| c.contains(cat))
-                    .then_some(s.link)
+                let contains = s.all_categories().any(|c| c.contains(cat));
+                contains.then_some(s.link)
             })
             .map(Link::Video)
             .map(Item::Link)

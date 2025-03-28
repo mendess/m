@@ -61,10 +61,6 @@ pub enum Command {
     #[command(alias = "ly")]
     Lyrics,
 
-    /// Add a category to the current song
-    #[command(alias = "change-cats-to-current")]
-    ChCat, // TODO: review this
-
     /// Queue a song
     #[command(alias = "q")]
     Queue(Queue),

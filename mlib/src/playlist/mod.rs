@@ -1,22 +1,25 @@
 pub mod uniq_vec;
 
-use csv_async::{AsyncReaderBuilder, AsyncWriterBuilder, StringRecord};
+use csv_async::AsyncReaderBuilder;
 use dirs::config_dir;
-use futures_util::{Stream, stream::TryStreamExt};
+use futures_util::{
+    Stream, StreamExt,
+    stream::{self, TryStreamExt},
+};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     env,
     fmt::{self, Display},
-    io,
+    io::{self, Write as _},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
 use tokio::{
-    fs::{File, OpenOptions},
-    io::{AsyncRead, AsyncReadExt},
+    fs::File,
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt as _, AsyncWriteExt as _, BufReader},
 };
 
 use crate::{Error, VideoId, item::link::VideoLink};
@@ -28,15 +31,26 @@ pub struct Song {
     pub time: u64,
     #[serde(default)]
     pub categories: uniq_vec::UniqVec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artist: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recomended_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub liked_by: Vec<String>,
 }
 
 impl Display for Song {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} :: {} :: {}", self.name, self.link, self.time)?;
-        if !self.categories.is_empty() {
+        let mut all_cat = self.all_categories().peekable();
+        if all_cat.peek().is_some() {
             write!(f, " :: ")?;
             std::iter::repeat(",")
-                .zip(self.categories.iter().map(String::as_str))
+                .zip(all_cat)
                 .flat_map(|(a, b)| [a, b])
                 .skip(1)
                 .try_for_each(|s| f.write_str(s))?;
@@ -45,19 +59,33 @@ impl Display for Song {
     }
 }
 
+impl Song {
+    pub fn all_categories(&self) -> impl Iterator<Item = &str> + Clone {
+        let Song {
+            name: _,
+            link: _,
+            time: _,
+            categories,
+            genre,
+            artist,
+            language,
+            recomended_by,
+            liked_by,
+        } = self;
+        categories
+            .iter()
+            .chain(artist)
+            .chain(genre)
+            .chain(language)
+            .chain(recomended_by)
+            .chain(liked_by)
+            .map(|s| s.as_str())
+    }
+}
+
 pub struct Playlist {
     pub songs: Vec<Song>,
 }
-
-static WRITER_BUILDER: Lazy<AsyncWriterBuilder> = Lazy::new(|| {
-    let mut builder = AsyncWriterBuilder::new();
-    builder
-        .delimiter(b'\t')
-        .has_headers(false)
-        .flexible(true)
-        .quote_style(csv_async::QuoteStyle::Never);
-    builder
-});
 
 static READER_BUILDER: Lazy<AsyncReaderBuilder> = Lazy::new(|| {
     let mut reader = AsyncReaderBuilder::new();
@@ -70,9 +98,9 @@ static READER_BUILDER: Lazy<AsyncReaderBuilder> = Lazy::new(|| {
 });
 
 impl Playlist {
-    pub(crate) fn path() -> io::Result<&'static PathBuf> {
+    fn path() -> io::Result<&'static PathBuf> {
         static PATH: LazyLock<io::Result<PathBuf>> = LazyLock::new(|| {
-            let path = env::var_os("PLAYLIST")
+            let mut path = env::var_os("PLAYLIST")
                 .map(PathBuf::from)
                 .or_else(|| {
                     let mut playlist_path = config_dir()?;
@@ -81,6 +109,7 @@ impl Playlist {
                     Some(playlist_path)
                 })
                 .ok_or(io::ErrorKind::NotFound)?;
+            path.set_extension("json");
             Ok(path)
         });
         PATH.as_ref().map_err(|e| {
@@ -94,7 +123,20 @@ impl Playlist {
         Self::load_from(playlist_path).await
     }
 
-    pub async fn load_from(playlist_path: &Path) -> Result<Self, Error> {
+    async fn load_from(playlist_path: &Path) -> Result<Self, Error> {
+        let file = match File::open(&playlist_path).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Self::legacy_load_from(&playlist_path.with_extension("")).await;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        Ok(Self {
+            songs: serde_json::from_reader(file.into_std().await)?,
+        })
+    }
+
+    async fn legacy_load_from(playlist_path: &Path) -> Result<Self, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -102,11 +144,7 @@ impl Playlist {
             }
             Err(e) => return Err(e.into()),
         };
-        Self::load_from_reader(file).await
-    }
-
-    pub async fn load_from_reader<R: AsyncRead + Unpin + Send>(source: R) -> Result<Self, Error> {
-        let reader = READER_BUILDER.create_deserializer(source);
+        let reader = READER_BUILDER.create_deserializer(file);
         Ok(Self {
             songs: reader.into_deserialize().try_collect().await?,
         })
@@ -117,8 +155,28 @@ impl Playlist {
         Self::stream_from(playlist_path).await
     }
 
-    pub async fn stream_from(
+    async fn stream_from(
         playlist_path: &Path,
+    ) -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
+        let file = match File::open(&playlist_path).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Self::legacy_stream_from(playlist_path.with_extension(""))
+                    .await
+                    .map(|s| s.boxed());
+            }
+            Err(e) => return Err(e.into()),
+        };
+        Ok(stream::iter(
+            serde_json::from_reader::<_, Vec<Song>>(file.into_std().await)?
+                .into_iter()
+                .map(Ok),
+        )
+        .boxed())
+    }
+
+    async fn legacy_stream_from(
+        playlist_path: PathBuf,
     ) -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
@@ -134,7 +192,7 @@ impl Playlist {
     pub fn categories(&self) -> HashMap<&str, usize> {
         self.songs
             .iter()
-            .flat_map(|s| s.categories.iter())
+            .flat_map(|s| s.all_categories())
             .fold(HashMap::new(), |mut set, c| {
                 *set.entry(c).or_default() += 1;
                 set
@@ -144,21 +202,54 @@ impl Playlist {
     pub async fn contains_song(song: &str) -> io::Result<bool> {
         let path = Playlist::path()?;
         let mut buf = Vec::new();
-        File::open(&path).await?.read_to_end(&mut buf).await?;
+        match File::open(&path).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                File::open(path.with_extension("")).await?
+            }
+            Err(e) => return Err(e),
+        }
+        .read_to_end(&mut buf)
+        .await?;
         Ok(memchr::memmem::find(&buf, song.as_bytes()).is_some())
     }
 
     pub async fn add_song(song: &Song) -> Result<(), Error> {
-        let file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(Self::path()?)
-            .await?;
-        WRITER_BUILDER
-            .create_serializer(file)
-            .serialize(song)
-            .await
-            .map_err(io::Error::from)?;
+        let path = Self::path()?;
+        let mut file = match File::options().write(true).open(&path).await {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                let playlist = Self::legacy_load_from(&path.with_extension("")).await?;
+                playlist.save().await?;
+                File::options().write(true).open(&path).await?
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        struct Indented<W: std::io::Write>(W);
+        impl<W: std::io::Write> std::io::Write for Indented<W> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                let mut count = 0;
+                for b in buf.split_inclusive(|b| *b == b'\n') {
+                    self.0.write_all(b)?;
+                    count += b.len();
+                    const INDENT: &[u8] = b"  ";
+                    if b.ends_with(b"\n") {
+                        self.0.write_all(INDENT)?;
+                    }
+                }
+                Ok(count)
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                self.0.flush()
+            }
+        }
+        file.seek(io::SeekFrom::End(-2)).await?;
+        file.write_all(b",\n  ").await?;
+        let mut std_file = file.into_std().await;
+        serde_json::to_writer_pretty(Indented(&mut std_file), song)?;
+        std_file.write_all(b"\n]")?;
         Ok(())
     }
 
@@ -227,15 +318,16 @@ impl Playlist {
 
     pub async fn save(&self) -> Result<(), Error> {
         let file = File::create(Self::path()?).await?;
-        let mut writer = WRITER_BUILDER.create_serializer(file);
-        for song in self.songs.iter() {
-            writer.serialize(song).await?;
-        }
+        serde_json::to_writer_pretty(file.into_std().await, &self.songs)?;
         Ok(())
     }
 
     pub fn find_by_link(&self, link: &VideoLink) -> Option<&Song> {
-        self.songs.iter().find(|s| s.link.id() == link.id())
+        self.find_by_id(link.id())
+    }
+
+    pub fn find_by_id(&self, id: &VideoId) -> Option<&Song> {
+        self.songs.iter().find(|s| s.link.id() == id)
     }
 }
 
@@ -303,56 +395,28 @@ impl PlaylistIndexMut<'_> {
     }
 }
 
-pub async fn find_song(id: &VideoId) -> Result<Option<Song>, Error> {
-    let path = Playlist::path()?;
-    let mut buf = Vec::new();
-    File::open(&path).await?.read_to_end(&mut buf).await?;
-    match memchr::memmem::find(&buf, id.as_bytes()) {
-        Some(i) => {
-            let end = memchr::memmem::find(&buf[i..], b"\n")
-                .map(|new_line| new_line + i)
-                .unwrap_or_else(|| buf.len());
-            let start = memchr::memmem::rfind(&buf[..i], b"\n")
-                .map(|i| i + 1)
-                .unwrap_or(0);
-            let mut fields = buf[start..end]
-                .split(|c| *c == b'\t')
-                .map(<[u8]>::to_vec)
-                .map(String::from_utf8)
-                .map(Result::unwrap);
-            let mut next_field = || {
-                fields
-                    .next()
-                    .ok_or_else(|| Error::PlaylistFile(String::from("not enough fields")))
-            };
-            Ok(Some(Song {
-                name: next_field()?,
-                link: next_field()?
-                    .try_into()
-                    .map_err(|e| Error::PlaylistFile(format!("invalid link: {e}")))?,
-                time: next_field()?
-                    .parse()
-                    .map_err(|_| Error::PlaylistFile("invalid duration".into()))?,
-                categories: fields.collect(),
-            }))
-        }
-        None => Ok(None),
-    }
-}
-
+#[derive(Debug)]
 pub struct PlaylistIds(HashSet<String>);
 
 impl PlaylistIds {
     pub async fn load() -> io::Result<Self> {
         let playlist_path = Playlist::path()?;
         let file = File::open(playlist_path).await?;
-        let mut reader = READER_BUILDER.create_deserializer(file);
-        let mut record = StringRecord::new();
+        let mut reader = BufReader::new(file);
+        let mut line = String::new();
         let mut set = HashSet::new();
-        while reader.read_record(&mut record).await? {
-            //TODO: unwrap
-            let id = record.get(1).unwrap().split('/').last().unwrap();
-            set.insert(id.to_string());
+        while {
+            line.clear();
+            reader.read_line(&mut line).await? > 0
+        } {
+            const LINK_FIELD: &str = r#""link": ""#;
+            if let Some(idx) = line.find(LINK_FIELD) {
+                let line = &line[(idx + LINK_FIELD.len())..];
+                if let Some(end) = line.find('"') {
+                    //TODO: unwrap
+                    set.insert(line[..end].split('/').last().unwrap().to_string());
+                }
+            }
         }
         Ok(Self(set))
     }

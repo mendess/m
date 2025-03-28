@@ -27,7 +27,7 @@ pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     let playlist = playlist::Playlist::load().await?;
 
     let filter = |s: &Song| match category {
-        Some(ref pat) => s.categories.iter().any(|c| pat.is_match(c)),
+        Some(ref pat) => s.all_categories().any(|c| pat.is_match(c)),
         None => true,
     };
     for Song { name, link, .. } in playlist.songs.into_iter().filter(filter) {
@@ -46,6 +46,31 @@ pub async fn ls_categories() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn make_song(
+    mut link: VideoLink,
+    SongInfo { time, name }: SongInfo,
+    SongMetadata {
+        artist,
+        genre,
+        language,
+        recomended_by,
+    }: SongMetadata,
+    categories: UniqVec<String>,
+) -> Song {
+    link.shorten();
+    Song {
+        name,
+        link,
+        time,
+        categories,
+        artist,
+        genre,
+        language,
+        recomended_by,
+        liked_by: vec![],
+    }
+}
+
 pub async fn new(link: Link, mut categories: UniqVec<String>) -> anyhow::Result<VideoLink> {
     let link = link
         .into_video()
@@ -53,9 +78,10 @@ pub async fn new(link: Link, mut categories: UniqVec<String>) -> anyhow::Result<
     if Playlist::contains_song(link.id()).await? {
         return Err(anyhow::anyhow!("Song already in playlist"));
     }
-    category_prompt(&mut categories).await?;
+    let meta = category_prompt(&mut categories).await?;
     notify!("Fetching song info");
-    let song = fetch_song_info(link.clone(), categories).await?;
+    let song_info = fetch_song_info(&link).await?;
+    let song = make_song(link.clone(), song_info, meta, categories);
     Playlist::add_song(&song).await?;
     notify!("Song added"; content: "{}", song);
     Ok(link)
@@ -65,7 +91,7 @@ pub async fn add_playlist(
     link: &Link,
     mut categories: UniqVec<String>,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<VideoLink>> + use<>> {
-    category_prompt(&mut categories).await?;
+    let meta = category_prompt(&mut categories).await?;
     let link = match link.as_playlist() {
         Some(s) => s,
         None => return Err(anyhow::anyhow!("Not a playlist link")),
@@ -86,26 +112,28 @@ pub async fn add_playlist(
         })
         .and_then(move |link| {
             let categories = categories.clone(); // TODO this clone should not be needed
+            let meta = meta.clone();
             async {
-                Playlist::add_song(&fetch_song_info(link.clone(), categories).await?).await?;
+                let song_info = fetch_song_info(&link).await?;
+                Playlist::add_song(&make_song(link.clone(), song_info, meta, categories)).await?;
                 Ok(link)
             }
         }))
 }
 
-async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<()> {
+#[derive(Debug, Default, Clone)]
+struct SongMetadata {
+    pub artist: Option<String>,
+    pub genre: Option<String>,
+    pub language: Option<String>,
+    pub recomended_by: Option<String>,
+}
+
+async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<SongMetadata> {
     let playlist = Playlist::load().await?;
     let playlist_categories = playlist.categories();
-    if let Some(artist) = prompt::prompt("artist").await? {
-        categories.push(artist);
-    }
-    if let Some(genre) = prompt::prompt("genre").await? {
-        categories.push(genre);
-    }
-    if let Some(who) = prompt::prompt("who recomended this song").await? {
-        categories.push(who);
-    }
-    for cat in &mut *categories {
+    let mut meta = SongMetadata::default();
+    let did_you_mean_check = async |cat: &mut String| {
         if !playlist_categories.contains_key(cat.as_str()) {
             let close_matches = playlist_categories
                 .iter()
@@ -119,39 +147,34 @@ async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<()>
                 }
             }
         }
+        anyhow::Ok(())
+    };
+    let mut set = async |mut value, at: &mut Option<String>| {
+        did_you_mean_check(&mut value).await?;
+        categories.retain(|s| *s != value);
+        *at = Some(value);
+        anyhow::Ok(())
+    };
+    if let Some(artist) = prompt::prompt("artist").await? {
+        set(artist, &mut meta.artist).await?;
+    }
+    if let Some(genre) = prompt::prompt("genre").await? {
+        set(genre, &mut meta.genre).await?;
+    }
+    if let Some(language) = prompt::prompt("language").await? {
+        set(language, &mut meta.language).await?;
+    }
+    if let Some(recomended_by) = prompt::prompt::<String>("recomended by").await? {
+        set(recomended_by, &mut meta.recomended_by).await?;
+    }
+    for cat in &mut *categories {
+        did_you_mean_check(cat).await?;
     }
     ensure!(
         !categories.is_empty(),
         "please include at least one category"
     );
-    Ok(())
-}
-
-pub async fn ch_cat() -> anyhow::Result<()> {
-    let current = Queue::link(PlayerLink::current()).await?;
-    let mut playlist = Playlist::load().await?;
-    let current = current
-        .id()
-        .ok_or_else(|| anyhow::anyhow!("current song is not identified"))?;
-
-    let mut current = match playlist.find_song_mut(|s| s.link.id() == current) {
-        Some(c) => c,
-        None => return Err(anyhow::anyhow!("current song not in playlist")),
-    };
-
-    while let Some(new_cat) = prompt::selector(
-        current.categories.iter(),
-        "Category name? (Esq to quit)",
-        current.categories.len(),
-    )
-    .await?
-    {
-        if let Some(old_cat) = current.categories.push(new_cat) {
-            current.categories.remove(&old_cat);
-        }
-    }
-    playlist.save().await?;
-    Ok(())
+    Ok(meta)
 }
 
 pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Result<()> {
@@ -173,21 +196,19 @@ pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Re
     Ok(())
 }
 
-async fn fetch_song_info(
-    mut link: VideoLink,
-    categories: impl IntoIterator<Item: Into<String>>,
-) -> anyhow::Result<Song> {
-    let b = YtdlBuilder::new(&link)
+struct SongInfo {
+    time: u64,
+    name: String,
+}
+async fn fetch_song_info(link: &VideoLink) -> anyhow::Result<SongInfo> {
+    let b = YtdlBuilder::new(link)
         .get_title()
         .get_duration()
         .request()
         .await?;
-    link.shorten();
-    Ok(Song {
+    Ok(SongInfo {
         time: b.duration().as_secs(),
-        link,
         name: b.title(),
-        categories: categories.into_iter().map(Into::into).collect(),
     })
 }
 
@@ -240,7 +261,7 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
                     "§bname:§r {}\n§blink:§r {}\n§bcategories:§r {}",
                     s.name,
                     s.link,
-                    s.categories.iter().format(" | ")
+                    s.all_categories().format(" | ")
             );
         }
         PartialSearchResult::Many(m) => {

@@ -51,6 +51,10 @@ impl<T: PartialEq> UniqVec<T> {
     pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
         self.v.iter_mut()
     }
+
+    pub fn retain(&mut self, f: impl FnMut(&mut T) -> bool) {
+        self.v.retain_mut(f)
+    }
 }
 
 impl<T> Deref for UniqVec<T> {

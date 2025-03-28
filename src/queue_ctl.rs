@@ -371,9 +371,10 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 .await
                 .context("getting playlist file")?
                 .filter_map(|s| async { s.ok() })
-                .filter_map(
-                    |s| async move { s.categories.iter().any(|c| c.contains(cat)).then_some(s) },
-                )
+                .filter_map(|s| async move {
+                    let contains = s.all_categories().any(|c| c.contains(cat));
+                    contains.then_some(s)
+                })
                 .map(|s| s.link.id().to_string())
                 .collect::<HashSet<_>>()
                 .await;
@@ -515,7 +516,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
             playlist
                 .songs
                 .into_iter()
-                .filter(|s| s.categories.contains(&category))
+                .filter(|s| s.all_categories().contains(&category.as_str()))
                 .map(|l| Item::Link(l.link.into()))
                 .collect()
         }
