@@ -6,13 +6,13 @@ use futures_util::{Stream, stream::TryStreamExt};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     env,
     fmt::{self, Display},
     io,
     ops::{Deref, DerefMut},
-    path::PathBuf,
+    path::{Path, PathBuf},
+    sync::LazyLock,
 };
 use tokio::{
     fs::{File, OpenOptions},
@@ -70,28 +70,22 @@ static READER_BUILDER: Lazy<AsyncReaderBuilder> = Lazy::new(|| {
 });
 
 impl Playlist {
-    pub(crate) fn path() -> io::Result<PathBuf> {
-        thread_local! {
-            static PATH: RefCell<io::Result<PathBuf>> = RefCell::new(Err(io::ErrorKind::NotFound.into()));
-        };
-        PATH.with(|p| {
-            let mut borrow = p.borrow_mut();
-            match &*borrow {
-                Ok(p) => Ok(p.clone()),
-                Err(_) => {
-                    let path = env::var_os("PLAYLIST")
-                        .map(PathBuf::from)
-                        .or_else(|| {
-                            let mut playlist_path = config_dir()?;
-                            playlist_path.push("m");
-                            playlist_path.push("playlist");
-                            Some(playlist_path)
-                        })
-                        .ok_or(io::ErrorKind::NotFound)?;
-                    *borrow = Ok(path.clone());
-                    Ok(path)
-                }
-            }
+    pub(crate) fn path() -> io::Result<&'static PathBuf> {
+        static PATH: LazyLock<io::Result<PathBuf>> = LazyLock::new(|| {
+            let path = env::var_os("PLAYLIST")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    let mut playlist_path = config_dir()?;
+                    playlist_path.push("m");
+                    playlist_path.push("playlist");
+                    Some(playlist_path)
+                })
+                .ok_or(io::ErrorKind::NotFound)?;
+            Ok(path)
+        });
+        PATH.as_ref().map_err(|e| {
+            tracing::error!(error = ?e, "failed to find playlist path");
+            io::ErrorKind::NotFound.into()
         })
     }
 
@@ -100,11 +94,11 @@ impl Playlist {
         Self::load_from(playlist_path).await
     }
 
-    pub async fn load_from(playlist_path: PathBuf) -> Result<Self, Error> {
+    pub async fn load_from(playlist_path: &Path) -> Result<Self, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::PlaylistFileNotFound(playlist_path));
+                return Err(Error::PlaylistFileNotFound(playlist_path.to_owned()));
             }
             Err(e) => return Err(e.into()),
         };
@@ -124,12 +118,12 @@ impl Playlist {
     }
 
     pub async fn stream_from(
-        playlist_path: PathBuf,
+        playlist_path: &Path,
     ) -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::PlaylistFileNotFound(playlist_path));
+                return Err(Error::PlaylistFileNotFound(playlist_path.to_owned()));
             }
             Err(e) => return Err(e.into()),
         };
