@@ -123,7 +123,7 @@ impl Playlist {
         Self::load_from(playlist_path).await
     }
 
-    async fn load_from(playlist_path: &Path) -> Result<Self, Error> {
+    pub async fn load_from(playlist_path: &Path) -> Result<Self, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
