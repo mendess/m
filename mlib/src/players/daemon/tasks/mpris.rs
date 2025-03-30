@@ -460,14 +460,15 @@ impl PlaylistsInterface for MprisPlayer {
         _order: PlaylistOrdering,
         _reverse_order: bool,
     ) -> fdo::Result<Vec<Playlist>> {
-        let daemon = self.daemon.lock().await;
-        let players = daemon.list();
-        let slice = players
-            .get((index as usize)..)
-            .and_then(|slice| slice.get(..(max_count as usize)))
-            .unwrap_or_default();
-
-        Ok(slice.iter().map(|i| Playlist::from(*i)).collect())
+        Ok(self
+            .daemon
+            .lock()
+            .await
+            .list()
+            .skip(index as usize)
+            .take(max_count as usize)
+            .map(Playlist::from)
+            .collect())
     }
 
     #[tracing::instrument(skip(self))]
@@ -573,7 +574,7 @@ impl TrackListInterface for MprisPlayer {
     #[tracing::instrument(skip(self))]
     async fn tracks(&self) -> fdo::Result<Vec<TrackId>> {
         let daemon = self.daemon.lock().await;
-        let v = futures_util::stream::iter(daemon.list().into_iter())
+        let v = futures_util::stream::iter(daemon.list())
             .then(|player| daemon.queue(player).map_ok(move |queue| (player, queue)))
             .map_ok(|(player, queue)| {
                 queue

@@ -64,10 +64,13 @@ ytdl = [
     "dep:tokio",
     "dep:tokio-stream",
     "dep:trait-gen",
+    "dep:tracing",
 ]
 player = [
     "serde",
     "player-connection",
+    "downloads",
+    "statistics",
 
     "dep:libmpv",
     "dep:parking_lot",
@@ -103,8 +106,10 @@ playlist = [
     "dep:dirs",
     "dep:futures-util",
     "dep:memchr",
+    "dep:serde_json",
     "dep:thiserror",
     "dep:tokio",
+    "dep:tracing",
 ]
 queue = [
     "playlist",
@@ -128,4 +133,5 @@ default = [
     "queue",
     "statistics",
     "ytdl",
+    "mpris",
 ]
