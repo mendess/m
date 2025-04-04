@@ -402,7 +402,15 @@ pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
     let q = Queue::load_full(PlayerLink::current()).await?;
     let mut file = BufWriter::new(File::create(file).await?);
     for s in q.iter() {
-        file.write_all(s.item.as_bytes()).await?;
+        match s.item.id() {
+            Some(id) => {
+                file.write_all(b"https://youtu.be/").await?;
+                file.write_all(id.as_bytes()).await?;
+            }
+            None => {
+                file.write_all(s.item.as_bytes()).await?;
+            }
+        }
         file.write_all(b"\n").await?;
     }
     file.flush().await?;
