@@ -77,7 +77,9 @@ pub enum Command {
     CleanDownloads,
 
     /// Toggles playlist looping
-    Loop,
+    Loop {
+        flag: Option<bool>,
+    },
 
     /// Volume up
     #[command(alias = "k")]

@@ -127,6 +127,17 @@ pub async fn toggle_loop() -> anyhow::Result<()> {
     Ok(())
 }
 
+pub async fn set_looping(state: bool) -> anyhow::Result<()> {
+    let player = chosen_index();
+    player.queue_loop(state).await?;
+    if state {
+        notify!("now looping");
+    } else {
+        notify!("not looping");
+    }
+    Ok(())
+}
+
 pub async fn status() -> anyhow::Result<()> {
     let all = players::all().await?;
     for player in all {
