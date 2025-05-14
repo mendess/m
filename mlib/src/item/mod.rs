@@ -158,7 +158,14 @@ pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
 
 pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
     // format: [name]=[id]=m.ext
-    let name = p.as_ref().file_stem()?.to_str()?;
+    let mut name = p.as_ref();
+    let name = loop {
+        let new = name.file_stem()?;
+        if new == name {
+            break name.to_str()?;
+        }
+        name = Path::new(new);
+    };
     let range = id_range(name)?;
     Some(VideoId::new(&name[range]))
 }
