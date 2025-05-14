@@ -440,13 +440,10 @@ pub async fn play(
     items: impl IntoIterator<Item = Item>,
     with_video: bool,
 ) -> anyhow::Result<PlayerLink> {
-    let dl_dir = match dl_dir().await {
-        Ok(d) => Some(d),
-        Err(_) => None,
-    };
+    let dl_dir = dl_dir().await;
     let items = expand_playlists(items)
         .map(|mut i| async {
-            if let Some(dl_dir) = &dl_dir {
+            if let Ok(dl_dir) = &dl_dir {
                 check_cache_ref(dl_dir, &mut i).await;
             }
             i

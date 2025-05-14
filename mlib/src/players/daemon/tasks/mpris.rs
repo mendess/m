@@ -165,7 +165,11 @@ impl PlayerInterface for MprisPlayer {
 
     #[tracing::instrument(skip(self))]
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
-        let Some(Ok(track_id_pos)) = track_id.as_str().split('/').last().map(str::parse::<i64>)
+        let Some(Ok(track_id_pos)) = track_id
+            .as_str()
+            .split('/')
+            .next_back()
+            .map(str::parse::<i64>)
         else {
             return Err(fdo::Error::InvalidArgs(track_id.to_string()));
         };
@@ -368,7 +372,7 @@ impl TryFrom<PlaylistId> for PlayerIndex {
         match playlist_id
             .as_str()
             .split('/')
-            .last()
+            .next_back()
             .map(str::parse)
             .map(|r| r.map(PlayerIndex::of))
         {

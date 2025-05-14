@@ -414,7 +414,7 @@ impl PlaylistIds {
                 let line = &line[(idx + LINK_FIELD.len())..];
                 if let Some(end) = line.find('"') {
                     //TODO: unwrap
-                    set.insert(line[..end].split('/').last().unwrap().to_string());
+                    set.insert(line[..end].split('/').next_back().unwrap().to_string());
                 }
             }
         }
