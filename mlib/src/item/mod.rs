@@ -164,6 +164,9 @@ pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
         if new == name {
             break name.to_str()?;
         }
+        if new.as_bytes().ends_with(b"=m") || new.as_bytes().ends_with(b"=mart") {
+            break new.to_str()?;
+        }
         name = Path::new(new);
     };
     let range = id_range(name)?;
