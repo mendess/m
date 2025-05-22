@@ -6,7 +6,7 @@ pub mod with_video;
 use mlib::VideoId;
 use mlib::item::link::VideoLink;
 use std::fmt::Display;
-use std::io;
+use std::io::{self, StdoutLock, Write as _};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
@@ -72,6 +72,25 @@ pub struct RawMode;
 impl RawMode {
     pub fn enable() -> io::Result<Self> {
         crossterm::terminal::enable_raw_mode().map(|_| Self)
+    }
+
+    pub fn guarantee_space(
+        &self,
+        stdout: &mut StdoutLock<'static>,
+        required_space: u16,
+    ) -> io::Result<(u16, u16)> {
+        use crossterm::QueueableCommand as _;
+        use crossterm::terminal::ScrollUp;
+
+        let (_, rows) = crossterm::terminal::size()?;
+        let start_position @ (cursor_x, cursor_y) = crossterm::cursor::position()?;
+        let missing_rows = required_space.saturating_sub(rows.saturating_sub(cursor_y + 1));
+        if missing_rows != 0 {
+            stdout.queue(ScrollUp(missing_rows))?.flush()?;
+            Ok((cursor_x, cursor_y - missing_rows))
+        } else {
+            Ok(start_position)
+        }
     }
 }
 impl Drop for RawMode {

@@ -1641,7 +1641,7 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "m"
-version = "0.4.3"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1745,7 +1745,7 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.11.1"
+version = "0.11.2"
 dependencies = [
  "arc-swap",
  "async_once",

@@ -9,7 +9,7 @@ use std::{
 use crate::{player_ctl, util::RawMode};
 use crossterm::{
     QueueableCommand,
-    cursor::{self, MoveTo},
+    cursor::MoveTo,
     event::{self, Event, KeyCode, KeyEvent},
     terminal::{Clear, ClearType},
 };
@@ -190,8 +190,8 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
 }
 
 pub async fn interactive() -> anyhow::Result<()> {
-    let _guard = RawMode::enable()?;
-    let (column, row) = cursor::position()?;
+    let guard = RawMode::enable()?;
+    let (column, row) = guard.guarantee_space(&mut stdout().lock(), 10)?;
     crate::notify!("Loading....");
     let mut input_task = pin!(input_task());
     let mut ui_task = pin!(async {

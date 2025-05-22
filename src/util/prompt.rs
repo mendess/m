@@ -1,6 +1,14 @@
 use super::session_kind::SessionKind;
 use crate::error;
-use anyhow::bail;
+use crate::util::RawMode;
+use anyhow::{Context as _, bail};
+use crossterm::{
+    QueueableCommand,
+    cursor::{MoveTo, MoveToNextLine},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    style::Print,
+    terminal::{Clear, ClearType},
+};
 use futures_util::future::BoxFuture;
 use rustyline::error::ReadlineError;
 use std::{
@@ -200,26 +208,22 @@ pub async fn interative_select<E: Display, const K: usize>(
     table: &[E],
     custom_keybinds: [CustomKeybind<'_, E>; K],
 ) -> anyhow::Result<Option<usize>> {
-    use crate::util::RawMode;
-    use crossterm::{
-        QueueableCommand,
-        cursor::{self, MoveTo, MoveToNextLine},
-        event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-        style::Print,
-        terminal::{Clear, ClearType},
-    };
-
     if SessionKind::current().await == SessionKind::Gui {
         return Err(anyhow::anyhow!(
             "interative select only works in terminal mode"
         ));
     }
 
-    let _raw_mode = RawMode::enable()?;
-    let start_position = cursor::position()?;
+    let raw_mode = RawMode::enable()?;
     let stdout = stdout();
     let mut stdout = stdout.lock();
     let mut selected = 0;
+
+    let start_position = raw_mode.guarantee_space(
+        &mut stdout,
+        u16::try_from(table.len()).context("too many items in the input table")?,
+    )?;
+
     loop {
         stdout
             .queue(MoveTo(start_position.0, start_position.1))?
