@@ -17,6 +17,7 @@ use mlib::{
     ytdl::YtdlBuilder,
 };
 use regex::Regex;
+use std::collections::{BinaryHeap, HashSet};
 
 pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     let category = category
@@ -36,9 +37,15 @@ pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn ls_categories() -> anyhow::Result<()> {
+pub async fn ls_categories(free_categories: bool) -> anyhow::Result<()> {
     let playlist = Playlist::load().await?;
-    let mut cat = playlist.categories().into_iter().collect::<Vec<_>>();
+    let mut cat = if free_categories {
+        playlist.free_categories()
+    } else {
+        playlist.categories()
+    }
+    .into_iter()
+    .collect::<Vec<_>>();
     cat.sort_unstable_by_key(|(_, count)| *count);
     for (c, count) in cat {
         println!("{:5}  {}", count, c);
@@ -53,7 +60,7 @@ fn make_song(
         artist,
         genre,
         language,
-        recomended_by,
+        recommended_by,
     }: SongMetadata,
     categories: UniqVec<String>,
 ) -> Song {
@@ -66,7 +73,7 @@ fn make_song(
         artist,
         genre,
         language,
-        recomended_by,
+        recommended_by,
         liked_by: vec![],
     }
 }
@@ -126,7 +133,7 @@ struct SongMetadata {
     pub artist: Option<String>,
     pub genre: Option<String>,
     pub language: Option<String>,
-    pub recomended_by: Option<String>,
+    pub recommended_by: Option<String>,
 }
 
 async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<SongMetadata> {
@@ -155,7 +162,19 @@ async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<Son
         *at = Some(value);
         anyhow::Ok(())
     };
+    let playlist = Playlist::load().await;
     if let Some(artist) = prompt::prompt("artist").await? {
+        if let Ok(playlist) = &playlist {
+            let genres = playlist
+                .songs
+                .iter()
+                .filter(|s| s.artist.as_ref() == Some(&artist))
+                .filter_map(|g| g.genre.as_ref())
+                .collect::<HashSet<_>>();
+            if !genres.is_empty() {
+                println!("this artist usually plays: {genres:?}");
+            }
+        }
         set(artist, &mut meta.artist).await?;
     }
     if let Some(genre) = prompt::prompt("genre").await? {
@@ -164,15 +183,44 @@ async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<Son
     if let Some(language) = prompt::prompt("language").await? {
         set(language, &mut meta.language).await?;
     }
-    if let Some(recomended_by) = prompt::prompt::<String>("recomended by").await? {
-        set(recomended_by, &mut meta.recomended_by).await?;
+    if let Some(recomended_by) = prompt::prompt("recommended by").await? {
+        set(recomended_by, &mut meta.recommended_by).await?;
+    }
+    if let Some(playlist) = playlist.ok().filter(|_| categories.is_empty()) {
+        let mut heap = playlist
+            .free_categories()
+            .iter()
+            .map(|(c, count)| (*count, *c))
+            .collect::<BinaryHeap<_>>();
+        print!("the top most common categories are: ");
+        let mut i = 0;
+        while let Some((c, category)) = heap.pop() {
+            i += 1;
+            print!("{category} ({c})");
+            if i == 10 {
+                break;
+            }
+            print!(", ");
+        }
+        println!();
+        while let Some(cat) = prompt::prompt("category").await? {
+            categories.push(cat);
+        }
     }
     for cat in &mut *categories {
         did_you_mean_check(cat).await?;
     }
     ensure!(
-        !categories.is_empty(),
-        "please include at least one category"
+        !categories.is_empty()
+            || [
+                &meta.artist,
+                &meta.genre,
+                &meta.language,
+                &meta.recommended_by
+            ]
+            .iter()
+            .any(|s| s.is_some()),
+        "please include at least one category or metadata"
     );
     Ok(meta)
 }

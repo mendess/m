@@ -37,8 +37,12 @@ pub struct Song {
     pub genre: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recomended_by: Option<String>,
+    #[serde(
+        default,
+        alias = "recomended_by",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub recommended_by: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub liked_by: Vec<String>,
 }
@@ -69,7 +73,7 @@ impl Song {
             genre,
             artist,
             language,
-            recomended_by,
+            recommended_by,
             liked_by,
         } = self;
         categories
@@ -77,7 +81,7 @@ impl Song {
             .chain(artist)
             .chain(genre)
             .chain(language)
-            .chain(recomended_by)
+            .chain(recommended_by)
             .chain(liked_by)
             .map(|s| s.as_str())
     }
@@ -193,6 +197,16 @@ impl Playlist {
         self.songs
             .iter()
             .flat_map(|s| s.all_categories())
+            .fold(HashMap::new(), |mut set, c| {
+                *set.entry(c).or_default() += 1;
+                set
+            })
+    }
+
+    pub fn free_categories(&self) -> HashMap<&str, usize> {
+        self.songs
+            .iter()
+            .flat_map(|s| &s.categories)
             .fold(HashMap::new(), |mut set, c| {
                 *set.entry(c).or_default() += 1;
                 set

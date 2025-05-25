@@ -38,7 +38,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     tracing::debug!(?cmd, "running command");
     match cmd {
         Command::Songs { category } => playlist_ctl::songs(category).await?,
-        Command::Cat => playlist_ctl::ls_categories().await?,
+        Command::Cat { free } => playlist_ctl::ls_categories(free).await?,
         Command::Quit => player_ctl::quit().await?,
         Command::SetPlay => player_ctl::resume().await?,
         Command::SetPause => player_ctl::pause().await?,

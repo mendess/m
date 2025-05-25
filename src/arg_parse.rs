@@ -41,7 +41,10 @@ pub enum Command {
     AddPlaylist(AddPlaylist),
 
     /// List all current categories
-    Cat,
+    Cat {
+        #[arg(short, long, default_value_t = false)]
+        free: bool,
+    },
 
     /// Shows the current playlist
     Now(Amount),
