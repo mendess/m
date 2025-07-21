@@ -93,7 +93,7 @@ impl From<PlayerIndex> for PlayerLink {
 impl fmt::Display for PlayerLink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.index.0 {
-            Some(x) => write!(f, "Player @ {}", x),
+            Some(x) => write!(f, "Player @ {x}"),
             None => write!(f, "Player @ CURRENT"),
         }
     }

@@ -32,7 +32,7 @@ pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
         None => true,
     };
     for Song { name, link, .. } in playlist.songs.into_iter().filter(filter) {
-        println!("{} :: {}", link, name);
+        println!("{link} :: {name}");
     }
     Ok(())
 }
@@ -48,7 +48,7 @@ pub async fn ls_categories(free_categories: bool) -> anyhow::Result<()> {
     .collect::<Vec<_>>();
     cat.sort_unstable_by_key(|(_, count)| *count);
     for (c, count) in cat {
-        println!("{:5}  {}", count, c);
+        println!("{count:5}  {c}");
     }
     Ok(())
 }

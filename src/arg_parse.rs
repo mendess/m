@@ -350,7 +350,7 @@ impl FromStr for EntityStatus {
             "players" => Ok(Self::Players),
             "cache" => Ok(Self::Cache),
             "downloads" => Ok(Self::Downloads),
-            _ => Err(format!("Invalid entity: {}", s)),
+            _ => Err(format!("Invalid entity: {s}")),
         }
     }
 }

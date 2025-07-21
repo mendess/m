@@ -39,9 +39,9 @@ impl Display for DurationFmt {
         let (h, s) = (s / 3600, s % 3600);
         let (m, s) = (s / 60, s % 60);
         if h > 0 {
-            write!(f, "{:02}:", h)?;
+            write!(f, "{h:02}:")?;
         }
-        write!(f, "{:02}:{:02}", m, s)
+        write!(f, "{m:02}:{s:02}")
     }
 }
 
@@ -96,7 +96,7 @@ impl RawMode {
 impl Drop for RawMode {
     fn drop(&mut self) {
         if let Err(e) = crossterm::terminal::disable_raw_mode() {
-            eprintln!("failed to disable raw mode: {:?}", e);
+            eprintln!("failed to disable raw mode: {e:?}");
         } else {
             tracing::trace!("leaving raw mode");
         }

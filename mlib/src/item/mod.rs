@@ -125,7 +125,7 @@ impl Display for Item {
             Item::Link(l) => write!(f, "{}", l.as_str()),
             Item::File(p) => {
                 match clean_up_path(p).or_else(|| p.file_stem().and_then(OsStr::to_str)) {
-                    Some(p) => write!(f, "{}", p),
+                    Some(p) => write!(f, "{p}"),
                     None => write!(f, "{}", p.display()),
                 }
             }

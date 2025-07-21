@@ -115,7 +115,7 @@ where
     let mut command = Command::new("fzf");
     let FeedAndRead { line, status, .. } = feed_and_read(
         items,
-        command.args(["-i", "--prompt", &format!("{} ", prompt), "--print-query"]),
+        command.args(["-i", "--prompt", &format!("{prompt} "), "--print-query"]),
     )
     .await?;
     match status.code() {
