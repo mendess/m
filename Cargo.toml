@@ -1,14 +1,14 @@
 [package]
 name = "m"
-version = "0.4.6"
+version = "0.4.7"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0.86"
-arboard = "3.4.1"
-wl-clipboard-rs = "0.9.1"
+arboard = { optional = true, version = "3.4.1" }
+wl-clipboard-rs = { optional = true, version = "0.9.1" }
 clap = { version = "4.5.4", features = ["derive"] }
 clap_complete = "4.5.2"
 cli-daemon.workspace = true
@@ -35,6 +35,9 @@ tracing.workspace = true
 whoami.workspace = true
 levenshtein = "1.0.5"
 rustyline = "15.0.0"
+
+[features]
+clipboard = ["dep:wl-clipboard-rs", "dep:arboard"]
 
 [workspace]
 members = ["mlib", "cli-daemon"]

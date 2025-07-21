@@ -7,7 +7,7 @@ use crate::{
 
 use std::{collections::HashSet, io::Write, path::PathBuf, pin::pin};
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use futures_util::{
     Stream, StreamExt, TryStreamExt,
     future::ready,
@@ -175,7 +175,7 @@ where
     let dl_dir = dl_dir().await?;
     while let Some(mut item) = expanded_items.next().await {
         check_cache_ref(&dl_dir, &mut item).await;
-        print!("Queuing song: {} ... ", item);
+        print!("Queuing song: {item} ... ");
         std::io::stdout().flush()?;
         let SmartQueueSummary {
             from,
@@ -188,10 +188,7 @@ where
 
         if from != moved_to {
             println!("success");
-            println!(
-                "Moved from {} -> {} [now playing: {}] ... ",
-                from, moved_to, current
-            );
+            println!("Moved from {from} -> {moved_to} [now playing: {current}] ... ",);
         }
         if q.notify && item_count < 30 {
             notify_tasks.push(tokio::spawn(notify(item, current, moved_to)));
@@ -388,7 +385,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                     .filter(|id| playlist.contains(id.as_str()))
                     .map(|_| s.index)
             }) {
-                print!("removing {}... ", index);
+                print!("removing {index}... ");
                 std::io::stdout().flush()?;
                 player.queue_remove(index).await?;
                 println!(" success");
@@ -469,7 +466,14 @@ pub async fn play(
 
 pub async fn run_interactive_playlist() -> anyhow::Result<()> {
     let mode = match selector(
-        ["All", "single", "random", "Category", "clipboard"],
+        [
+            "All",
+            "single",
+            "random",
+            "Category",
+            #[cfg(feature = "clipboard")]
+            "clipboard",
+        ],
         "Mode?",
         5,
     )
@@ -525,6 +529,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
                 .map(|l| Item::Link(l.link.into()))
                 .collect()
         }
+        #[cfg(feature = "clipboard")]
         "clipboard" => {
             vec![Item::from(get_clipboard_contents()?)]
         }
@@ -554,7 +559,9 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "clipboard")]
 fn get_clipboard_contents() -> anyhow::Result<String> {
+    use anyhow::bail;
     use arboard::Clipboard;
     use wl_clipboard_rs::paste::{ClipboardType, Error, MimeType, Seat, get_contents};
     let mut clip = Clipboard::new()?;
