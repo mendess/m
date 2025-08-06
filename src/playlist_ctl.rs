@@ -78,7 +78,8 @@ fn make_song(
     }
 }
 
-pub async fn new(link: Link, mut categories: UniqVec<String>) -> anyhow::Result<VideoLink> {
+pub async fn new(link: Link) -> anyhow::Result<VideoLink> {
+    let mut categories = UniqVec::<String>::new();
     let link = link
         .into_video()
         .map_err(|link| anyhow::anyhow!("{} is not a video link", link))?;

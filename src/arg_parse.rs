@@ -210,8 +210,8 @@ pub struct New {
     pub queue: bool,
     #[arg(short, long)]
     pub search: bool,
-    pub query: String,
-    pub categories: Vec<String>,
+    #[arg(required = true)]
+    pub query: Vec<String>,
 }
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]

@@ -118,11 +118,10 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::New(New {
             search,
             queue,
-            query: link,
-            categories,
+            mut query,
         }) => {
             let link = if search {
-                let search = Search::multiple(link, 10);
+                let search = Search::multiple(query.join(" "), 10);
                 notify!("searching for 10 videos....");
                 let results = YtdlBuilder::new(&search)
                     .get_title()
@@ -152,11 +151,14 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     None => return Ok(()),
                 }
             } else {
-                VideoLink::try_from(link)
+                if query.len() > 1 {
+                    notify!("Skipping extra arguments. Only first argument considered");
+                }
+                VideoLink::try_from(query.remove(0))
                     .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?
                     .into()
             };
-            let link = playlist_ctl::new(link, categories.into()).await?;
+            let link = playlist_ctl::new(link).await?;
             if queue {
                 queue_ctl::queue(Default::default(), Some(Item::Link(link.into()))).await?;
             }
