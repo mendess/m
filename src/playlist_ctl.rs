@@ -1,8 +1,8 @@
 use crate::util::{self, prompt};
 use crate::{error, notify};
 use anyhow::{Context, bail, ensure};
-use futures_util::TryStreamExt;
 use futures_util::{Stream, future::ready};
+use futures_util::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use levenshtein::levenshtein;
 use mlib::Item;
@@ -271,33 +271,51 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
 
     match item {
         PartialSearchResult::None => {
-            if just_id {
-                match Item::from(song.join(" ")).id() {
-                    Some(id) => println!("{}", id.as_str()),
-                    None => error!("song doens't have an id"),
+            let print_full_info = async |vid: mlib::ytdl::Ytdl<_>| {
+                notify!(
+                    "song info:";
+                    content:
+                        "§bname:§r {}\n§blink:§r http://youtu.be/{}",
+                        vid.title_ref(),
+                        vid.id().as_str(),
+                )
+            };
+            match Item::from(song.join(" ")) {
+                Item::Link(Link::Video(_)) if just_id => {
+                    match Item::from(song.join(" ")).id() {
+                        Some(id) => println!("{}", id.as_str()),
+                        None => error!("song doens't have an id"),
+                    };
                 }
-                return Ok(());
-            }
-            let vid = match Item::from(song.join(" ")) {
-                Item::Link(Link::Video(l)) => YtdlBuilder::new(&l).get_title().request().await?,
-                Item::Search(s) => YtdlBuilder::new(&s).get_title().search().await?,
+                Item::Link(Link::Video(l)) => {
+                    let vid = YtdlBuilder::new(&l).get_title().request().await?;
+                    print_full_info(vid).await;
+                }
+                Item::Search(s) => {
+                    print_full_info(YtdlBuilder::new(&s).get_title().search().await?).await;
+                }
+                Item::Link(Link::Playlist(l)) => {
+                    let mut playlist = YtdlBuilder::new(&l).get_title().request_playlist()?;
+                    while let Some(i) = playlist.next().await {
+                        let item = i?;
+                        if just_id {
+                            println!("{}", item.id().as_str());
+                        } else {
+                            print_full_info(item).await;
+                        }
+                    }
+                }
                 i => {
                     let Some(id) = i.id() else {
                         bail!("info for {i} not suported");
                     };
-                    YtdlBuilder::new(&VideoLink::from_id(id))
+                    let vid = YtdlBuilder::new(&VideoLink::from_id(id))
                         .get_title()
                         .request()
-                        .await?
+                        .await?;
+                    print_full_info(vid).await;
                 }
             };
-            notify!(
-                "song info:";
-                content:
-                    "§bname:§r {}\n§blink:§r http://youtu.be/{}",
-                    vid.title_ref(),
-                    vid.id().as_str(),
-            )
         }
         PartialSearchResult::One(s) => {
             if just_id {

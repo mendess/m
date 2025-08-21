@@ -85,7 +85,7 @@ impl<M, R, E> Daemon<M, R, E> {
         }
     }
 
-    pub async fn build_daemon_process(&self) -> Option<DaemonProcess<M, R, E>> {
+    pub async fn build_daemon_process(&'_ self) -> Option<DaemonProcess<'_, M, R, E>> {
         if matches!(std::env::args().next(), Some(arg0) if arg0 == self.name) {
             Some(DaemonProcess::new(self).await)
         } else {
