@@ -294,15 +294,16 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
                 Item::Search(s) => {
                     print_full_info(YtdlBuilder::new(&s).get_title().search().await?).await;
                 }
+                Item::Link(Link::Playlist(l)) if just_id => {
+                    let mut playlist = YtdlBuilder::new(&l).request_playlist()?;
+                    while let Some(i) = playlist.next().await {
+                        println!("{}", i?.id().as_str());
+                    }
+                }
                 Item::Link(Link::Playlist(l)) => {
                     let mut playlist = YtdlBuilder::new(&l).get_title().request_playlist()?;
                     while let Some(i) = playlist.next().await {
-                        let item = i?;
-                        if just_id {
-                            println!("{}", item.id().as_str());
-                        } else {
-                            print_full_info(item).await;
-                        }
+                        print_full_info(i?).await;
                     }
                 }
                 i => {
