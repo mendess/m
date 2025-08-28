@@ -15,10 +15,17 @@ use crossterm::{
 };
 use futures_util::{Stream, StreamExt, future::ready, join};
 use mlib::{
-    players::{self, PlayerLink, event::OwnedLibMpvEvent},
+    players::{
+        self, PlayerLink,
+        error::{MpvError, MpvErrorCode},
+        event::OwnedLibMpvEvent,
+    },
     queue::Queue,
 };
-use tokio::{sync::mpsc, time::timeout};
+use tokio::{
+    sync::mpsc,
+    time::{sleep, timeout},
+};
 
 #[derive(Debug)]
 struct PlaybackPosition {
@@ -145,6 +152,21 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
     Ok(event_stream
         .filter_map(|r| ready(r.ok()))
         .filter_map(|ev| async move {
+            async fn get_duration() -> Option<f64> {
+                for attempt in 0..10 {
+                    match players::duration().await {
+                        Ok(d) => return Some(d),
+                        Err(players::Error::Mpv(MpvError::Raw(e))) => match e {
+                            MpvErrorCode::PropertyUnavailable => {
+                                sleep(Duration::from_millis(50 * attempt)).await
+                            }
+                            _ => return None,
+                        },
+                        Err(_) => return None,
+                    }
+                }
+                None
+            }
             match ev.event {
                 OwnedLibMpvEvent::Shutdown => Some(UiUpdate::Quit),
                 OwnedLibMpvEvent::FileLoaded | OwnedLibMpvEvent::PlaybackRestart => None,
@@ -153,7 +175,7 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
                     "playlist-pos" => Some(UiUpdate::ClearChapter),
                     "media-title" => {
                         let title = change.into_string().ok()?;
-                        let total_time = players::duration().await.ok()?;
+                        let total_time = get_duration().await.unwrap_or(f64::INFINITY);
                         let next = Queue::up_next(PlayerLink::current(), None)
                             .await
                             .ok()
@@ -189,75 +211,76 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
         }))
 }
 
-pub async fn interactive() -> anyhow::Result<()> {
+async fn ui_task() -> anyhow::Result<()> {
     let guard = RawMode::enable()?;
     let (column, row) = guard.guarantee_space(&mut stdout().lock(), 10)?;
     crate::notify!("Loading....");
-    let mut input_task = pin!(input_task());
-    let mut ui_task = pin!(async {
-        let mut event_listener = pin!(event_listener().await?);
-        let mut current =
-            Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
-                .await
-                .unwrap();
-        loop {
-            let r = stdout()
-                .lock()
-                .queue(MoveTo(column, row))
-                .and_then(|s| s.queue(Clear(ClearType::FromCursorDown)))
-                .and_then(|s| s.flush());
-            match r {
-                Ok(_) => crate::queue_ctl::display_current(&current, false).await,
-                Err(e) => anyhow::Result::Err(e.into()),
-            }
-            .unwrap();
-            let listen = timeout(Duration::from_secs(1), event_listener.next()).await;
-            match listen {
-                Err(_timedout) => {
-                    if let Some(PlaybackPosition {
-                        percent_position,
-                        playback_time,
-                    }) = current_position().await
-                    {
-                        current.progress = percent_position;
-                        current.playback_time = playback_time;
-                    }
-                }
-                Ok(Some(event)) => match event {
-                    UiUpdate::ClearChapter => current.chapter = None,
-                    UiUpdate::Title {
-                        title,
-                        total_time,
-                        next,
-                    } => {
-                        current.title = title;
-                        current.chapter = None;
-                        current.duration = Duration::from_secs_f64(total_time);
-                        current.next = next;
-                    }
-                    UiUpdate::Volume(volume) => current.volume = volume,
-                    UiUpdate::Pause { is_paused } => current.playing = !is_paused,
-                    UiUpdate::ChapterName { title, total_time } => {
-                        current.chapter.get_or_insert_with(Default::default).1 = title;
-                        current.duration = Duration::from_secs_f64(total_time);
-                    }
-                    UiUpdate::ChapterNumber(index) => {
-                        current.chapter.get_or_insert_with(Default::default).0 = index;
-                    }
-                    UiUpdate::Position(PlaybackPosition {
-                        percent_position,
-                        playback_time,
-                    }) => {
-                        current.progress = percent_position;
-                        current.playback_time = playback_time;
-                    }
-                    UiUpdate::Quit => break,
-                },
-                Ok(None) => {}
-            }
+    let mut event_listener = pin!(event_listener().await?);
+    let mut current = Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
+        .await
+        .unwrap();
+    loop {
+        let r = stdout()
+            .lock()
+            .queue(MoveTo(column, row))
+            .and_then(|s| s.queue(Clear(ClearType::FromCursorDown)))
+            .and_then(|s| s.flush());
+        match r {
+            Ok(_) => crate::queue_ctl::display_current(&current, false).await,
+            Err(e) => anyhow::Result::Err(e.into()),
         }
-        Ok::<_, anyhow::Error>(())
-    });
+        .unwrap();
+        let listen = timeout(Duration::from_secs(1), event_listener.next()).await;
+        match listen {
+            Err(_timedout) => {
+                if let Some(PlaybackPosition {
+                    percent_position,
+                    playback_time,
+                }) = current_position().await
+                {
+                    current.progress = percent_position;
+                    current.playback_time = playback_time;
+                }
+            }
+            Ok(Some(event)) => match event {
+                UiUpdate::ClearChapter => current.chapter = None,
+                UiUpdate::Title {
+                    title,
+                    total_time,
+                    next,
+                } => {
+                    current.title = title;
+                    current.chapter = None;
+                    current.duration = Duration::from_secs_f64(total_time);
+                    current.next = next;
+                }
+                UiUpdate::Volume(volume) => current.volume = volume,
+                UiUpdate::Pause { is_paused } => current.playing = !is_paused,
+                UiUpdate::ChapterName { title, total_time } => {
+                    current.chapter.get_or_insert_with(Default::default).1 = title;
+                    current.duration = Duration::from_secs_f64(total_time);
+                }
+                UiUpdate::ChapterNumber(index) => {
+                    current.chapter.get_or_insert_with(Default::default).0 = index;
+                }
+                UiUpdate::Position(PlaybackPosition {
+                    percent_position,
+                    playback_time,
+                }) => {
+                    current.progress = percent_position;
+                    current.playback_time = playback_time;
+                }
+                UiUpdate::Quit => break,
+            },
+            Ok(None) => {}
+        }
+    }
+    Ok::<_, anyhow::Error>(())
+}
+
+pub async fn interactive() -> anyhow::Result<()> {
+    let mut input_task = pin!(input_task());
+    let mut ui_task = pin!(ui_task());
     tokio::select! {
         _ = &mut input_task => {}
         r = &mut ui_task => r?,
