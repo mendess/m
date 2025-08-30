@@ -6,7 +6,7 @@ rewritten in rust using libmpv as a backend.
 
 ## Dependencies
 - dmenu
-- youtube-dl
+- yt-dlp
 - libmpv
 - notify-send
 

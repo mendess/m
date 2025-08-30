@@ -156,7 +156,7 @@ pub struct GetDlPath<'v> {
 impl GetDlPath<'_> {
     pub async fn get(&self) -> Result<PathBuf, Error> {
         let o = OsStr::new;
-        let mut output = Command::new("youtube-dl")
+        let mut output = Command::new("yt-dlp")
             .args([
                 o("-o"),
                 self.output_format.as_os_str(),
@@ -193,7 +193,7 @@ pub async fn download(
     tokio::fs::create_dir_all(&dl_dir).await?;
     let mut output_format = dl_dir;
     output_format.push("%(title)s=%(id)s=m.%(ext)s");
-    let mut cmd = Command::new("youtube-dl");
+    let mut cmd = Command::new("yt-dlp");
     if just_audio {
         cmd.arg("-x");
     }
