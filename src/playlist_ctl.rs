@@ -310,11 +310,15 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
                     let Some(id) = i.id() else {
                         bail!("info for {i} not suported");
                     };
-                    let vid = YtdlBuilder::new(&VideoLink::from_id(id))
-                        .get_title()
-                        .request()
-                        .await?;
-                    print_full_info(vid).await;
+                    if just_id {
+                        print!("{}", id.as_str());
+                    } else {
+                        let vid = YtdlBuilder::new(&VideoLink::from_id(id))
+                            .get_title()
+                            .request()
+                            .await?;
+                        print_full_info(vid).await;
+                    }
                 }
             };
         }
