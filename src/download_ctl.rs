@@ -13,13 +13,13 @@ use mlib::{
 
 mod daemon {
     use std::{
-        collections::HashSet, num::NonZeroUsize, thread::available_parallelism, time::Duration,
+        collections::HashSet, num::NonZeroUsize, sync::LazyLock, thread::available_parallelism,
+        time::Duration,
     };
 
     use cli_daemon::Daemon;
     use futures_util::{StreamExt, stream::FuturesUnordered};
     use mlib::{downloaded, item::link::VideoLink, playlist::Playlist};
-    use once_cell::sync::Lazy;
     use serde::{Deserialize, Serialize};
     use tokio::{
         sync::{Mutex, mpsc, oneshot},
@@ -82,7 +82,7 @@ mod daemon {
         let (tx, mut rx) = mpsc::channel::<VideoLink>(1000);
         let dl_dir = crate::util::dl_dir().await?;
 
-        static STATUS: Lazy<Mutex<Status>> = Lazy::new(Mutex::default);
+        static STATUS: LazyLock<Mutex<Status>> = LazyLock::new(Mutex::default);
         let paralellism = match available_parallelism().map(NonZeroUsize::get).unwrap_or(1) {
             1 => 1,
             x => x >> 1,

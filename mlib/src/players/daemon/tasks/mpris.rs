@@ -1,3 +1,5 @@
+#![expect(tail_expr_drop_order)]
+
 use std::collections::{HashMap, hash_map::Entry};
 
 use crate::players::daemon;

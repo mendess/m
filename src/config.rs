@@ -1,7 +1,6 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::LazyLock};
 
 use dirs::config_dir;
-use once_cell::sync::Lazy;
 
 #[derive(serde::Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "lowercase")]
@@ -24,7 +23,7 @@ pub struct MConfig {
     pub download_format: DownloadFormat,
 }
 
-pub static CONFIG: Lazy<MConfig> = Lazy::new(|| {
+pub static CONFIG: LazyLock<MConfig> = LazyLock::new(|| {
     let mut config = config::Config::builder()
         .add_source({
             let mut base = config_dir().unwrap_or_else(|| {

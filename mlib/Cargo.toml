@@ -19,7 +19,6 @@ libmpv = { git = "https://github.com/sirno/libmpv-rs", optional = true, branch =
 memchr = { workspace = true, optional = true }
 mpris-server = { version = "0.8.0", optional = true }
 namespaced-tmp = { workspace = true, optional = true }
-once_cell.workspace = true
 parking_lot = { version = "0.12.2", optional = true }
 pin-project = { version = "1.1.5", optional = true }
 raii_flock = { version = "0.2.0", optional = true }

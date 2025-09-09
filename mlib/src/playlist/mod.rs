@@ -6,7 +6,6 @@ use futures_util::{
     Stream, StreamExt,
     stream::{self, TryStreamExt},
 };
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -91,7 +90,7 @@ pub struct Playlist {
     pub songs: Vec<Song>,
 }
 
-static READER_BUILDER: Lazy<AsyncReaderBuilder> = Lazy::new(|| {
+static READER_BUILDER: LazyLock<AsyncReaderBuilder> = LazyLock::new(|| {
     let mut reader = AsyncReaderBuilder::new();
     reader
         .delimiter(b'\t')
