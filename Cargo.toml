@@ -1,70 +1,53 @@
-[package]
-name = "m"
-version = "0.5.1"
+[workspace]
+resolver = "3"
+members = ["lib/*", "bin/*"]
+
+[workspace.package]
 edition = "2024"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-anyhow = "1.0.86"
-arboard = { optional = true, version = "3.4.1" }
-wl-clipboard-rs = { optional = true, version = "0.9.1" }
-clap = { version = "4.5.4", features = ["derive"] }
-clap_complete = "4.5.2"
-cli-daemon.workspace = true
-config = "0.15"
-crossterm = "0.29.0"
-dirs = "6.0.0"
-futures-util.workspace = true
-itertools = "0.13.0"
-memchr.workspace = true
-mlib = { path = "./mlib", default-features = true }
-namespaced-tmp.workspace  = true
-rand = { version = "0.8.5", features = ["getrandom"] }
-regex.workspace = true
-reqwest = { version = "0.12.4", features = ["rustls-tls", "stream"] }
-serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
-tempfile.workspace = true
-tokio-stream = { workspace = true, features = ["io-util"] }
-tokio.workspace = true
-tracing-log.workspace = true
-tracing-subscriber = { version = "0.3.18", features = ["registry", "env-filter", "fmt"] }
-tracing.workspace = true
-whoami.workspace = true
-levenshtein = "1.0.5"
-rustyline = "15.0.0"
-derive_more = "2.0.1"
-mpris-server = "0.9.0"
-serde-map-to-array = "3.0.0"
-thiserror = "2"
-trait-gen = "2"
-zbus = "5"
-
-[features]
-clipboard = ["dep:wl-clipboard-rs", "dep:arboard"]
-
-[workspace]
-members = ["mlib", "cli-daemon"]
-
 [workspace.dependencies]
+anyhow = "1.0.86"
+form_urlencoded = { version = "1.2.1", default-features = false }
+arboard = "3.4.1"
+arc-swap = "1.7.1"
 async_once = "0.2.6"
 base64 = "0.22"
-cli-daemon = { path = "./cli-daemon" }
-derive_more = "1"
-dirs = "5.0.1"
+chrono = "0.4.38"
+clap = "4.5.4"
+clap_complete = "4.5.2"
+config = "0.15"
+crossterm = "0.29.0"
+csv-async = "1.3.0"
+derive_more = "2.0.1"
+dirs = "6.0.0"
 futures-util = "0.3.30"
+glob = "0.3.1"
+itertools = "0.13.0"
+levenshtein = "1.0.5"
 memchr = "2.7.2"
+mpris-server = "0.9.0"
+parking_lot = "0.12.2"
+pin-project = "1.1.5"
+raii_flock = "0.2.0"
+rand = "0.8.5"
 regex = "1.10.4"
-serde = { version = "1.0.202", features = ["derive"] }
+reqwest = "0.12.4"
+rustyline = "15.0.0"
+serde = "1.0.202"
+serde-map-to-array = "3.0.0"
 serde_json = "1.0.117"
 static_assertions = "1.1.0"
 tempfile = "3.10.1"
-tokio-stream = { version = "0.1.15", features = ["io-util"] }
+thiserror = "2"
+tokio-stream = "0.1.15"
 tracing = "0.1.40"
 tracing-log = "0.2.0"
-trait-gen = "0.3.2"
+tracing-subscriber = "0.3.18"
+trait-gen = "2"
+url = "2.5.0"
 whoami = "1.5.1"
+wl-clipboard-rs = "0.9.1"
+zbus = { version = "5", default-features = false }
 
 [workspace.dependencies.tokio]
 version = "1.37.0"

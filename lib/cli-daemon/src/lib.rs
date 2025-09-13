@@ -8,8 +8,8 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -17,7 +17,7 @@ use std::{
 use futures_util::Stream;
 use link::DaemonLink;
 use process::DaemonProcess;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::{Mutex, OnceCell};
 use tracing::error;
 
@@ -129,7 +129,9 @@ where
     E: DeserializeOwned,
 {
     #[tracing::instrument(skip_all)]
-    pub async fn subscribe(&self) -> Result<impl Stream<Item = io::Result<E>>, io::Error> {
+    pub async fn subscribe(
+        &self,
+    ) -> Result<impl Stream<Item = io::Result<E>> + use<M, R, E>, io::Error> {
         tracing::debug!("getting channels");
         let ch = self.channels().await?;
         tracing::debug!("getting channels lock");

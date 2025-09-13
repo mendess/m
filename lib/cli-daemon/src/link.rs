@@ -10,13 +10,13 @@ use std::{
     time::Duration,
 };
 
-use futures_util::{stream, Stream};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use futures_util::{Stream, stream};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{
-        unix::{OwnedReadHalf, OwnedWriteHalf},
         UnixStream,
+        unix::{OwnedReadHalf, OwnedWriteHalf},
     },
 };
 use tracing::debug;

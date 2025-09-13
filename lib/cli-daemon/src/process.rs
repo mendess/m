@@ -3,26 +3,26 @@
 //!
 use std::{
     convert::Infallible,
-    future::{pending, Future},
+    future::{Future, pending},
     io,
     marker::PhantomData,
     path::Path,
 };
 
-use futures_util::{future::OptionFuture, stream, Stream, StreamExt};
-use serde::{de::DeserializeOwned, Serialize};
+use futures_util::{Stream, StreamExt, future::OptionFuture, stream};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
-    net::{unix::WriteHalf, UnixListener, UnixStream},
+    net::{UnixListener, UnixStream, unix::WriteHalf},
     signal::{
         unix::SignalKind,
-        unix::{signal, Signal},
+        unix::{Signal, signal},
     },
     sync::oneshot,
 };
 use tracing::{debug, error, info};
 
-use crate::{link::EventSubscription, Daemon};
+use crate::{Daemon, link::EventSubscription};
 
 /// A builder for a daemon process.
 pub struct DaemonProcess<'s, M, R, E = Infallible> {
