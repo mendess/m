@@ -457,7 +457,7 @@ pub async fn play(
         Err(e) => {
             crate::error!("failed to pause previous player"; content: "{:?}", e);
         }
-        Ok(_) => {}
+        Ok(_) => players::set_video(false).await?,
     }
 
     let index = players::create(items.iter(), with_video).await?;

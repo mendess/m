@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::Item;
 
 #[cfg(feature = "player")]
-pub use daemon::start_daemon_if_running_as_daemon;
+pub use daemon::{PlayersDaemonOptions, start_daemon_if_running_as_daemon};
 pub use error::Error;
 pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir};
 
@@ -143,6 +143,7 @@ enum MessageKind {
     Quit,
     ChangeVolume { delta: i32 },
     CycleVideo,
+    SetVideo { on: bool },
     ChangeFile { direction: Direction },
     Seek { seconds: f64 },
     ChangeChapter { direction: Direction, amount: i32 },
@@ -427,6 +428,8 @@ commands! {
     change_volume as ChangeVolume { delta: i32 };
     /// Toggle video on and off
     toggle_video as CycleVideo;
+    /// Set video
+    set_video as SetVideo { on: bool };
     /// Change the currently playing file
     change_file as ChangeFile { direction: Direction };
     /// Seek to a new point in the file

@@ -277,7 +277,7 @@ pub fn chosen_index() -> PlayerLink {
 
 async fn run() -> anyhow::Result<()> {
     download_ctl::start_daemon_if_running_as_daemon().await?;
-    players::start_daemon_if_running_as_daemon().await?;
+    players::start_daemon_if_running_as_daemon(Default::default()).await?;
 
     let args = match Args::try_parse() {
         Ok(args) => args,

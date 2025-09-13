@@ -66,6 +66,7 @@ mod players {
 }
 
 pub(super) struct PlayersDaemon {
+    opts: PlayersDaemonOptions,
     current_default: watch::Sender<Option<usize>>,
     players: Players,
 }
@@ -73,21 +74,20 @@ pub(super) struct PlayersDaemon {
 type SharedPlayersDaemon = Arc<Mutex<PlayersDaemon>>;
 
 impl PlayersDaemon {
+    fn new(opts: PlayersDaemonOptions) -> Self {
+        let (current_default, _) = watch::channel(None);
+        Self {
+            opts,
+            current_default,
+            players: Default::default(),
+        }
+    }
+
     fn subscribe_to_current(&self) -> Option<broadcast::Receiver<PlayerEvent>> {
         self.current_default
             .borrow()
             .and_then(|i| self.players.get(i))
             .map(|p| p.subscribe())
-    }
-}
-
-impl Default for PlayersDaemon {
-    fn default() -> Self {
-        let (current_default, _) = watch::channel(None);
-        Self {
-            current_default,
-            players: Default::default(),
-        }
     }
 }
 
@@ -255,21 +255,24 @@ impl PlayersDaemon {
             .map(|i| (i, FileState::AppendPlay, None))
             .collect::<Vec<_>>();
         let legacy_socket = legacy_socket_for(index).await;
-        let mpv = Arc::new(Mpv::with_initializer(|mpv| {
-            if let Err(e) = mpv.set_property("video", with_video) {
-                tracing::error!(error = ?e, "failed to set video to true");
-            }
-            #[cfg(debug_assertions)]
-            {
-                mpv.set_property("msg-level", "all=debug")?;
-                mpv.set_property("log-file", format!("{legacy_socket}.log"))?;
-            }
-            mpv.set_property("geometry", "820x466")?;
-            mpv.set_property("input-ipc-server", legacy_socket)?;
-            mpv.set_property("osc", true)?;
+        let mpv = Arc::new(
+            Mpv::with_initializer(|mpv| {
+                if let Err(e) = mpv.set_property("video", with_video || this_ref.opts.with_video) {
+                    tracing::error!(error = ?e, "failed to set video to true");
+                }
+                #[cfg(debug_assertions)]
+                {
+                    mpv.set_property("msg-level", "all=debug")?;
+                    mpv.set_property("log-file", format!("{legacy_socket}.log"))?;
+                }
+                mpv.set_property("geometry", "820x466")?;
+                mpv.set_property("input-ipc-server", legacy_socket)?;
+                mpv.set_property("osc", true)?;
 
-            Ok(())
-        })?);
+                Ok(())
+            })
+            .inspect_err(|e| tracing::debug!(error = ?e, "failed to initialize player"))?,
+        );
 
         let events = event_listener(Arc::downgrade(&mpv), index, {
             let this = this.clone();
@@ -496,7 +499,13 @@ impl PlayersDaemon {
     }
 
     pub(super) async fn cycle_video(&self, index: PlayerIndex) -> MpvResult<()> {
-        self.current_player(index)?.cycle_property("vid", true)?;
+        self.current_player(index)?
+            .cycle_property("vid", true /* up */)?;
+        Ok(())
+    }
+
+    pub(super) async fn set_video(&self, index: PlayerIndex, on: bool) -> MpvResult<()> {
+        self.current_player(index)?.set_property("vid", on)?;
         Ok(())
     }
 
@@ -772,6 +781,7 @@ async fn handle_messages(
             call!(players.change_volume(index, delta))
         }
         MessageKind::CycleVideo => call!(players.cycle_video(index)),
+        MessageKind::SetVideo { on } => call!(players.set_video(index, on)),
         MessageKind::ChangeFile { direction } => {
             call!(players.change_file(index, direction))
         }
@@ -847,10 +857,17 @@ async fn event_stream(daemon: SharedPlayersDaemon) -> impl Stream<Item = PlayerE
     .flatten()
 }
 
+#[derive(Default, Debug)]
+pub struct PlayersDaemonOptions {
+    pub with_video: bool,
+}
+
 #[tracing::instrument(name = "players-daemon")]
-pub async fn start_daemon_if_running_as_daemon() -> Result<(), super::Error> {
+pub async fn start_daemon_if_running_as_daemon(
+    opts: PlayersDaemonOptions,
+) -> Result<(), super::Error> {
     if let Some(builder) = super::connection::PLAYERS.build_daemon_process().await {
-        let players = Arc::new(Mutex::new(PlayersDaemon::default()));
+        let players = Arc::new(Mutex::new(PlayersDaemon::new(opts)));
         let run_with_events = builder.run_with_events(
             {
                 let players = players.clone();

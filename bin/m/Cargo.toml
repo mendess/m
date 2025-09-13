@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.5.1"
+version = "0.5.2"
 edition = { workspace = true }
 
 [dependencies]
@@ -30,7 +30,6 @@ serde_json.workspace = true
 tempfile.workspace = true
 thiserror = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
-tokio.workspace = true
 tracing-log.workspace = true
 tracing-subscriber = { workspace = true, features = ["registry", "env-filter", "fmt"] }
 tracing.workspace = true
@@ -38,6 +37,10 @@ trait-gen = { workspace = true }
 whoami.workspace = true
 wl-clipboard-rs = { optional = true, workspace = true }
 zbus = { workspace = true }
+
+[dependencies.tokio]
+workspace = true
+features = ["macros", "rt-multi-thread", "rt", "parking_lot"]
 
 [features]
 clipboard = ["dep:wl-clipboard-rs", "dep:arboard"]
