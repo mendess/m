@@ -278,7 +278,8 @@ impl PlayerInterface for MprisPlayer {
             return Err(fdo::Error::NoServer("no players".into()));
         };
         let pos = daemon.queue_position(C).await.map_err(to_fdo_err)?;
-        let id = daemon.queue(C).await.map_err(to_fdo_err)?[pos as usize].id;
+        let pos = usize::try_from(pos).map_err(to_fdo_err)?;
+        let id = daemon.queue(C).await.map_err(to_fdo_err)?[pos].id;
         let title = daemon.media_title(C).await.map_err(to_fdo_err)?;
         let chapter_metadata = daemon.chapter_metadata(player).await.map_err(to_fdo_err)?;
 

@@ -857,17 +857,26 @@ async fn event_stream(daemon: SharedPlayersDaemon) -> impl Stream<Item = PlayerE
     .flatten()
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct PlayersDaemonOptions {
     pub with_video: bool,
 }
 
+#[derive(Default, Debug)]
+pub struct DaemonOptions {
+    pub create_default_player: bool,
+}
+
 #[tracing::instrument(name = "players-daemon")]
 pub async fn start_daemon_if_running_as_daemon(
-    opts: PlayersDaemonOptions,
+    d_opts: PlayersDaemonOptions,
+    opts: DaemonOptions,
 ) -> Result<(), super::Error> {
     if let Some(builder) = super::connection::PLAYERS.build_daemon_process().await {
-        let players = Arc::new(Mutex::new(PlayersDaemon::new(opts)));
+        let players = Arc::new(Mutex::new(PlayersDaemon::new(d_opts)));
+        if opts.create_default_player {
+            PlayersDaemon::create(players.clone(), vec![], d_opts.with_video).await?;
+        }
         let run_with_events = builder.run_with_events(
             {
                 let players = players.clone();

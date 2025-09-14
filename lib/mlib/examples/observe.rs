@@ -25,7 +25,7 @@ fn init() {
 #[tokio::main]
 async fn main() -> Result<(), mlib::Error> {
     init();
-    players::start_daemon_if_running_as_daemon(Default::default()).await?;
+    players::start_daemon_if_running_as_daemon(Default::default(), Default::default()).await?;
     players::subscribe()
         .await?
         .for_each(|e| {

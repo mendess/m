@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::Item;
 
 #[cfg(feature = "player")]
-pub use daemon::{PlayersDaemonOptions, start_daemon_if_running_as_daemon};
+pub use daemon::{DaemonOptions, PlayersDaemonOptions, start_daemon_if_running_as_daemon};
 pub use error::Error;
 pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir};
 
