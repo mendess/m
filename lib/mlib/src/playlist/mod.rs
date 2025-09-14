@@ -126,6 +126,12 @@ impl Playlist {
         Self::load_from(playlist_path).await
     }
 
+    pub fn load_from_str(s: &str) -> Result<Self, Error> {
+        Ok(Self {
+            songs: serde_json::from_str(s)?,
+        })
+    }
+
     pub async fn load_from(playlist_path: &Path) -> Result<Self, Error> {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
