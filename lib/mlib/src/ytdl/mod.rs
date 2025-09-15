@@ -8,8 +8,8 @@ use thiserror::Error;
 pub use builder::{Ytdl, YtdlBuilder, YtdlStream};
 use parking_lot::Mutex;
 use std::io;
-use tokio::process::Command;
 use std::path::PathBuf;
+use tokio::process::Command;
 
 #[derive(Error, Debug)]
 pub enum YtdlError {
@@ -35,7 +35,7 @@ pub fn extract_id(s: &str) -> Option<&str> {
 
 static COOKIES: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-pub async fn set_cookies_path(path: &Path) {
+pub fn set_cookies_path(path: &Path) {
     *COOKIES.lock() = Some(path.to_path_buf());
 }
 
@@ -65,7 +65,7 @@ pub async fn set_cookies_browser(browser: &str) -> io::Result<()> {
         return Err(io::Error::other("cookies file wasn't created"));
     }
 
-    set_cookies_path(Path::new(DEFAULT_COOKIES_PATH)).await;
+    set_cookies_path(Path::new(DEFAULT_COOKIES_PATH));
 
     Ok(())
 }

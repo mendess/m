@@ -279,7 +279,12 @@ async fn run() -> anyhow::Result<()> {
     download_ctl::start_daemon_if_running_as_daemon().await?;
     players::start_daemon_if_running_as_daemon(Default::default(), Default::default()).await?;
 
-    let args = match Args::try_parse() {
+    let Args {
+        socket,
+        cookies_browser,
+        cookies_path,
+        cmd,
+    } = match Args::try_parse() {
         Ok(args) => args,
         Err(e) => {
             if let SessionKind::Gui = SessionKind::current().await {
@@ -289,7 +294,7 @@ async fn run() -> anyhow::Result<()> {
             }
         }
     };
-    if let Some(id) = args.socket {
+    if let Some(id) = socket {
         *CHOSEN_INDEX.lock().unwrap() = PlayerIndex::of(id);
     }
 
@@ -297,7 +302,15 @@ async fn run() -> anyhow::Result<()> {
         players::override_legacy_socket_base_dir(new_base.clone());
     }
 
-    if let Some(cmd) = args.cmd {
+    if let Some(cookies_path) = cookies_path {
+        mlib::ytdl::set_cookies_path(&cookies_path);
+    }
+
+    if let Some(cookies_browser) = cookies_browser {
+        mlib::ytdl::set_cookies_browser(&cookies_browser).await?;
+    }
+
+    if let Some(cmd) = cmd {
         process_cmd(cmd).await?;
     } else {
         player_ctl::interactive().await?;
