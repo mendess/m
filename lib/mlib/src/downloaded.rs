@@ -8,7 +8,7 @@ use std::{
 
 use futures_util::{Stream, TryStreamExt};
 use glob::Paths;
-use tokio::{fs, process::Command};
+use tokio::fs;
 use tokio_stream::wrappers::ReadDirStream;
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
     item::{id_from_path, link::VideoLink},
     playlist::{self, PlaylistIds},
     queue::Item,
-    ytdl::YtdlError,
+    ytdl::{self, YtdlError},
 };
 use derive_more::derive::From;
 
@@ -156,7 +156,7 @@ pub struct GetDlPath<'v> {
 impl GetDlPath<'_> {
     pub async fn get(&self) -> Result<PathBuf, Error> {
         let o = OsStr::new;
-        let mut output = Command::new("yt-dlp")
+        let mut output = ytdl::custom()
             .args([
                 o("-o"),
                 self.output_format.as_os_str(),
@@ -193,7 +193,7 @@ pub async fn download(
     tokio::fs::create_dir_all(&dl_dir).await?;
     let mut output_format = dl_dir;
     output_format.push("%(title)s=%(id)s=m.%(ext)s");
-    let mut cmd = Command::new("yt-dlp");
+    let mut cmd = ytdl::custom();
     if just_audio {
         cmd.arg("-x");
     }

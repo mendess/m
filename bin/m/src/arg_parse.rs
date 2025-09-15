@@ -11,6 +11,14 @@ use serde::{Deserialize, Serialize};
 pub struct Args {
     #[arg(short, long)]
     pub socket: Option<usize>,
+    /// Fetch cookies from a specific browser.
+    #[arg(long, conflicts_with = "cookies_path")]
+    pub cookies_browser: Option<String>,
+
+    /// Use cookies from a local file path.
+    #[arg(long, conflicts_with = "cookies_browser")]
+    pub cookies_path: Option<PathBuf>,
+
     #[command(subcommand)]
     pub cmd: Option<Command>,
 }
