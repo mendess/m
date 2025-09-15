@@ -251,7 +251,8 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
                         let b = YtdlBuilder::new(pl)
                             .get_title()
                             .get_thumbnail()
-                            .request_playlist()?
+                            .request_playlist()
+                            .await?
                             .next()
                             .await
                             .ok_or_else(|| anyhow::anyhow!("playlist was emtpy"))??;
@@ -620,11 +621,11 @@ fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item 
     async fn expand_playlist(
         l: &'_ PlaylistLink,
     ) -> Result<Option<BoxStream<'static, Item>>, Error> {
-        expand(YtdlBuilder::new(l).request_playlist()?).await
+        expand(YtdlBuilder::new(l).request_playlist().await?).await
     }
 
     async fn expand_channel(l: &ChannelLink) -> Result<Option<BoxStream<'static, Item>>, Error> {
-        expand(YtdlBuilder::new(l).request_channel()?).await
+        expand(YtdlBuilder::new(l).request_channel().await?).await
     }
 
     fn single(l: impl Into<Item>) -> BoxStream<'static, Item> {

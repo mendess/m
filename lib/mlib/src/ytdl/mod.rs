@@ -34,22 +34,32 @@ pub fn extract_id(s: &str) -> Option<&str> {
 }
 
 static COOKIES: Mutex<Option<PathBuf>> = Mutex::new(None);
+const DEFAULT_COOKIES_PATH: &str = "/tmp/cookies.txt";
 
-pub fn set_cookies_path(path: &Path) {
-    *COOKIES.lock() = Some(path.to_path_buf());
-}
-
-pub fn custom() -> Command {
+pub async fn custom() -> Command {
     let mut c = Command::new("yt-dlp");
+    cookies_heuristic().await;
     if let Some(path) = &*COOKIES.lock() {
         c.args([std::ffi::OsStr::new("--cookies"), path.as_os_str()]);
     }
     c
 }
 
-pub async fn set_cookies_browser(browser: &str) -> io::Result<()> {
-    const DEFAULT_COOKIES_PATH: &str = "/tmp/cookies.txt";
+async fn cookies_heuristic() {
+    if COOKIES.lock().is_none() {
+        if let Ok(true) = tokio::fs::try_exists(DEFAULT_COOKIES_PATH).await {
+            set_cookies_path(Path::new(DEFAULT_COOKIES_PATH));
+        } else if let Err(e) = set_cookies_browser("firefox").await {
+            tracing::warn!(error = ?e, "failed to get cookies from firefox");
+        }
+    }
+}
 
+pub fn set_cookies_path(path: &Path) {
+    *COOKIES.lock() = Some(path.to_path_buf());
+}
+
+pub async fn set_cookies_browser(browser: &str) -> io::Result<()> {
     Command::new("yt-dlp")
         .args([
             "--cookies-from-browser",

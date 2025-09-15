@@ -125,7 +125,8 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 notify!("searching for 10 videos....");
                 let results = YtdlBuilder::new(&search)
                     .get_title()
-                    .search_multiple()?
+                    .search_multiple()
+                    .await?
                     .try_collect::<Vec<_>>()
                     .await?;
                 let titles = results.iter().map(|l| l.title_ref()).collect::<Vec<_>>();

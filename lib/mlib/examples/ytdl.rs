@@ -26,7 +26,11 @@ async fn main() {
         .parse::<ChannelLink>()
         .unwrap();
 
-    let mut channel = YtdlBuilder::new(&c).get_title().request_channel().unwrap();
+    let mut channel = YtdlBuilder::new(&c)
+        .get_title()
+        .request_channel()
+        .await
+        .unwrap();
     while let Some(x) = channel.next().await {
         let video = x.unwrap();
         println!("video: {} :: {}", video.id().as_str(), video.title_ref());

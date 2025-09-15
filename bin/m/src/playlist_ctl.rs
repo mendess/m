@@ -106,7 +106,7 @@ pub async fn add_playlist(
     };
     tracing::debug!("loading playlist ids");
     let playlist = PlaylistIds::load().await?;
-    let id_stream = YtdlBuilder::new(link).request_playlist()?;
+    let id_stream = YtdlBuilder::new(link).request_playlist().await?;
     Ok(id_stream
         .map_err(anyhow::Error::from)
         .and_then(move |b| ready(Ok((!playlist.contains(b.id().as_str()), b))))
@@ -295,13 +295,13 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
                     print_full_info(YtdlBuilder::new(&s).get_title().search().await?).await;
                 }
                 Item::Link(Link::Playlist(l)) if just_id => {
-                    let mut playlist = YtdlBuilder::new(&l).request_playlist()?;
+                    let mut playlist = YtdlBuilder::new(&l).request_playlist().await?;
                     while let Some(i) = playlist.next().await {
                         println!("{}", i?.id().as_str());
                     }
                 }
                 Item::Link(Link::Playlist(l)) => {
-                    let mut playlist = YtdlBuilder::new(&l).get_title().request_playlist()?;
+                    let mut playlist = YtdlBuilder::new(&l).get_title().request_playlist().await?;
                     while let Some(i) = playlist.next().await {
                         print_full_info(i?).await;
                     }

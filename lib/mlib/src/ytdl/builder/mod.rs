@@ -191,7 +191,8 @@ where
 {
     pub async fn request(self) -> Result<Ytdl<Y>, Error> {
         let (link, n_fields) = self.0.link_and_param_count();
-        request_impl::<_, T, _>(link, n_fields)?
+        request_impl::<_, T, _>(link, n_fields)
+            .await?
             .next()
             .await
             .ok_or_else(|| {
@@ -211,7 +212,8 @@ where
 {
     pub async fn search(self) -> Result<Ytdl<Y>, Error> {
         let (link, n_fields) = self.0.link_and_param_count();
-        request_impl::<_, T, _>(link.as_str().trim_start_matches("ytdl://"), n_fields)?
+        request_impl::<_, T, _>(link.as_str().trim_start_matches("ytdl://"), n_fields)
+            .await?
             .next()
             .await
             .ok_or_else(|| {
@@ -223,9 +225,9 @@ where
             })?
     }
 
-    pub fn search_multiple(&self) -> Result<YtdlStream<Y>, Error> {
+    pub async fn search_multiple(&self) -> Result<YtdlStream<Y>, Error> {
         let (link, n_fields) = self.0.link_and_param_count();
-        request_impl::<&str, T, Y>(link.as_str().trim_start_matches("ytdl://"), n_fields)
+        request_impl::<&str, T, Y>(link.as_str().trim_start_matches("ytdl://"), n_fields).await
     }
 }
 
@@ -234,9 +236,9 @@ where
     T: IntoResponse<Output = Y>,
     T: YtdlParam<'l, Link = PlaylistLink>,
 {
-    pub fn request_playlist(&self) -> Result<YtdlStream<Y>, Error> {
+    pub async fn request_playlist(&self) -> Result<YtdlStream<Y>, Error> {
         let (link, n_fields) = self.0.link_and_param_count();
-        request_impl::<_, T, _>(link.without_video_id(), n_fields)
+        request_impl::<_, T, _>(link.without_video_id(), n_fields).await
     }
 }
 
@@ -245,19 +247,19 @@ where
     T: IntoResponse<Output = Y>,
     T: YtdlParam<'l, Link = ChannelLink>,
 {
-    pub fn request_channel(&self) -> Result<YtdlStream<Y>, Error> {
+    pub async fn request_channel(&self) -> Result<YtdlStream<Y>, Error> {
         let (link, n_fields) = self.0.link_and_param_count();
-        request_impl::<_, T, _>(link, n_fields)
+        request_impl::<_, T, _>(link, n_fields).await
     }
 }
 
-fn request_impl<'l, L, T, Y>(link: L, n_fields: usize) -> Result<YtdlStream<Y>, Error>
+async fn request_impl<'l, L, T, Y>(link: L, n_fields: usize) -> Result<YtdlStream<Y>, Error>
 where
     T: IntoResponse<Output = Y>,
     T: YtdlParam<'l>,
     L: AsRef<OsStr>,
 {
-    let mut cmd = super::custom();
+    let mut cmd = super::custom().await;
     cmd.arg(link);
     T::collect(&mut cmd);
     tracing::debug!(args = ?cmd.as_std().get_args(), "running ytdl");
