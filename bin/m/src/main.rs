@@ -447,8 +447,5 @@ async fn search_params_to_items(
         };
         items.push(link);
     }
-    if items.is_empty() {
-        anyhow::bail!("no arguments passed")
-    }
     Ok(items)
 }
