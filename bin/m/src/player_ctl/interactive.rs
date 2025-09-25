@@ -143,7 +143,7 @@ async fn current_position() -> Option<PlaybackPosition> {
     );
     Some(PlaybackPosition {
         percent_position,
-        playback_time: playback_time.map(Duration::from_secs_f64),
+        playback_time: playback_time.and_then(|d| Duration::try_from_secs_f64(d).ok()),
     })
 }
 
@@ -251,14 +251,18 @@ async fn ui_task() -> anyhow::Result<()> {
                 } => {
                     current.title = title;
                     current.chapter = None;
-                    current.duration = Duration::from_secs_f64(total_time);
+                    if let Ok(d) = Duration::try_from_secs_f64(total_time) {
+                        current.duration = d;
+                    }
                     current.next = next;
                 }
                 UiUpdate::Volume(volume) => current.volume = volume,
                 UiUpdate::Pause { is_paused } => current.playing = !is_paused,
                 UiUpdate::ChapterName { title, total_time } => {
                     current.chapter.get_or_insert_with(Default::default).1 = title;
-                    current.duration = Duration::from_secs_f64(total_time);
+                    if let Ok(d) = Duration::try_from_secs_f64(total_time) {
+                        current.duration = d;
+                    }
                 }
                 UiUpdate::ChapterNumber(index) => {
                     current.chapter.get_or_insert_with(Default::default).0 = index;

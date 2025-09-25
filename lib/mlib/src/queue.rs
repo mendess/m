@@ -166,7 +166,7 @@ impl Queue {
             volume,
             progress,
             duration: Duration::from_secs_f64(duration),
-            playback_time: (playback_time >= 0.0).then(|| Duration::from_secs_f64(playback_time)),
+            playback_time: Duration::try_from_secs_f64(playback_time).ok(),
             index: current_idx,
             next,
         })
