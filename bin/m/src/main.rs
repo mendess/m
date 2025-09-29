@@ -8,16 +8,15 @@ mod util;
 
 use arg_parse::{Args, Command, DeleteSong, EntityStatus, New, Play};
 use clap::{CommandFactory, Parser};
-use futures_util::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, future::ready};
+use futures_util::StreamExt;
 use itertools::Itertools;
 use mlib::{
     Link, Search,
     downloaded::{self, clean_downloads},
-    item::link::VideoLink,
+    item::link::BangerLink,
     players::{self, PlayerIndex, PlayerLink},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
-    ytdl::YtdlBuilder,
 };
 use rand::seq::SliceRandom;
 use std::{pin::pin, process::ExitCode, sync::Mutex};
@@ -25,12 +24,12 @@ use tokio::io;
 use tracing::dispatcher::set_global_default;
 use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
-use util::{prompt::CustomKeybind, session_kind::SessionKind};
+use util::session_kind::SessionKind;
 
 use crate::{
-    arg_parse::{AddPlaylist, Queue},
+    arg_parse::Queue,
     config::DownloadFormat,
-    util::{dl_dir, prompt, with_video::with_video_env},
+    util::{dl_dir, with_video::with_video_env},
 };
 
 #[tracing::instrument]
@@ -115,78 +114,15 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 &mut std::io::stdout().lock(),
             );
         }
-        Command::New(New {
-            search,
-            queue,
-            mut query,
-        }) => {
-            let link = if search {
-                let search = Search::multiple(query.join(" "), 10);
-                notify!("searching for 10 videos....");
-                let results = YtdlBuilder::new(&search)
-                    .get_title()
-                    .search_multiple()
-                    .await?
-                    .try_collect::<Vec<_>>()
-                    .await?;
-                let titles = results.iter().map(|l| l.title_ref()).collect::<Vec<_>>();
-                let results_ref = &results;
-                match prompt::interative_select(
-                    &titles,
-                    [CustomKeybind {
-                        key: 'p',
-                        action: &|_, i| {
-                            async move {
-                                notify!("loading preview....");
-                                if let Err(e) = util::preview_video(results_ref[i].id()).await {
-                                    notify!("Error previewing"; content: "{}", e)
-                                }
-                            }
-                            .boxed()
-                        },
-                    }],
-                )
-                .await?
-                {
-                    Some(pick) => Link::from_video_id(results[pick].id()),
-                    None => return Ok(()),
-                }
-            } else {
-                if query.len() > 1 {
-                    notify!("Skipping extra arguments. Only first argument considered");
-                }
-                VideoLink::try_from(query.remove(0))
-                    .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?
-                    .into()
-            };
+        Command::New(New { queue, mut query }) => {
+            if query.len() > 1 {
+                notify!("Skipping extra arguments. Only first argument considered");
+            }
+            let link = BangerLink::try_from(query.remove(0))
+                .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?;
             let link = playlist_ctl::new(link).await?;
             if queue {
                 queue_ctl::queue(Default::default(), Some(Item::Link(link.into()))).await?;
-            }
-        }
-        Command::AddPlaylist(AddPlaylist {
-            queue,
-            link,
-            categories,
-        }) => {
-            let link =
-                Link::try_from(link).map_err(|s| anyhow::anyhow!("{} is not a valid link", s))?;
-            let links = playlist_ctl::add_playlist(&link, categories.into()).await?;
-            if queue {
-                links
-                    .for_each(|r| async move {
-                        let r = ready(r)
-                            .and_then(|link| {
-                                queue_ctl::queue(Default::default(), Some(Item::Link(link.into())))
-                            })
-                            .await;
-                        if let Err(e) = r {
-                            tracing::error!("failed adding item to playlist: {:?}", e)
-                        }
-                    })
-                    .await;
-            } else {
-                links.for_each(|_| ready(())).await;
             }
         }
         Command::Current { link, notify } => {
@@ -237,13 +173,21 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                         Link::Video(l) => {
                             if !downloaded::is_in_cache(&dl_dir, &l).await {
                                 notify!("[{idx}/{total}] downloading {l}");
-                                if let Err(e) = downloaded::download(
+                                if let Err(e) = downloaded::yt_download(
                                     dl_dir.clone(),
                                     &l,
                                     config::CONFIG.download_format == DownloadFormat::Audio,
                                 )
                                 .await
                                 {
+                                    tracing::error!(?e, "failed to download {l}");
+                                }
+                            }
+                        }
+                        Link::Banger(l) => {
+                            if !downloaded::is_in_cache(&dl_dir, &l).await {
+                                notify!("[{idx}/{total}] downloading {l}");
+                                if let Err(e) = downloaded::download(dl_dir.clone(), &l).await {
                                     tracing::error!(?e, "failed to download {l}");
                                 }
                             }
@@ -422,7 +366,7 @@ async fn search_params_to_items(
                 let contains = s.all_categories().any(|c| c.contains(cat));
                 contains.then_some(s.link)
             })
-            .map(Link::Video)
+            .map(Link::from)
             .map(Item::Link)
             .collect::<Vec<_>>()
             .await;

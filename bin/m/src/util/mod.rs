@@ -3,13 +3,10 @@ pub mod prompt;
 pub mod session_kind;
 pub mod with_video;
 
-use mlib::VideoId;
-use mlib::item::link::VideoLink;
 use std::fmt::Display;
 use std::io::{self, StdoutLock, Write as _};
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::process::Command;
 use tokio::sync::OnceCell;
 
 #[derive(Debug)]
@@ -56,16 +53,6 @@ pub async fn dl_dir() -> anyhow::Result<PathBuf> {
     })
     .await
     .cloned()
-}
-
-pub async fn preview_video(l: &VideoId) -> anyhow::Result<()> {
-    Command::new("mpv")
-        .args(["--start=20", "--geometry=820x466", "--no-terminal"])
-        .arg(VideoLink::from_id(l))
-        .spawn()?
-        .wait()
-        .await?;
-    Ok(())
 }
 
 pub struct RawMode;

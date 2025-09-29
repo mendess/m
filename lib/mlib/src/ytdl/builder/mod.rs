@@ -20,7 +20,7 @@ use crate::{
     Error, Search, VideoId,
     item::{
         PlaylistLink,
-        link::{ChannelLink, Id, VideoLink},
+        link::{ChannelLink, VideoLink, YtId},
     },
 };
 use trait_gen::trait_gen;

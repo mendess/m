@@ -1,7 +1,10 @@
 use crate::{
     Item, Link, VideoId,
-    downloaded::{download, search_cache_for},
-    item::{VideoLink, link::Id},
+    downloaded::yt_download,
+    item::{
+        VideoLink,
+        link::{HasId as _, YtId},
+    },
     players::daemon::player::MpvExt,
 };
 use libmpv::{FileState, Mpv};
@@ -18,24 +21,19 @@ async fn do_it(cache_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
     let path = {
         let dl_dir = cache_dir.join("m").join("preemptive-dl");
 
-        match search_cache_for(&dl_dir, song).await {
-            Ok(Some(path)) => path,
-            Ok(None) | Err(_) => {
-                static CONCURRENT_DOWNLOADS: Semaphore = Semaphore::const_new(4);
-                let _permit = CONCURRENT_DOWNLOADS.acquire().await;
-                match download(dl_dir, song, false).await {
-                    Ok(path) => match path.get().await {
-                        Ok(path) => path,
-                        Err(e) => {
-                            tracing::error!(error = ?e, "failed to get file path for downloaded song");
-                            return;
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!(error = ?e, "failed to preemptively download song");
-                        return;
-                    }
+        static CONCURRENT_DOWNLOADS: Semaphore = Semaphore::const_new(4);
+        let _permit = CONCURRENT_DOWNLOADS.acquire().await;
+        match yt_download(dl_dir, song, false).await {
+            Ok(path) => match path.get().await {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::error!(error = ?e, "failed to get file path for downloaded song");
+                    return;
                 }
+            },
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to preemptively download song");
+                return;
             }
         }
     };

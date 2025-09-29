@@ -45,9 +45,6 @@ pub enum Command {
     #[command(alias = "add-song")]
     New(New),
 
-    /// Append a playlist to the personal playlist
-    AddPlaylist(AddPlaylist),
-
     /// List all current categories
     Cat {
         #[arg(short, long, default_value_t = false)]
@@ -216,8 +213,6 @@ pub struct New {
     /// Queue it too
     #[arg(short, long)]
     pub queue: bool,
-    #[arg(short, long)]
-    pub search: bool,
     #[arg(required = true)]
     pub query: Vec<String>,
 }

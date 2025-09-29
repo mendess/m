@@ -1634,7 +1634,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "m"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.16.1"
+version = "0.17.0"
 dependencies = [
  "arc-swap",
  "async_once",
@@ -1753,6 +1753,7 @@ dependencies = [
  "pin-project",
  "raii_flock",
  "regex",
+ "reqwest",
  "serde",
  "serde-map-to-array",
  "serde_json",
@@ -1761,6 +1762,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -1795,7 +1797,7 @@ dependencies = [
 
 [[package]]
 name = "mtv"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "mlib",
  "tokio",
@@ -3148,6 +3150,7 @@ checksum = "14307c986784f72ef81c89db7d9e28d6ac26d16213b109ea501696195e6e3ce5"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "pin-project-lite",
  "tokio",

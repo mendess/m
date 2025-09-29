@@ -1,18 +1,18 @@
+use crate::notify;
 use crate::util::{self, prompt};
-use crate::{error, notify};
 use anyhow::{Context, bail, ensure};
-use futures_util::{Stream, future::ready};
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::StreamExt;
 use itertools::Itertools;
 use levenshtein::levenshtein;
 use mlib::Item;
-use mlib::item::link::VideoLink;
+use mlib::item::ItemId;
+use mlib::item::link::{BangerLink, HasId as _, VideoLink};
 use mlib::players::PlayerLink;
 use mlib::playlist::PartialSearchResult;
 use mlib::playlist::uniq_vec::UniqVec;
 use mlib::{
     Link,
-    playlist::{self, Playlist, PlaylistIds, Song},
+    playlist::{self, Playlist, Song},
     queue::Queue,
     ytdl::YtdlBuilder,
 };
@@ -54,7 +54,7 @@ pub async fn ls_categories(free_categories: bool) -> anyhow::Result<()> {
 }
 
 fn make_song(
-    mut link: VideoLink,
+    link: BangerLink,
     SongInfo { time, name }: SongInfo,
     SongMetadata {
         artist,
@@ -64,7 +64,6 @@ fn make_song(
     }: SongMetadata,
     categories: UniqVec<String>,
 ) -> Song {
-    link.shorten();
     Song {
         name,
         link,
@@ -78,11 +77,8 @@ fn make_song(
     }
 }
 
-pub async fn new(link: Link) -> anyhow::Result<VideoLink> {
+pub async fn new(link: BangerLink) -> anyhow::Result<BangerLink> {
     let mut categories = UniqVec::<String>::new();
-    let link = link
-        .into_video()
-        .map_err(|link| anyhow::anyhow!("{} is not a video link", link))?;
     if Playlist::contains_song(link.id()).await? {
         return Err(anyhow::anyhow!("Song already in playlist"));
     }
@@ -93,40 +89,6 @@ pub async fn new(link: Link) -> anyhow::Result<VideoLink> {
     Playlist::add_song(&song).await?;
     notify!("Song added"; content: "{}", song);
     Ok(link)
-}
-
-pub async fn add_playlist(
-    link: &Link,
-    mut categories: UniqVec<String>,
-) -> anyhow::Result<impl Stream<Item = anyhow::Result<VideoLink>> + use<>> {
-    let meta = category_prompt(&mut categories).await?;
-    let link = match link.as_playlist() {
-        Some(s) => s,
-        None => return Err(anyhow::anyhow!("Not a playlist link")),
-    };
-    tracing::debug!("loading playlist ids");
-    let playlist = PlaylistIds::load().await?;
-    let id_stream = YtdlBuilder::new(link).request_playlist().await?;
-    Ok(id_stream
-        .map_err(anyhow::Error::from)
-        .and_then(move |b| ready(Ok((!playlist.contains(b.id().as_str()), b))))
-        .try_filter_map(move |(success, b)| async move {
-            if success {
-                Ok(Some(VideoLink::from_id(b.id())))
-            } else {
-                notify!("song already in playlist");
-                Ok(None)
-            }
-        })
-        .and_then(move |link| {
-            let categories = categories.clone(); // TODO this clone should not be needed
-            let meta = meta.clone();
-            async {
-                let song_info = fetch_song_info(&link).await?;
-                Playlist::add_song(&make_song(link.clone(), song_info, meta, categories)).await?;
-                Ok(link)
-            }
-        }))
 }
 
 #[derive(Debug, Default, Clone)]
@@ -231,7 +193,7 @@ pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Re
     let idx = if current {
         let current = Queue::link(PlayerLink::current()).await?;
         let current = current
-            .id()
+            .banger_id()
             .ok_or_else(|| anyhow::anyhow!("current song is not identified"))?;
         playlist.find_song_mut(|s| s.link.id() == current).into()
     } else if !partial_name.is_empty() {
@@ -249,15 +211,11 @@ struct SongInfo {
     time: u64,
     name: String,
 }
-async fn fetch_song_info(link: &VideoLink) -> anyhow::Result<SongInfo> {
-    let b = YtdlBuilder::new(link)
-        .get_title()
-        .get_duration()
-        .request()
-        .await?;
+async fn fetch_song_info(link: &BangerLink) -> anyhow::Result<SongInfo> {
+    let meta = link.metadata().await?;
     Ok(SongInfo {
-        time: b.duration().as_secs(),
-        name: b.title(),
+        name: meta.title,
+        time: meta.duration.as_secs(),
     })
 }
 
@@ -281,15 +239,26 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
                 )
             };
             match Item::from(song.join(" ")) {
-                Item::Link(Link::Video(_)) if just_id => {
-                    match Item::from(song.join(" ")).id() {
-                        Some(id) => println!("{}", id.as_str()),
-                        None => error!("song doens't have an id"),
-                    };
+                Item::Link(Link::Video(l)) if just_id => {
+                    println!("{}", l.id().as_str());
                 }
                 Item::Link(Link::Video(l)) => {
                     let vid = YtdlBuilder::new(&l).get_title().request().await?;
                     print_full_info(vid).await;
+                }
+                Item::Link(Link::Banger(l)) if just_id => {
+                    println!("{}", l.id().as_str());
+                }
+                Item::Link(Link::Banger(l)) => {
+                    if let Some(song) = playlist.find_by_link(&l) {
+                        notify!(
+                            "song info:";
+                            content:
+                                "§bname:§r {}\n§blink:§r {}",
+                                song.name,
+                                l,
+                        )
+                    };
                 }
                 Item::Search(s) => {
                     print_full_info(YtdlBuilder::new(&s).get_title().search().await?).await;
@@ -312,12 +281,14 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
                     };
                     if just_id {
                         print!("{}", id.as_str());
-                    } else {
-                        let vid = YtdlBuilder::new(&VideoLink::from_id(id))
+                    } else if let ItemId::VideoId(v) = id {
+                        let vid = YtdlBuilder::new(&VideoLink::from_id(v))
                             .get_title()
                             .request()
                             .await?;
                         print_full_info(vid).await;
+                    } else {
+                        bail!("idk men, too many enums")
                     }
                 }
             };

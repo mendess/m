@@ -290,7 +290,18 @@ impl PlayersDaemon {
 
         tokio::spawn(tasks::last_queue_monitor::reset(Arc::downgrade(&player)));
 
-        player.handle().playlist_load_files(&prepared_items)?;
+        tracing::debug!(?prepared_items, "loading files");
+        if let Err(e) = player.handle().playlist_load_files(&prepared_items) {
+            if let libmpv::Error::Loadfiles { index, error } = &e {
+                tracing::error!(
+                    index,
+                    ?error,
+                    bad_file = prepared_items[*index].0,
+                    "failed to load file"
+                );
+            }
+            return Err(e.into());
+        }
 
         for i in items {
             player.preemptive_download().song_queued(&i);

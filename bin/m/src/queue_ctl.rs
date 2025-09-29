@@ -18,7 +18,7 @@ use mlib::{
     Error, Link, Search, VideoId,
     item::{
         PlaylistLink,
-        link::{ChannelLink, VideoLink},
+        link::{ChannelLink, HasId as _, VideoLink},
     },
     players::{self, PlayerLink, SmartQueueOpts, SmartQueueSummary, error::MpvError},
     playlist::Playlist,
@@ -382,7 +382,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
 
             for index in queue.iter().rev().filter_map(|s| {
                 s.item
-                    .id()
+                    .banger_id()
                     .filter(|id| playlist.contains(id.as_str()))
                     .map(|_| s.index)
             }) {
@@ -400,7 +400,7 @@ pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
     let q = Queue::load_full(PlayerLink::current()).await?;
     let mut file = BufWriter::new(File::create(file).await?);
     for s in q.iter() {
-        match s.item.id() {
+        match s.item.banger_id() {
             Some(id) => {
                 file.write_all(b"https://youtu.be/").await?;
                 file.write_all(id.as_bytes()).await?;

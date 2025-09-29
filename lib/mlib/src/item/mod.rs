@@ -17,7 +17,7 @@ pub use link::{ChannelLink, Link, PlaylistId, PlaylistLink, VideoId, VideoLink};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use self::link::Id;
+use crate::item::link::{BangerId, HasId as _, YtId as _};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 #[from(forward)]
@@ -28,12 +28,37 @@ pub enum Item {
     Search(Search),
 }
 
-impl Item {
-    pub fn id(&self) -> Option<&VideoId> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemId<'s> {
+    VideoId(&'s VideoId),
+    BangerId(&'s BangerId),
+}
+
+impl<'s> ItemId<'s> {
+    pub fn as_str(&self) -> &str {
         match self {
-            Item::Link(l) => l.video_id(),
+            Self::VideoId(v) => v.as_str(),
+            Self::BangerId(b) => b.as_str(),
+        }
+    }
+}
+
+impl Item {
+    pub fn id(&self) -> Option<ItemId<'_>> {
+        match self {
+            Item::Link(l) => l
+                .banger_id()
+                .map(ItemId::BangerId)
+                .or_else(|| l.video_id().map(ItemId::VideoId)),
             Item::File(p) => id_from_path(p),
             Item::Search(_) => None,
+        }
+    }
+
+    pub fn banger_id(&self) -> Option<&BangerId> {
+        match self {
+            Item::Link(Link::Banger(l)) => Some(l.id()),
+            _ => None,
         }
     }
 
@@ -51,7 +76,14 @@ impl Item {
         match self {
             Item::Link(l) => match l.as_video() {
                 Some(l) => l.resolve_link().await,
-                None => l.to_string(),
+                None => match l.as_banger() {
+                    Some(l) => l
+                        .metadata()
+                        .await
+                        .map(|t| t.title)
+                        .unwrap_or_else(|_| l.to_string()),
+                    None => l.to_string(),
+                },
             },
             Item::File(f) => clean_up_path(&f)
                 .map(ToString::to_string)
@@ -156,7 +188,7 @@ pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
     Some((start_idx + 1)..(front_striped.len()))
 }
 
-pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
+pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<ItemId<'_>> {
     // format: [name]=[id]=m.ext
     let mut name = p.as_ref();
     let name = loop {
@@ -170,7 +202,11 @@ pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<&VideoId> {
         name = Path::new(new);
     };
     let range = id_range(name)?;
-    Some(VideoId::new(&name[range]))
+    if range.len() == 8 {
+        Some(ItemId::BangerId(BangerId::new(&name[range])))
+    } else {
+        Some(ItemId::VideoId(VideoId::new(&name[range])))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -217,7 +253,7 @@ mod test {
     #[test]
     fn trivial() {
         assert_eq!(
-            Some(VideoId::new("AAA")),
+            Some(ItemId::BangerId(BangerId::new("AAA"))),
             id_from_path(&PathBuf::from("Song Name 😎=AAA=m.mkv"))
         )
     }
@@ -241,7 +277,7 @@ mod test {
     #[test]
     fn art_id() {
         assert_eq!(
-            Some(VideoId::new("AAA")),
+            Some(ItemId::BangerId(BangerId::new("AAA"))),
             id_from_path(&Path::new("Song Name 😎=AAA=mart.jpg"))
         )
     }

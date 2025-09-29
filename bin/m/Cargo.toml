@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.5.5"
+version = "0.6.0"
 edition = { workspace = true }
 
 [dependencies]
@@ -22,7 +22,7 @@ mpris-server = { workspace = true }
 namespaced-tmp.workspace  = true
 rand = { workspace = true, features = ["getrandom"] }
 regex.workspace = true
-reqwest = { workspace = true, features = ["rustls-tls", "stream"] }
+reqwest = { workspace = true, features = ["rustls-tls", "stream", "json"] }
 rustyline = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde-map-to-array = { workspace = true }

@@ -48,6 +48,10 @@ pub enum Error {
     #[error("{0}")]
     YtdlError(#[from] ytdl::YtdlError),
 
+    #[cfg(feature = "downloads")]
+    #[error("{0}")]
+    Reqwest(#[from] reqwest::Error),
+
     #[cfg(feature = "playlist")]
     #[error("playlist file not found at: {0}")]
     PlaylistFileNotFound(std::path::PathBuf),

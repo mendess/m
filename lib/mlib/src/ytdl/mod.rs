@@ -1,15 +1,15 @@
 pub mod builder;
 
+use parking_lot::Mutex;
 use regex::Regex;
+use std::io;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::{path::Path, process::ExitStatus};
 use thiserror::Error;
+use tokio::process::Command;
 
 pub use builder::{Ytdl, YtdlBuilder, YtdlStream};
-use parking_lot::Mutex;
-use std::io;
-use std::path::PathBuf;
-use tokio::process::Command;
 
 #[derive(Error, Debug)]
 pub enum YtdlError {

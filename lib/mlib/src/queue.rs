@@ -61,7 +61,7 @@ impl Queue {
         match Item::from(current.filename) {
             Item::Link(l) => Ok(Item::Link(l)),
             Item::File(p) => Ok(id_from_path(&p)
-                .map(Link::from_video_id)
+                .map(Link::from_id)
                 .map(Item::Link)
                 .unwrap_or_else(|| Item::File(p))),
             Item::Search(s) => Ok(Item::Search(s)),
@@ -116,6 +116,10 @@ impl Queue {
             };
             let playlist = playlist::Playlist::load().await?;
             let categories = id
+                .and_then(|id| match id {
+                    crate::item::ItemId::VideoId(_) => None,
+                    crate::item::ItemId::BangerId(banger_id) => Some(banger_id),
+                })
                 .and_then(|id| playlist.find_by_id(id))
                 .map(|s| s.all_categories().map(|s| s.to_owned()).collect::<Vec<_>>())
                 .unwrap_or_default();

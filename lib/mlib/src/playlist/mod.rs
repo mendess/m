@@ -21,12 +21,15 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt as _, AsyncWriteExt as _, BufReader},
 };
 
-use crate::{Error, VideoId, item::link::VideoLink};
+use crate::{
+    Error,
+    item::link::{BangerId, BangerLink, HasId},
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
     pub name: String,
-    pub link: VideoLink,
+    pub link: BangerLink,
     pub time: u64,
     #[serde(default)]
     pub categories: uniq_vec::UniqVec<String>,
@@ -341,11 +344,11 @@ impl Playlist {
         Ok(())
     }
 
-    pub fn find_by_link(&self, link: &VideoLink) -> Option<&Song> {
+    pub fn find_by_link(&self, link: &BangerLink) -> Option<&Song> {
         self.find_by_id(link.id())
     }
 
-    pub fn find_by_id(&self, id: &VideoId) -> Option<&Song> {
+    pub fn find_by_id(&self, id: &BangerId) -> Option<&Song> {
         self.songs.iter().find(|s| s.link.id() == id)
     }
 }
@@ -415,7 +418,7 @@ impl PlaylistIndexMut<'_> {
 }
 
 #[derive(Debug)]
-pub struct PlaylistIds(HashSet<String>);
+pub struct PlaylistIds(HashSet<Box<BangerId>>);
 
 impl PlaylistIds {
     pub async fn load() -> io::Result<Self> {
@@ -433,14 +436,17 @@ impl PlaylistIds {
                 let line = &line[(idx + LINK_FIELD.len())..];
                 if let Some(end) = line.find('"') {
                     //TODO: unwrap
-                    set.insert(line[..end].split('/').next_back().unwrap().to_string());
+                    set.insert(
+                        BangerId::new(line[..end].split('/').next_back().unwrap())
+                            .boxed(),
+                    );
                 }
             }
         }
         Ok(Self(set))
     }
 
-    pub fn contains(&self, l: &str) -> bool {
+    pub fn contains(&self, l: &BangerId) -> bool {
         self.0.contains(l)
     }
 }

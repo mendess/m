@@ -1,6 +1,8 @@
 use derive_more::derive::From;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "downloads")]
+use std::time::Duration;
 use std::{borrow::Cow, ops::Deref};
 use url::Url;
 
@@ -12,7 +14,13 @@ pub trait IntoVideo {
     fn into_video(self) -> VideoLink;
 }
 
-pub trait Id {
+pub trait HasId {
+    type Id: AsRef<str> + ?Sized;
+
+    fn id(&self) -> &Self::Id;
+}
+
+pub trait YtId {
     const QUERY_PARAM: &'static str;
 
     fn new(s: &str) -> &Self;
@@ -62,7 +70,7 @@ macro_rules! impl_link {
     };
 }
 
-impl_link!(Link, VideoLink, PlaylistLink, ChannelLink);
+impl_link!(Link, VideoLink, PlaylistLink, ChannelLink, BangerLink);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -70,13 +78,25 @@ pub enum Link {
     Video(VideoLink),
     Playlist(PlaylistLink),
     Channel(ChannelLink),
+    Banger(BangerLink),
     #[from(ignore)]
     OtherPlatform(url::Url),
 }
 
 impl Link {
+    pub fn from_id(id: super::ItemId<'_>) -> Self {
+        match id {
+            super::ItemId::VideoId(video_id) => Self::from_video_id(video_id),
+            super::ItemId::BangerId(banger_id) => Self::from_banger_id(banger_id),
+        }
+    }
+
     pub fn from_video_id(id: &VideoId) -> Self {
         Self::Video(VideoLink::from_id(id))
+    }
+
+    pub fn from_banger_id(id: &BangerId) -> Self {
+        Self::Banger(BangerLink::from_id(id))
     }
 
     pub fn from_playlist_id(id: &PlaylistId) -> Self {
@@ -87,17 +107,21 @@ impl Link {
         match self {
             Self::Video(l) => Some(l.id()),
             Self::Playlist(l) => l.video_id(),
-            Self::Channel(_) => None,
-            Self::OtherPlatform(_) => None,
+            Self::Banger(_) | Self::Channel(_) | Self::OtherPlatform(_) => None,
+        }
+    }
+
+    pub fn banger_id(&self) -> Option<&BangerId> {
+        match self {
+            Self::Banger(l) => Some(l.id()),
+            Self::Playlist(_) | Self::Video(_) | Self::Channel(_) | Self::OtherPlatform(_) => None,
         }
     }
 
     pub fn playlist_id(&self) -> Option<&PlaylistId> {
         match self {
-            Self::Video(_) => None,
             Self::Playlist(l) => Some(l.id()),
-            Self::Channel(_) => None,
-            Self::OtherPlatform(_) => None,
+            Self::Video(_) | Self::Banger(_) | Self::Channel(_) | Self::OtherPlatform(_) => None,
         }
     }
 
@@ -106,6 +130,7 @@ impl Link {
             Self::Video(l) => l.as_str(),
             Self::Playlist(l) => l.as_str(),
             Self::Channel(l) => l.as_str(),
+            Self::Banger(l) => l.as_str(),
             Self::OtherPlatform(url) => url.as_str(),
         }
     }
@@ -115,6 +140,7 @@ impl Link {
             Self::Video(l) => l.into_string(),
             Self::Playlist(l) => l.into_string(),
             Self::Channel(l) => l.into_string(),
+            Self::Banger(l) => l.into_string(),
             Self::OtherPlatform(url) => url.into(),
         }
     }
@@ -123,8 +149,14 @@ impl Link {
         match self {
             Self::Video(l) => Some(l),
             Self::Playlist(l) => l.as_video_link().ok(),
-            Self::Channel(_) => None,
-            Self::OtherPlatform(_) => None,
+            Self::Channel(_) | Self::Banger(_) | Self::OtherPlatform(_) => None,
+        }
+    }
+
+    pub fn as_banger(&self) -> Option<&BangerLink> {
+        match self {
+            Self::Banger(l) => Some(l),
+            Self::Playlist(_) | Self::Channel(_) | Self::Video(_) | Self::OtherPlatform(_) => None,
         }
     }
 
@@ -132,26 +164,21 @@ impl Link {
         match self {
             Self::Video(l) => Ok(l),
             Self::Playlist(l) => l.into_video_link().map_err(Self::Playlist),
-            c @ Self::Channel(_) => Err(c),
-            o @ Self::OtherPlatform(_) => Err(o),
+            s @ (Self::Banger(_) | Self::Channel(_) | Self::OtherPlatform(_)) => Err(s),
         }
     }
 
     pub fn as_playlist(&self) -> Option<&PlaylistLink> {
         match self {
-            Self::Video(_) => None,
             Self::Playlist(l) => Some(l),
-            Self::Channel(_) => None,
-            Self::OtherPlatform(_) => None,
+            Self::Video(_) | Self::Channel(_) | Self::Banger(_) | Self::OtherPlatform(_) => None,
         }
     }
 
     pub fn as_playlist_mut(&mut self) -> Option<&mut PlaylistLink> {
         match self {
-            Self::Video(_) => None,
             Self::Playlist(l) => Some(l),
-            Self::Channel(_) => None,
-            Self::OtherPlatform(_) => None,
+            Self::Video(_) | Self::Banger(_) | Self::Channel(_) | Self::OtherPlatform(_) => None,
         }
     }
 }
@@ -162,13 +189,14 @@ impl TryFrom<Url> for Link {
     fn try_from(url: Url) -> Result<Self, Self::Error> {
         PlaylistLink::try_from(url)
             .map(Self::Playlist)
+            .or_else(|url| BangerLink::try_from(url).map(Self::Banger))
             .or_else(|url| VideoLink::try_from(url).map(Self::Video))
             .or_else(|url| ChannelLink::try_from(url).map(Self::Channel))
             .or_else(|url| Ok(Self::OtherPlatform(url)))
     }
 }
 
-fn id_from_link<T: Id + ?Sized>(s: &Url) -> Option<&T> {
+fn id_from_link<T: YtId + ?Sized>(s: &Url) -> Option<&T> {
     s.query_pairs()
         .find(|(k, _)| k == T::QUERY_PARAM)
         .map(|(_, id)| match id {
@@ -189,12 +217,6 @@ impl AsRef<str> for Link {
 pub struct VideoLink(Url);
 
 impl VideoLink {
-    pub fn id(&self) -> &VideoId {
-        id_from_link(&self.0)
-            .or_else(|| VideoId::from_short_url(&self.0))
-            .expect("video link to have a video id")
-    }
-
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
@@ -232,42 +254,27 @@ impl VideoLink {
     #[cfg(all(feature = "ytdl", feature = "playlist"))]
     #[tracing::instrument(fields(self = self.as_str()))]
     pub async fn resolve_link(&self) -> String {
-        use crate::{item::title_cache, playlist::Playlist, ytdl::YtdlBuilder};
-        use tokio::sync::OnceCell;
-        use tracing::debug;
+        use crate::{item::title_cache, ytdl::YtdlBuilder};
 
-        static LIST: OnceCell<Result<Playlist, crate::Error>> = OnceCell::const_new();
-        debug!("resolving link in playlist");
-        let name = match LIST.get_or_init(Playlist::load).await {
-            Ok(list) => Ok(list.find_by_link(self).map(|s| s.name.clone())),
-            Err(e) => Err(e),
-        };
-        match name {
-            Ok(Some(name)) => name,
-            e => {
-                debug!("failed to find link in playlist: {e:?}");
+        match title_cache::get_by_vid_id(self.id()).await {
+            Ok(Some(title)) => return title,
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to fetch from title cache");
+            }
+        }
 
-                match title_cache::get_by_vid_id(self.id()).await {
-                    Ok(Some(title)) => return title,
-                    Ok(None) => {}
-                    Err(e) => {
-                        tracing::warn!(error = ?e, "failed to fetch from title cache");
-                    }
+        match YtdlBuilder::new(self).get_title().request().await {
+            Ok(r) => {
+                let title = r.title();
+                if let Err(e) = title_cache::put_by_vid_id(self.id(), &title).await {
+                    tracing::warn!(error = ?e, "failed to cache title");
                 }
-
-                match YtdlBuilder::new(self).get_title().request().await {
-                    Ok(r) => {
-                        let title = r.title();
-                        if let Err(e) = title_cache::put_by_vid_id(self.id(), &title).await {
-                            tracing::warn!(error = ?e, "failed to cache title");
-                        }
-                        title
-                    }
-                    Err(e) => {
-                        tracing::warn!("failed to resolve link using yt dl: {e:?}");
-                        self.to_string()
-                    }
-                }
+                title
+            }
+            Err(e) => {
+                tracing::warn!("failed to resolve link using yt dl: {e:?}");
+                self.to_string()
             }
         }
     }
@@ -288,6 +295,15 @@ impl TryFrom<Url> for VideoLink {
         } else {
             Err(s)
         }
+    }
+}
+
+impl HasId for VideoLink {
+    type Id = VideoId;
+    fn id(&self) -> &Self::Id {
+        id_from_link(&self.0)
+            .or_else(|| VideoId::from_short_url(&self.0))
+            .expect("video link to have a video id")
     }
 }
 
@@ -326,7 +342,7 @@ impl AsRef<str> for VideoId {
     }
 }
 
-impl Id for VideoId {
+impl YtId for VideoId {
     const QUERY_PARAM: &'static str = "v";
     fn new(s: &str) -> &Self {
         unsafe { std::mem::transmute(s) }
@@ -359,17 +375,6 @@ impl PlaylistLink {
         base.query_pairs_mut()
             .append_pair(PlaylistId::QUERY_PARAM, &s.0);
         Self(base)
-    }
-
-    pub fn id(&self) -> &PlaylistId {
-        self.0
-            .query_pairs()
-            .find(|(k, _)| k == PlaylistId::QUERY_PARAM)
-            .map(|(_, id)| match id {
-                Cow::Owned(_) => unreachable!("yt ids are always url safe"),
-                Cow::Borrowed(id) => PlaylistId::new(id),
-            })
-            .unwrap()
     }
 
     pub fn video_id(&self) -> Option<&VideoId> {
@@ -425,6 +430,20 @@ impl TryFrom<Url> for PlaylistLink {
     }
 }
 
+impl HasId for PlaylistLink {
+    type Id = PlaylistId;
+    fn id(&self) -> &Self::Id {
+        self.0
+            .query_pairs()
+            .find(|(k, _)| k == PlaylistId::QUERY_PARAM)
+            .map(|(_, id)| match id {
+                Cow::Owned(_) => unreachable!("yt ids are always url safe"),
+                Cow::Borrowed(id) => PlaylistId::new(id),
+            })
+            .unwrap()
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct PlaylistId(str);
@@ -442,7 +461,13 @@ impl PlaylistId {
     }
 }
 
-impl Id for PlaylistId {
+impl AsRef<str> for PlaylistId {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl YtId for PlaylistId {
     const QUERY_PARAM: &'static str = "list";
     fn new(s: &str) -> &Self {
         unsafe { std::mem::transmute(s) }
@@ -496,6 +521,122 @@ impl TryFrom<Url> for ChannelLink {
         } else {
             Err(s)
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct BangerLink(Url);
+
+impl BangerLink {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn from_id(s: &BangerId) -> Self {
+        Self(
+            format!(
+                "https://blind-eternities.mendess.xyz/playlist/song/audio/{}",
+                s.as_str()
+            )
+            .parse()
+            .unwrap(),
+        )
+    }
+
+    pub fn into_string(self) -> String {
+        self.0.into()
+    }
+
+    fn is_valid_link(s: &Url) -> bool {
+        s.scheme().starts_with("http")
+            && s.host_str()
+                .is_some_and(|host| host.contains("blind-eternities.mendess.xyz"))
+            && s.path().starts_with("/playlist/song/audio")
+    }
+
+    #[cfg(feature = "downloads")]
+    pub async fn metadata(&self) -> reqwest::Result<BangerMetadata> {
+        let url = {
+            let id = self.id();
+            let mut url = self.0.clone();
+            url.set_path("/playlist/song/metadata/");
+            url.join(id.as_str()).unwrap()
+        };
+        reqwest::get(url).await?.error_for_status()?.json().await
+    }
+}
+
+#[cfg(feature = "downloads")]
+#[derive(Deserialize)]
+pub struct BangerMetadata {
+    pub title: String,
+    pub duration: Duration,
+}
+
+impl HasId for BangerLink {
+    type Id = BangerId;
+    fn id(&self) -> &Self::Id {
+        BangerId::from_url(&self.0).unwrap()
+    }
+}
+
+impl AsRef<str> for BangerLink {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl TryFrom<Url> for BangerLink {
+    type Error = Url;
+
+    fn try_from(s: Url) -> Result<Self, Self::Error> {
+        if Self::is_valid_link(&s) {
+            Ok(Self(s))
+        } else {
+            Err(s)
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct BangerId(str);
+
+impl BangerId {
+    pub fn new(s: &str) -> &Self {
+        unsafe { std::mem::transmute(s) }
+    }
+
+    pub fn boxed(&self) -> Box<Self> {
+        let b: Box<str> = Box::from(self.as_str());
+        unsafe { std::mem::transmute(b) }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn from_url(s: &Url) -> Option<&Self> {
+        BangerLink::is_valid_link(s)
+            .then(|| s.path().split("/").last())
+            .flatten()
+            .map(|s| unsafe { std::mem::transmute(s) })
+    }
+}
+
+impl Deref for BangerId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for BangerId {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 

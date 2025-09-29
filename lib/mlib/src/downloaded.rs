@@ -8,17 +8,21 @@ use std::{
 
 use futures_util::{Stream, TryStreamExt};
 use glob::Paths;
-use tokio::fs;
+use tokio::fs::{self, File};
 use tokio_stream::wrappers::ReadDirStream;
 
 use crate::{
     Error,
-    item::{id_from_path, link::VideoLink},
+    item::{
+        id_from_path,
+        link::{BangerLink, BangerMetadata, HasId, VideoLink},
+    },
     playlist::{self, PlaylistIds},
     queue::Item,
     ytdl::{self, YtdlError},
 };
 use derive_more::derive::From;
+use reqwest::header;
 
 pub async fn clean_downloads<P: AsRef<Path>>(
     dl_dir: P,
@@ -32,8 +36,8 @@ pub async fn clean_downloads<P: AsRef<Path>>(
             }
             let fname = f.file_name();
             let id = match id_from_path(&fname) {
-                Some(id) => id,
-                None => return Ok(None),
+                Some(crate::item::ItemId::BangerId(id)) => id,
+                Some(_) | None => return Ok(None),
             };
             Ok((!ids.contains(id)).then(|| f.path()))
         }),
@@ -42,14 +46,14 @@ pub async fn clean_downloads<P: AsRef<Path>>(
 
 #[must_use]
 pub enum CheckCacheDecision {
-    Download(VideoLink),
+    Download(BangerLink),
     Skip,
 }
 
-pub async fn is_in_cache(dl_dir: &Path, link: &VideoLink) -> bool {
+pub async fn is_in_cache<L: HasId>(dl_dir: &Path, link: &L) -> bool {
     let mut s = dl_dir.to_string_lossy().into_owned();
     s.push_str("/*=");
-    s.push_str(link.id());
+    s.push_str(link.id().as_ref());
     s.push_str("=m.*");
     tokio::task::spawn_blocking(move || {
         tracing::debug!("searching cache using glob: {:?}", s);
@@ -75,11 +79,11 @@ pub enum GlobLibError {
 
 pub async fn search_cache_for(
     dl_dir: &Path,
-    link: &VideoLink,
+    link: &impl HasId,
 ) -> Result<Option<PathBuf>, GlobLibError> {
     let mut s = dl_dir.to_string_lossy().into_owned();
     s.push_str("/*=");
-    s.push_str(link.id());
+    s.push_str(link.id().as_ref());
     s.push_str("=m.*");
     tokio::task::spawn_blocking(move || {
         tracing::debug!("searching cache using glob: {:?}", s);
@@ -118,7 +122,7 @@ pub async fn search_cache_for(
 
 pub async fn check_cache_ref(dl_dir: &Path, item: &mut Item) -> CheckCacheDecision {
     let link = match item {
-        Item::Link(l) => match l.as_video() {
+        Item::Link(l) => match l.as_banger() {
             Some(v) => v,
             None => return CheckCacheDecision::Skip,
         },
@@ -186,7 +190,7 @@ impl GetDlPath<'_> {
     }
 }
 
-pub async fn download(
+pub async fn yt_download(
     dl_dir: PathBuf,
     link: &VideoLink,
     just_audio: bool,
@@ -226,4 +230,46 @@ pub async fn download(
         }
         .into())
     }
+}
+
+pub async fn download(dl_dir: PathBuf, link: &BangerLink) -> Result<(), Error> {
+    fn parse_filename(content_disposition: &str) -> Option<&str> {
+        content_disposition.split(';').find_map(|part| {
+            let part = part.trim();
+            if part.starts_with("filename=") {
+                Some(part.trim_start_matches("filename=").trim_matches('"'))
+            } else {
+                None
+            }
+        })
+    }
+
+    let response = reqwest::get(link.as_str()).await?.error_for_status()?;
+    let id = if let Some(disposition) = response.headers().get(header::CONTENT_DISPOSITION)
+        && let Ok(value) = disposition.to_str()
+        && let Some(filename) = parse_filename(value)
+    {
+        filename
+    } else {
+        panic!()
+    };
+    let BangerMetadata { title, .. } = link.metadata().await?;
+    let title = title.replace("/", "_").replace("\"", "'");
+    let (id, ext) = id.split_once('.').unwrap();
+
+    let file_name = format!("{title}={id}=m.{ext}");
+    let path = dl_dir.join(file_name);
+    use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+    tokio::io::copy(
+        &mut response
+            .bytes_stream()
+            .map_err(io::Error::other)
+            .into_async_read()
+            .compat(),
+        &mut File::create(path).await?,
+    )
+    .await?;
+
+    Ok(())
 }

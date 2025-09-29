@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.16.1"
+version = "0.17.0"
 edition = { workspace = true }
 
 [dependencies]
@@ -23,6 +23,7 @@ parking_lot = { workspace = true, optional = true }
 pin-project = { workspace = true, optional = true }
 raii_flock = { workspace = true, optional = true }
 regex.workspace = true
+reqwest = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde-map-to-array = { workspace = true, features = ["std"], optional = true }
 serde_json = { workspace = true, optional = true }
@@ -30,6 +31,7 @@ static_assertions = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 tokio-stream = { workspace = true, features = ["fs", "io-util"], optional = true }
+tokio-util = { workspace = true, features = ["compat"], optional = true }
 tracing = { workspace = true, optional = true }
 trait-gen = { workspace = true, optional = true }
 url = { workspace = true, features = ["serde"] }
@@ -119,6 +121,10 @@ downloads = [
     "ytdl",
 
     "dep:glob",
+    "dep:reqwest",
+    "reqwest/stream",
+    "reqwest/json",
+    "dep:tokio-util",
 ]
 serde = ["dep:serde"]
 mpris = [

@@ -19,7 +19,7 @@ mod daemon {
 
     use cli_daemon::Daemon;
     use futures_util::{StreamExt, stream::FuturesUnordered};
-    use mlib::{downloaded, item::link::VideoLink, playlist::Playlist};
+    use mlib::{downloaded, item::link::BangerLink, playlist::Playlist};
     use serde::{Deserialize, Serialize};
     use tokio::{
         sync::{Mutex, mpsc, oneshot},
@@ -27,23 +27,21 @@ mod daemon {
     };
     use tracing::{error, info};
 
-    use crate::config::DownloadFormat;
-
     #[derive(Serialize, Deserialize, Debug)]
     pub enum Message {
-        Queue(VideoLink),
+        Queue(BangerLink),
         Status,
     }
 
     #[derive(Serialize, Deserialize, Debug, Default, Clone)]
     pub struct Status {
-        pub downloading: HashSet<VideoLink>,
-        pub queued: HashSet<VideoLink>,
-        pub done: Vec<VideoLink>,
-        pub errored: Vec<VideoLink>,
+        pub downloading: HashSet<BangerLink>,
+        pub queued: HashSet<BangerLink>,
+        pub done: Vec<BangerLink>,
+        pub errored: Vec<BangerLink>,
     }
     impl Status {
-        fn move_to_downloading(&mut self, l: &VideoLink) {
+        fn move_to_downloading(&mut self, l: &BangerLink) {
             let v = self
                 .queued
                 .take(l)
@@ -51,7 +49,7 @@ mod daemon {
             self.downloading.insert(v);
         }
 
-        fn move_to_done(&mut self, l: &VideoLink) {
+        fn move_to_done(&mut self, l: &BangerLink) {
             let v = self
                 .downloading
                 .take(l)
@@ -59,7 +57,7 @@ mod daemon {
             self.done.push(v);
         }
 
-        fn move_to_errored(&mut self, l: &VideoLink) {
+        fn move_to_errored(&mut self, l: &BangerLink) {
             let v = self
                 .downloading
                 .take(l)
@@ -79,7 +77,7 @@ mod daemon {
             Some(b) => b,
         };
 
-        let (tx, mut rx) = mpsc::channel::<VideoLink>(1000);
+        let (tx, mut rx) = mpsc::channel::<BangerLink>(1000);
         let dl_dir = crate::util::dl_dir().await?;
 
         static STATUS: LazyLock<Mutex<Status>> = LazyLock::new(Mutex::default);
@@ -101,12 +99,7 @@ mod daemon {
                         task_set.push(tokio::spawn({
                             let dl_dir = dl_dir.clone();
                             async move {
-                                let result = downloaded::download(
-                                    dl_dir.clone(),
-                                    &l,
-                                    crate::config::CONFIG.download_format == DownloadFormat::Audio,
-                                )
-                                .await;
+                                let result = downloaded::download(dl_dir.clone(), &l).await;
                                 match result {
                                     Ok(_) => {
                                         info!(?l, "downloaded");
