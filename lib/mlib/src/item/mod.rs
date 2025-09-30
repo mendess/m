@@ -253,8 +253,8 @@ mod test {
     #[test]
     fn trivial() {
         assert_eq!(
-            Some(ItemId::BangerId(BangerId::new("AAA"))),
-            id_from_path(&PathBuf::from("Song Name 😎=AAA=m.mkv"))
+            Some(ItemId::BangerId(BangerId::new("AAAAAAAA"))),
+            id_from_path(&PathBuf::from("Song Name 😎=AAAAAAAA=m.mkv"))
         )
     }
 
@@ -277,8 +277,8 @@ mod test {
     #[test]
     fn art_id() {
         assert_eq!(
-            Some(ItemId::BangerId(BangerId::new("AAA"))),
-            id_from_path(&Path::new("Song Name 😎=AAA=mart.jpg"))
+            Some(ItemId::BangerId(BangerId::new("AAAAAAAA"))),
+            id_from_path(&Path::new("Song Name 😎=AAAAAAAA=mart.jpg"))
         )
     }
 }
