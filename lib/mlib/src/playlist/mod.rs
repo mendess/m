@@ -436,10 +436,7 @@ impl PlaylistIds {
                 let line = &line[(idx + LINK_FIELD.len())..];
                 if let Some(end) = line.find('"') {
                     //TODO: unwrap
-                    set.insert(
-                        BangerId::new(line[..end].split('/').next_back().unwrap())
-                            .boxed(),
-                    );
+                    set.insert(BangerId::new(line[..end].split('/').next_back().unwrap()).boxed());
                 }
             }
         }
