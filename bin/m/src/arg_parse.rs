@@ -215,6 +215,12 @@ pub struct New {
     pub queue: bool,
     #[arg(required = true)]
     pub query: Vec<String>,
+    #[arg(long)]
+    pub categories: Vec<String>,
+    #[command(flatten)]
+    pub metadata: crate::playlist_ctl::SongMetadata,
+    #[arg(long)]
+    pub batch: bool,
 }
 
 #[derive(Debug, Clone, Parser, Serialize, Deserialize)]

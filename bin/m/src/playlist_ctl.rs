@@ -1,7 +1,7 @@
 use crate::notify;
 use crate::util::{self, prompt};
 use anyhow::{Context, bail, ensure};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt as _};
 use itertools::Itertools;
 use levenshtein::levenshtein;
 use mlib::Item;
@@ -77,26 +77,55 @@ fn make_song(
     }
 }
 
-pub async fn new(link: BangerLink) -> anyhow::Result<BangerLink> {
-    let mut categories = UniqVec::<String>::new();
-    if Playlist::contains_song(link.id()).await? {
+pub async fn new(
+    links: &[BangerLink],
+    base_meta: SongMetadata,
+    mut categories: UniqVec<String>,
+    batch: bool,
+) -> anyhow::Result<()> {
+    if futures_util::stream::iter(links.iter())
+        .then(|l| Playlist::contains_song(l.id()))
+        .try_all(|b| async move { b })
+        .await?
+    {
         return Err(anyhow::anyhow!("Song already in playlist"));
     }
-    let meta = category_prompt(&mut categories).await?;
-    notify!("Fetching song info");
-    let song_info = fetch_song_info(&link).await?;
-    let song = make_song(link.clone(), song_info, meta, categories);
-    Playlist::add_song(&song).await?;
-    notify!("Song added"; content: "{}", song);
-    Ok(link)
+    let meta = if batch {
+        base_meta
+    } else {
+        category_prompt(&mut categories).await?.merge(base_meta)
+    };
+    for link in links {
+        notify!("Fetching song info");
+        let song_info = fetch_song_info(link).await?;
+        let song = make_song(link.clone(), song_info, meta.clone(), categories.clone());
+        Playlist::add_song(&song).await?;
+        notify!("Song added"; content: "{}", song);
+    }
+    Ok(())
 }
 
-#[derive(Debug, Default, Clone)]
-struct SongMetadata {
+#[derive(Debug, Default, Clone, clap::Parser, serde::Serialize, serde::Deserialize)]
+pub struct SongMetadata {
+    #[arg(long)]
     pub artist: Option<String>,
+    #[arg(long)]
     pub genre: Option<String>,
+    #[arg(long)]
     pub language: Option<String>,
+    #[arg(long)]
     pub recommended_by: Option<String>,
+}
+
+impl SongMetadata {
+    fn merge(self, other: Self) -> Self {
+        Self {
+            artist: self.artist.or(other.artist),
+            genre: self.genre.or(other.genre),
+            language: self.language.or(other.language),
+            recommended_by: self.recommended_by.or(other.recommended_by),
+        }
+    }
 }
 
 async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<SongMetadata> {

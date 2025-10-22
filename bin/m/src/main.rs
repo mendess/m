@@ -13,7 +13,7 @@ use itertools::Itertools;
 use mlib::{
     Link, Search,
     downloaded::{self, clean_downloads},
-    item::link::BangerLink,
+    item::{self, link::BangerLink},
     players::{self, PlayerIndex, PlayerLink},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
@@ -114,15 +114,25 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 &mut std::io::stdout().lock(),
             );
         }
-        Command::New(New { queue, mut query }) => {
-            if query.len() > 1 {
-                notify!("Skipping extra arguments. Only first argument considered");
-            }
-            let link = BangerLink::try_from(query.remove(0))
+        Command::New(New {
+            queue,
+            query,
+            metadata,
+            categories,
+            batch,
+        }) => {
+            let links = query
+                .into_iter()
+                .map(BangerLink::try_from)
+                .collect::<Result<Vec<_>, _>>()
                 .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?;
-            let link = playlist_ctl::new(link).await?;
+            playlist_ctl::new(&links, metadata, categories.into(), batch).await?;
             if queue {
-                queue_ctl::queue(Default::default(), Some(Item::Link(link.into()))).await?;
+                queue_ctl::queue(
+                    Default::default(),
+                    links.into_iter().map(|i| Item::from(item::Link::from(i))),
+                )
+                .await?;
             }
         }
         Command::Current { link, notify } => {
