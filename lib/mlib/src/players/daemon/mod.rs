@@ -639,7 +639,7 @@ impl PlayersDaemon {
     }
 
     pub(super) async fn filename(&self, index: PlayerIndex) -> MpvResult<String> {
-        let mut filename = self.simple_prop::<String>(index, "filename")?;
+        let mut filename = self.simple_prop::<String>(index, "stream-open-filename")?;
         static YT_ID: OnceLock<Regex> = OnceLock::new();
         let pat = YT_ID.get_or_init(|| Regex::new(r"^[a-zA-Z\-_0-9]{11}$").unwrap());
         // mpv now returns only the video id instead of the full youtube url

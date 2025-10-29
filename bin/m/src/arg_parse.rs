@@ -169,6 +169,15 @@ pub enum Command {
         song: Vec<String>,
     },
 
+    /// change categories of a song
+    ChangeCategories {
+        #[command(subcommand)]
+        mode: ChangeCategories,
+        #[arg(short, long)]
+        current: bool,
+        song: Vec<String>,
+    },
+
     /// Generate auto complete script
     #[serde(skip)]
     AutoComplete {
@@ -362,4 +371,10 @@ impl FromStr for EntityStatus {
             _ => Err(format!("Invalid entity: {s}")),
         }
     }
+}
+
+#[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
+pub enum ChangeCategories {
+    Add,
+    Delete,
 }

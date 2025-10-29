@@ -17,7 +17,7 @@ use mlib::{
     ytdl::YtdlBuilder,
 };
 use regex::Regex;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     let category = category
@@ -128,82 +128,126 @@ impl SongMetadata {
     }
 }
 
-async fn category_prompt(categories: &mut UniqVec<String>) -> anyhow::Result<SongMetadata> {
+async fn free_category_prompt(
+    playlist: &Playlist,
+    new_categories: &mut UniqVec<String>,
+) -> anyhow::Result<()> {
+    let playlist_categories = playlist.free_categories();
+    let mut heap = playlist_categories
+        .iter()
+        .map(|(c, count)| (*count, *c))
+        .collect::<BinaryHeap<_>>();
+    println!("the top most common categories are: ");
+    let mut i = 0;
+    while let Some((c, category)) = heap.pop() {
+        i += 1;
+        println!("\t{category} ({c})");
+        if i == 10 {
+            break;
+        }
+    }
+    println!();
+    if !new_categories.is_empty() {
+        println!("current categories:");
+        for c in new_categories.iter() {
+            println!("\t{c}");
+        }
+    }
+    while let Some(cat) = prompt::prompt("category").await? {
+        new_categories.push(cat);
+    }
+    for cat in &mut *new_categories {
+        did_you_mean_check(&playlist_categories, cat).await?;
+    }
+    Ok(())
+}
+
+async fn did_you_mean_check<S>(
+    playlist_categories: &HashMap<S, usize>,
+    cat: &mut String,
+) -> anyhow::Result<()>
+where
+    S: AsRef<str> + Eq + std::hash::Hash,
+    S: std::borrow::Borrow<str>,
+{
+    if !playlist_categories.contains_key(cat) {
+        let close_matches = playlist_categories
+            .iter()
+            .filter(|(c, _)| levenshtein(c.as_ref(), cat) < 4)
+            .map(|(c, _)| c.as_ref())
+            .collect::<Vec<_>>();
+        if !close_matches.is_empty() {
+            println!("You said {cat}. Did you mean any of these?");
+            if let Some(index) = util::prompt::interative_select(&close_matches, []).await? {
+                *cat = close_matches[index].to_owned();
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn set<S>(
+    playlist_categories: &HashMap<S, usize>,
+    new_categories: &mut UniqVec<String>,
+    mut value: String,
+    at: &mut Option<String>,
+) -> anyhow::Result<()>
+where
+    S: AsRef<str> + Eq + std::hash::Hash,
+    S: std::borrow::Borrow<str>,
+{
+    did_you_mean_check(playlist_categories, &mut value).await?;
+    new_categories.retain(|s| *s != value);
+    *at = Some(value);
+    Ok(())
+}
+
+async fn category_prompt(new_categories: &mut UniqVec<String>) -> anyhow::Result<SongMetadata> {
     let playlist = Playlist::load().await?;
     let playlist_categories = playlist.categories();
     let mut meta = SongMetadata::default();
-    let did_you_mean_check = async |cat: &mut String| {
-        if !playlist_categories.contains_key(cat.as_str()) {
-            let close_matches = playlist_categories
-                .iter()
-                .filter(|(c, _)| levenshtein(c, cat) < 4)
-                .map(|(c, _)| *c)
-                .collect::<Vec<_>>();
-            if !close_matches.is_empty() {
-                println!("You said {cat}. Did you mean any of these?");
-                if let Some(index) = util::prompt::interative_select(&close_matches, []).await? {
-                    *cat = close_matches[index].to_owned();
-                }
-            }
-        }
-        anyhow::Ok(())
-    };
-    let mut set = async |mut value, at: &mut Option<String>| {
-        did_you_mean_check(&mut value).await?;
-        categories.retain(|s| *s != value);
-        *at = Some(value);
-        anyhow::Ok(())
-    };
-    let playlist = Playlist::load().await;
     if let Some(artist) = prompt::prompt("artist").await? {
-        if let Ok(playlist) = &playlist {
-            let genres = playlist
-                .songs
-                .iter()
-                .filter(|s| s.artist.as_ref() == Some(&artist))
-                .filter_map(|g| g.genre.as_ref())
-                .collect::<HashSet<_>>();
-            if !genres.is_empty() {
-                println!("this artist usually plays: {genres:?}");
-            }
+        let genres = playlist
+            .songs
+            .iter()
+            .filter(|s| s.artist.as_ref() == Some(&artist))
+            .filter_map(|g| g.genre.as_ref())
+            .collect::<HashSet<_>>();
+        if !genres.is_empty() {
+            println!("this artist usually plays: {genres:?}");
         }
-        set(artist, &mut meta.artist).await?;
+        set(
+            &playlist_categories,
+            new_categories,
+            artist,
+            &mut meta.artist,
+        )
+        .await?;
     }
     if let Some(genre) = prompt::prompt("genre").await? {
-        set(genre, &mut meta.genre).await?;
+        set(&playlist_categories, new_categories, genre, &mut meta.genre).await?;
     }
     if let Some(language) = prompt::prompt("language").await? {
-        set(language, &mut meta.language).await?;
+        set(
+            &playlist_categories,
+            new_categories,
+            language,
+            &mut meta.language,
+        )
+        .await?;
     }
     if let Some(recomended_by) = prompt::prompt("recommended by").await? {
-        set(recomended_by, &mut meta.recommended_by).await?;
+        set(
+            &playlist_categories,
+            new_categories,
+            recomended_by,
+            &mut meta.recommended_by,
+        )
+        .await?;
     }
-    if let Some(playlist) = playlist.ok().filter(|_| categories.is_empty()) {
-        let mut heap = playlist
-            .free_categories()
-            .iter()
-            .map(|(c, count)| (*count, *c))
-            .collect::<BinaryHeap<_>>();
-        print!("the top most common categories are: ");
-        let mut i = 0;
-        while let Some((c, category)) = heap.pop() {
-            i += 1;
-            print!("{category} ({c})");
-            if i == 10 {
-                break;
-            }
-            print!(", ");
-        }
-        println!();
-        while let Some(cat) = prompt::prompt("category").await? {
-            categories.push(cat);
-        }
-    }
-    for cat in &mut *categories {
-        did_you_mean_check(cat).await?;
-    }
+    free_category_prompt(&playlist, new_categories).await?;
     ensure!(
-        !categories.is_empty()
+        !new_categories.is_empty()
             || [
                 &meta.artist,
                 &meta.genre,
@@ -343,5 +387,51 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
             );
         }
     }
+    Ok(())
+}
+
+pub async fn add_category(mut playlist: Playlist, song: usize) -> anyhow::Result<()> {
+    let all_categories = playlist.categories_owned();
+    macro_rules! edit {
+        ($field:ident) => {
+            let new_f = match &playlist.songs[song].$field {
+                Some(f) => prompt::prompt_with_default(stringify!($field), f).await?,
+                None => prompt::prompt(stringify!($field)).await?,
+            };
+            if let Some(new_f) = new_f {
+                let song = &mut playlist.songs[song];
+                set(
+                    &all_categories,
+                    &mut song.categories,
+                    new_f,
+                    &mut song.$field,
+                )
+                .await?;
+            }
+        };
+    }
+    edit!(artist);
+    edit!(genre);
+    edit!(recommended_by);
+    edit!(language);
+
+    let mut categories = std::mem::take(&mut playlist.songs[song].categories);
+    free_category_prompt(&playlist, &mut categories).await?;
+    playlist.songs[song].categories = categories;
+
+    notify!("saving edited song as"; content: "{}", playlist.songs[song]);
+    playlist.save().await?;
+    Ok(())
+}
+
+pub async fn delete_category(mut playlist: Playlist, song: usize) -> anyhow::Result<()> {
+    while let Some(delete) = prompt::interative_select(&playlist.songs[song].liked_by, []).await? {
+        playlist.songs[song].liked_by.remove(delete);
+    }
+    while let Some(delete) = prompt::interative_select(&playlist.songs[song].categories, []).await?
+    {
+        playlist.songs[song].categories.remove_at(delete);
+    }
+    playlist.save().await?;
     Ok(())
 }

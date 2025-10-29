@@ -173,7 +173,11 @@ impl From<String> for Item {
         } else {
             match Link::try_from(s) {
                 Ok(l) => Item::Link(l),
-                Err(s) => Item::File(PathBuf::from(s)),
+                Err(s) => match id_from_path(&s) {
+                    Some(ItemId::VideoId(id)) => Item::Link(VideoLink::from_id(id).into()),
+                    Some(ItemId::BangerId(id)) => Item::Link(link::BangerLink::from_id(id).into()),
+                    None => Self::File(PathBuf::from(s)),
+                },
             }
         }
     }

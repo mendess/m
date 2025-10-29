@@ -45,6 +45,28 @@ where
     }
 }
 
+pub async fn prompt_with_default<T>(prompt: &str, default: &str) -> anyhow::Result<Option<T>>
+where
+    T: FromStr,
+    T::Err: Display,
+    anyhow::Error: From<T::Err>,
+{
+    prompt_validated_with_default(prompt, |_| Ok(()), default).await
+}
+
+pub async fn prompt_validated_with_default<T>(
+    prompt: &str,
+    validation: impl FnMut(&T) -> Result<(), String>,
+    default: &str,
+) -> anyhow::Result<Option<T>>
+where
+    T: FromStr,
+    T::Err: Display,
+    anyhow::Error: From<T::Err>,
+{
+    impl_prompt_validated(prompt, validation, Some(default)).await
+}
+
 pub async fn prompt<T>(prompt: &str) -> anyhow::Result<Option<T>>
 where
     T: FromStr,
@@ -56,7 +78,20 @@ where
 
 pub async fn prompt_validated<T>(
     prompt: &str,
+    validation: impl FnMut(&T) -> Result<(), String>,
+) -> anyhow::Result<Option<T>>
+where
+    T: FromStr,
+    T::Err: Display,
+    anyhow::Error: From<T::Err>,
+{
+    impl_prompt_validated(prompt, validation, None).await
+}
+
+pub async fn impl_prompt_validated<T>(
+    prompt: &str,
     mut validation: impl FnMut(&T) -> Result<(), String>,
+    default: Option<&str>,
 ) -> anyhow::Result<Option<T>>
 where
     T: FromStr,
@@ -68,7 +103,7 @@ where
             let mut editor = rustyline::DefaultEditor::new()?;
             let mut rl_prompt = format!("{prompt}: ");
             loop {
-                match editor.readline(&rl_prompt) {
+                match editor.readline_with_initial(&rl_prompt, (default.unwrap_or_default(), "")) {
                     Ok(input) => match (!input.is_empty()).then(|| input.parse()) {
                         Some(Ok(t)) => match validation(&t) {
                             Ok(()) => return Ok(Some(t)),

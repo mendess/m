@@ -79,6 +79,11 @@ impl PlayerLink {
             daemon: StaticOrOwned::Owned(self.daemon.overriding_socket_namespace_with(user)),
         }
     }
+
+    pub async fn playing_item(&self) -> Result<Item, crate::Error> {
+        let filename = self.filename().await?;
+        Ok(Item::from(filename))
+    }
 }
 
 impl From<PlayerIndex> for PlayerLink {
@@ -267,16 +272,7 @@ macro_rules! commands {(
         $(#[$docs])*
         pub async fn $name($($($param: $type),*)?)
             -> Result<or_else!($(($r_ty))? (())), $crate::players::Error> {
-            let response = PlayerLink::current().daemon.exchange(
-                Message::new(
-                    PlayerIndex(None),
-                    MessageKind::$kind $({ $($param),* })*,
-                )
-            ).await??;
-            match_or_else_pat!(response {
-                $(($resp => Ok($res),))?
-                (Response::Unit => Ok(()),)
-            })
+            PlayerLink::current().$name($($($param),*)*).await
         }
         )*
     };

@@ -211,6 +211,16 @@ impl Playlist {
             })
     }
 
+    pub fn categories_owned(&self) -> HashMap<String, usize> {
+        self.songs
+            .iter()
+            .flat_map(|s| s.all_categories())
+            .fold(HashMap::new(), |mut set, c| {
+                *set.entry(c.to_owned()).or_default() += 1;
+                set
+            })
+    }
+
     pub fn free_categories(&self) -> HashMap<&str, usize> {
         self.songs
             .iter()
@@ -351,6 +361,14 @@ impl Playlist {
     pub fn find_by_id(&self, id: &BangerId) -> Option<&Song> {
         self.songs.iter().find(|s| s.link.id() == id)
     }
+
+    pub fn song_index_by_link(&self, link: &BangerLink) -> Option<usize> {
+        self.song_index_by_id(link.id())
+    }
+
+    pub fn song_index_by_id(&self, id: &BangerId) -> Option<usize> {
+        self.songs.iter().position(|s| s.link.id() == id)
+    }
 }
 
 pub enum PartialSearchResult<T> {
@@ -384,6 +402,12 @@ pub struct PlaylistIndex<'p> {
     index: usize,
 }
 
+impl PlaylistIndex<'_> {
+    pub fn into_index(self) -> usize {
+        self.index
+    }
+}
+
 impl Deref for PlaylistIndex<'_> {
     type Target = Song;
 
@@ -395,6 +419,12 @@ impl Deref for PlaylistIndex<'_> {
 pub struct PlaylistIndexMut<'p> {
     source: &'p mut Playlist,
     index: usize,
+}
+
+impl PlaylistIndexMut<'_> {
+    pub fn into_index(self) -> usize {
+        self.index
+    }
 }
 
 impl Deref for PlaylistIndexMut<'_> {

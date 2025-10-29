@@ -40,6 +40,10 @@ impl<T: PartialEq> UniqVec<T> {
         }
     }
 
+    pub fn remove_at(&mut self, i: usize) -> T {
+        self.v.remove(i)
+    }
+
     pub fn into_vec(self) -> Vec<T> {
         self.v
     }
