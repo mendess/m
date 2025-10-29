@@ -376,7 +376,10 @@ impl SongQuery {
                 Err(s) => match tokio::fs::metadata(&s).await {
                     Ok(_) => {
                         tracing::debug!(file = ?s, "found file");
-                        items.push(Item::File(s.into()))
+                        let path = std::env::current_dir()
+                            .map(|pwd| pwd.join(&s))
+                            .unwrap_or_else(|_| s.into());
+                        items.push(Item::File(path))
                     }
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {
                         tracing::debug!(word = ?s, "using as search word");
