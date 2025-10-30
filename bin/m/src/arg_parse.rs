@@ -171,11 +171,11 @@ pub enum Command {
 
     /// change categories of a song
     ChangeCategories {
-        #[command(subcommand)]
-        mode: ChangeCategories,
         #[arg(short, long)]
         current: bool,
-        song: Vec<String>,
+        song: String,
+        #[command(subcommand)]
+        mode: ChangeCategories,
     },
 
     /// Generate auto complete script
@@ -375,6 +375,13 @@ impl FromStr for EntityStatus {
 
 #[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
 pub enum ChangeCategories {
-    Add,
+    Add {
+        #[arg(long)]
+        categories: Vec<String>,
+        #[command(flatten)]
+        metadata: crate::playlist_ctl::SongMetadata,
+        #[arg(long)]
+        batch: bool,
+    },
     Delete,
 }

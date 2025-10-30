@@ -361,7 +361,9 @@ impl Playlist {
         words: impl Iterator<Item = &'s str>,
     ) -> PartialSearchResult<usize> {
         let mut idxs = (0..self.songs.len()).collect::<Vec<_>>();
-        words.for_each(|w| {
+        let words = words.collect::<Vec<_>>();
+        let name = words.join(" ");
+        words.iter().for_each(|w| {
             let regex = regex::RegexBuilder::new(&regex::escape(w))
                 .case_insensitive(true)
                 .build()
@@ -371,9 +373,22 @@ impl Playlist {
         match &idxs[..] {
             [index] => PartialSearchResult::One(*index),
             [] => PartialSearchResult::None,
-            many => PartialSearchResult::Many(
-                many.iter().map(|i| self.songs[*i].name.clone()).collect(),
-            ),
+            many => {
+                let exact_name_regex = regex::RegexBuilder::new(&regex::escape(&name))
+                    .case_insensitive(true)
+                    .build()
+                    .unwrap();
+                if let Some(index) = many
+                    .iter()
+                    .find(|i| exact_name_regex.is_match(&self.songs[**i].name))
+                {
+                    PartialSearchResult::One(*index)
+                } else {
+                    PartialSearchResult::Many(
+                        many.iter().map(|i| self.songs[*i].name.clone()).collect(),
+                    )
+                }
+            }
         }
     }
 

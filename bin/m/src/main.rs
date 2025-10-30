@@ -239,15 +239,18 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     .song_index_by_link(&link)
                     .context("song not in playlist")?
             } else {
-                crate::handle_search_result(
-                    playlist.partial_name_search(song.iter().map(|s| s.as_str())),
-                )?
-                .into_index()
+                crate::handle_search_result(playlist.partial_name_search(song.split_whitespace()))?
+                    .into_index()
             };
             notify!("editing song"; content: "{}\nmode: {:?}", playlist.songs[song].name, mode);
             match mode {
-                arg_parse::ChangeCategories::Add => {
-                    playlist_ctl::add_category(playlist, song).await?
+                arg_parse::ChangeCategories::Add {
+                    categories,
+                    metadata,
+                    batch,
+                } => {
+                    playlist_ctl::add_category(playlist, song, categories.into(), metadata, batch)
+                        .await?
                 }
                 arg_parse::ChangeCategories::Delete => {
                     playlist_ctl::delete_category(playlist, song).await?

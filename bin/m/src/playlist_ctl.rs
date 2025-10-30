@@ -73,10 +73,10 @@ fn make_song(
         artist,
         #[expect(deprecated)]
         _genre: genres.first().cloned(),
-        genres,
+        genres: genres.into(),
         language,
         recommended_by,
-        liked_by,
+        liked_by: liked_by.into(),
     }
 }
 
@@ -112,14 +112,14 @@ pub async fn new(
 pub struct SongMetadata {
     #[arg(long)]
     pub artist: Option<String>,
-    #[arg(long, value_parser = clap::value_parser!(String))]
-    pub genres: UniqVec<String>,
+    #[arg(long, required = false)]
+    pub genres: Vec<String>,
     #[arg(long)]
     pub language: Option<String>,
     #[arg(long)]
     pub recommended_by: Option<String>,
-    #[arg(long, value_parser = clap::value_parser!(String))]
-    pub liked_by: UniqVec<String>,
+    #[arg(long, required = false)]
+    pub liked_by: Vec<String>,
 }
 
 impl SongMetadata {
@@ -140,11 +140,45 @@ const LIST_PROMPT_CATEGORIES: (&str, &str) = ("category", "categories");
 const LIST_PROMPT_GENRE: (&str, &str) = ("genre", "genres");
 const LIST_PROMPT_LIKED_BY: (&str, &str) = ("liked by", "likers");
 
-async fn list_prompt(
+trait VecLike<T> {
+    fn is_empty(&self) -> bool;
+    fn push(&mut self, t: T);
+    fn iter<'s>(&'s self) -> std::slice::Iter<'s, T>;
+}
+
+macro_rules! impl_vec_like {
+    ($type:ident) => {
+        impl<T> VecLike<T> for $type<T>
+        where
+            T: PartialEq,
+        {
+            fn is_empty(&self) -> bool {
+                self.is_empty()
+            }
+
+            fn iter<'s>(&'s self) -> std::slice::Iter<'s, T> {
+                self.as_slice().iter()
+            }
+
+            fn push(&mut self, t: T) {
+                $type::<T>::push(self, t);
+            }
+        }
+    };
+}
+
+impl_vec_like!(Vec);
+impl_vec_like!(UniqVec);
+
+async fn list_prompt<'v, V>(
     (singular, plural): (&str, &str),
     comparison_categories: &HashMap<&str, usize>,
-    new_categories: &mut UniqVec<String>,
-) -> anyhow::Result<()> {
+    new_categories: &'v mut V,
+) -> anyhow::Result<()>
+where
+    V: VecLike<String>,
+    &'v mut V: IntoIterator<Item = &'v mut String>,
+{
     let mut heap = comparison_categories
         .iter()
         .map(|(c, count)| (*count, *c))
@@ -168,7 +202,7 @@ async fn list_prompt(
     while let Some(cat) = prompt::prompt(singular).await? {
         new_categories.push(cat);
     }
-    for cat in &mut *new_categories {
+    for cat in new_categories {
         did_you_mean_check(comparison_categories, cat).await?;
     }
     Ok(())
@@ -402,23 +436,34 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
     Ok(())
 }
 
-pub async fn add_category(mut playlist: Playlist, song: usize) -> anyhow::Result<()> {
+pub async fn add_category(
+    mut playlist: Playlist,
+    song: usize,
+    new_categories: UniqVec<String>,
+    new_metadata: SongMetadata,
+    batch: bool,
+) -> anyhow::Result<()> {
     let all_categories = playlist.categories_owned();
     macro_rules! edit {
         ($field:ident) => {
-            let new_f = match &playlist.songs[song].$field {
-                Some(f) => prompt::prompt_with_default(stringify!($field), f).await?,
-                None => prompt::prompt(stringify!($field)).await?,
-            };
-            if let Some(new_f) = new_f {
-                let song = &mut playlist.songs[song];
-                set(
-                    &all_categories,
-                    &mut song.categories,
-                    new_f,
-                    &mut song.$field,
-                )
-                .await?;
+            if let Some(new_f) = new_metadata.$field {
+                playlist.songs[song].$field = Some(new_f);
+            }
+            if !batch {
+                let new_f = match &playlist.songs[song].$field {
+                    Some(f) => prompt::prompt_with_default(stringify!($field), f).await?,
+                    None => prompt::prompt(stringify!($field)).await?,
+                };
+                if let Some(new_f) = new_f {
+                    let song = &mut playlist.songs[song];
+                    set(
+                        &all_categories,
+                        &mut song.categories,
+                        new_f,
+                        &mut song.$field,
+                    )
+                    .await?;
+                }
             }
         };
     }
@@ -426,21 +471,30 @@ pub async fn add_category(mut playlist: Playlist, song: usize) -> anyhow::Result
     edit!(recommended_by);
     edit!(language);
 
-    let mut liked_by = std::mem::take(&mut playlist.songs[song].liked_by);
-    list_prompt(LIST_PROMPT_LIKED_BY, &playlist.likers(), &mut liked_by).await?;
-    playlist.songs[song].liked_by = liked_by;
+    macro_rules! edit_list {
+        ($prompt:ident, $lister:ident, $field:ident) => {
+            let mut list = std::mem::take(&mut playlist.songs[song].$field);
+            list.extend(new_metadata.$field);
+            if !batch {
+                list_prompt($prompt, &playlist.$lister(), &mut list).await?;
+            }
+            playlist.songs[song].$field = list;
+        };
+    }
 
-    let mut genres = std::mem::take(&mut playlist.songs[song].genres);
-    list_prompt(LIST_PROMPT_GENRE, &playlist.genres(), &mut genres).await?;
-    playlist.songs[song].genres = genres;
+    edit_list!(LIST_PROMPT_LIKED_BY, likers, liked_by);
+    edit_list!(LIST_PROMPT_GENRE, genres, genres);
 
     let mut categories = std::mem::take(&mut playlist.songs[song].categories);
-    list_prompt(
-        LIST_PROMPT_CATEGORIES,
-        &playlist.free_categories(),
-        &mut categories,
-    )
-    .await?;
+    categories.extend(new_categories);
+    if !batch {
+        list_prompt(
+            LIST_PROMPT_CATEGORIES,
+            &playlist.free_categories(),
+            &mut categories,
+        )
+        .await?;
+    }
     playlist.songs[song].categories = categories;
 
     notify!("saving edited song as"; content: "{}", playlist.songs[song]);

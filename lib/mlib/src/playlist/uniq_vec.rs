@@ -26,28 +26,18 @@ impl<T> UniqVec<T> {
     }
 }
 
-impl<T: PartialEq> UniqVec<T> {
+impl<T> UniqVec<T> {
     #[inline(always)]
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn push(&mut self, t: T) -> Option<T> {
-        if self.v.contains(&t) {
-            Some(t)
-        } else {
-            self.v.push(t);
-            None
-        }
+    pub fn as_slice(&self) -> &[T] {
+        self.v.as_slice()
     }
 
-    pub fn remove(&mut self, t: &T) -> bool {
-        if let Some(i) = self.v.iter().position(|e| e == t) {
-            self.v.remove(i);
-            true
-        } else {
-            false
-        }
+    pub fn as_mut_slice(&mut self) -> &[T] {
+        self.v.as_mut_slice()
     }
 
     pub fn remove_at(&mut self, i: usize) -> T {
@@ -72,6 +62,26 @@ impl<T: PartialEq> UniqVec<T> {
 
     pub fn extract_if(&mut self, f: impl FnMut(&mut T) -> bool) -> impl Iterator<Item = T> {
         self.v.extract_if(.., f)
+    }
+}
+
+impl<T: PartialEq> UniqVec<T> {
+    pub fn remove(&mut self, t: &T) -> bool {
+        if let Some(i) = self.v.iter().position(|e| e == t) {
+            self.v.remove(i);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn push(&mut self, t: T) -> Option<T> {
+        if self.v.contains(&t) {
+            Some(t)
+        } else {
+            self.v.push(t);
+            None
+        }
     }
 }
 
