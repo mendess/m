@@ -35,8 +35,11 @@ pub struct Song {
     pub categories: uniq_vec::UniqVec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artist: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub genre: Option<String>,
+    #[serde(default, rename = "genre", skip_serializing_if = "Option::is_none")]
+    #[deprecated]
+    pub _genre: Option<String>,
+    #[serde(default, skip_serializing_if = "uniq_vec::UniqVec::is_empty")]
+    pub genres: uniq_vec::UniqVec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     #[serde(
@@ -45,8 +48,8 @@ pub struct Song {
         skip_serializing_if = "Option::is_none"
     )]
     pub recommended_by: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub liked_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "uniq_vec::UniqVec::is_empty")]
+    pub liked_by: uniq_vec::UniqVec<String>,
 }
 
 impl Display for Song {
@@ -66,13 +69,15 @@ impl Display for Song {
 }
 
 impl Song {
+    #[expect(deprecated)]
     pub fn all_categories(&self) -> impl Iterator<Item = &str> + Clone {
         let Song {
             name: _,
             link: _,
             time: _,
             categories,
-            genre,
+            _genre: _,
+            genres,
             artist,
             language,
             recommended_by,
@@ -81,7 +86,7 @@ impl Song {
         categories
             .iter()
             .chain(artist)
-            .chain(genre)
+            .chain(genres)
             .chain(language)
             .chain(recommended_by)
             .chain(liked_by)
@@ -143,9 +148,22 @@ impl Playlist {
             }
             Err(e) => return Err(e.into()),
         };
-        Ok(Self {
-            songs: serde_json::from_reader(file.into_std().await)?,
-        })
+        let mut songs: Vec<Song> = serde_json::from_reader(file.into_std().await)?;
+        let mut changed = false;
+        for s in &mut songs {
+            #[expect(deprecated)]
+            if let Some(g) = &s._genre
+                && s.genres.is_empty()
+            {
+                changed = true;
+                s.genres.push(g.clone());
+            }
+        }
+        let this = Self { songs };
+        if changed {
+            this.save().await?;
+        }
+        Ok(this)
     }
 
     async fn legacy_load_from(playlist_path: &Path) -> Result<Self, Error> {
@@ -202,33 +220,44 @@ impl Playlist {
     }
 
     pub fn categories(&self) -> HashMap<&str, usize> {
-        self.songs
-            .iter()
-            .flat_map(|s| s.all_categories())
-            .fold(HashMap::new(), |mut set, c| {
-                *set.entry(c).or_default() += 1;
-                set
-            })
+        counting(self.songs.iter().flat_map(|s| s.all_categories()))
     }
 
     pub fn categories_owned(&self) -> HashMap<String, usize> {
-        self.songs
-            .iter()
-            .flat_map(|s| s.all_categories())
-            .fold(HashMap::new(), |mut set, c| {
-                *set.entry(c.to_owned()).or_default() += 1;
-                set
-            })
+        counting(
+            self.songs
+                .iter()
+                .flat_map(|s| s.all_categories())
+                .map(ToOwned::to_owned),
+        )
     }
 
     pub fn free_categories(&self) -> HashMap<&str, usize> {
-        self.songs
-            .iter()
-            .flat_map(|s| &s.categories)
-            .fold(HashMap::new(), |mut set, c| {
-                *set.entry(c).or_default() += 1;
-                set
-            })
+        counting(
+            self.songs
+                .iter()
+                .flat_map(|s| &s.categories)
+                .map(String::as_str),
+        )
+    }
+
+    pub fn genres(&self) -> HashMap<&str, usize> {
+        counting(
+            self.songs
+                .iter()
+                .flat_map(|s| &s.genres)
+                .map(String::as_str),
+        )
+    }
+
+    pub fn likers(&self) -> HashMap<&str, usize> {
+        counting(
+            self.songs
+                .iter()
+                .flat_map(|s| &s.liked_by)
+                .chain(self.songs.iter().flat_map(|s| &s.recommended_by))
+                .map(String::as_str),
+        )
     }
 
     pub async fn contains_song(song: &str) -> io::Result<bool> {
@@ -369,6 +398,16 @@ impl Playlist {
     pub fn song_index_by_id(&self, id: &BangerId) -> Option<usize> {
         self.songs.iter().position(|s| s.link.id() == id)
     }
+}
+
+fn counting<I>(i: I) -> HashMap<I::Item, usize>
+where
+    I: Iterator<Item: Eq + std::hash::Hash>,
+{
+    i.fold(HashMap::new(), |mut set, c| {
+        *set.entry(c).or_default() += 1;
+        set
+    })
 }
 
 pub enum PartialSearchResult<T> {

@@ -58,9 +58,10 @@ fn make_song(
     SongInfo { time, name }: SongInfo,
     SongMetadata {
         artist,
-        genre,
+        genres,
         language,
         recommended_by,
+        liked_by,
     }: SongMetadata,
     categories: UniqVec<String>,
 ) -> Song {
@@ -70,10 +71,12 @@ fn make_song(
         time,
         categories,
         artist,
-        genre,
+        #[expect(deprecated)]
+        _genre: genres.first().cloned(),
+        genres,
         language,
         recommended_by,
-        liked_by: vec![],
+        liked_by,
     }
 }
 
@@ -109,35 +112,44 @@ pub async fn new(
 pub struct SongMetadata {
     #[arg(long)]
     pub artist: Option<String>,
-    #[arg(long)]
-    pub genre: Option<String>,
+    #[arg(long, value_parser = clap::value_parser!(String))]
+    pub genres: UniqVec<String>,
     #[arg(long)]
     pub language: Option<String>,
     #[arg(long)]
     pub recommended_by: Option<String>,
+    #[arg(long, value_parser = clap::value_parser!(String))]
+    pub liked_by: UniqVec<String>,
 }
 
 impl SongMetadata {
-    fn merge(self, other: Self) -> Self {
+    fn merge(mut self, other: Self) -> Self {
+        self.genres.extend(other.genres);
+        self.liked_by.extend(other.liked_by);
         Self {
             artist: self.artist.or(other.artist),
-            genre: self.genre.or(other.genre),
             language: self.language.or(other.language),
             recommended_by: self.recommended_by.or(other.recommended_by),
+            genres: self.genres,
+            liked_by: self.liked_by,
         }
     }
 }
 
-async fn free_category_prompt(
-    playlist: &Playlist,
+const LIST_PROMPT_CATEGORIES: (&str, &str) = ("category", "categories");
+const LIST_PROMPT_GENRE: (&str, &str) = ("genre", "genres");
+const LIST_PROMPT_LIKED_BY: (&str, &str) = ("liked by", "likers");
+
+async fn list_prompt(
+    (singular, plural): (&str, &str),
+    comparison_categories: &HashMap<&str, usize>,
     new_categories: &mut UniqVec<String>,
 ) -> anyhow::Result<()> {
-    let playlist_categories = playlist.free_categories();
-    let mut heap = playlist_categories
+    let mut heap = comparison_categories
         .iter()
         .map(|(c, count)| (*count, *c))
         .collect::<BinaryHeap<_>>();
-    println!("the top most common categories are: ");
+    println!("the top most common {plural} are: ");
     let mut i = 0;
     while let Some((c, category)) = heap.pop() {
         i += 1;
@@ -148,16 +160,16 @@ async fn free_category_prompt(
     }
     println!();
     if !new_categories.is_empty() {
-        println!("current categories:");
+        println!("current {plural}:");
         for c in new_categories.iter() {
             println!("\t{c}");
         }
     }
-    while let Some(cat) = prompt::prompt("category").await? {
+    while let Some(cat) = prompt::prompt(singular).await? {
         new_categories.push(cat);
     }
     for cat in &mut *new_categories {
-        did_you_mean_check(&playlist_categories, cat).await?;
+        did_you_mean_check(comparison_categories, cat).await?;
     }
     Ok(())
 }
@@ -211,7 +223,7 @@ async fn category_prompt(new_categories: &mut UniqVec<String>) -> anyhow::Result
             .songs
             .iter()
             .filter(|s| s.artist.as_ref() == Some(&artist))
-            .filter_map(|g| g.genre.as_ref())
+            .flat_map(|g| g.genres.iter())
             .collect::<HashSet<_>>();
         if !genres.is_empty() {
             println!("this artist usually plays: {genres:?}");
@@ -223,9 +235,6 @@ async fn category_prompt(new_categories: &mut UniqVec<String>) -> anyhow::Result
             &mut meta.artist,
         )
         .await?;
-    }
-    if let Some(genre) = prompt::prompt("genre").await? {
-        set(&playlist_categories, new_categories, genre, &mut meta.genre).await?;
     }
     if let Some(language) = prompt::prompt("language").await? {
         set(
@@ -245,17 +254,20 @@ async fn category_prompt(new_categories: &mut UniqVec<String>) -> anyhow::Result
         )
         .await?;
     }
-    free_category_prompt(&playlist, new_categories).await?;
+    list_prompt(LIST_PROMPT_LIKED_BY, &playlist.likers(), &mut meta.liked_by).await?;
+    list_prompt(LIST_PROMPT_GENRE, &playlist.genres(), &mut meta.genres).await?;
+    list_prompt(
+        LIST_PROMPT_CATEGORIES,
+        &playlist.free_categories(),
+        new_categories,
+    )
+    .await?;
     ensure!(
         !new_categories.is_empty()
-            || [
-                &meta.artist,
-                &meta.genre,
-                &meta.language,
-                &meta.recommended_by
-            ]
-            .iter()
-            .any(|s| s.is_some()),
+            || meta.genres.is_empty()
+            || [&meta.artist, &meta.language, &meta.recommended_by]
+                .iter()
+                .any(|s| s.is_some()),
         "please include at least one category or metadata"
     );
     Ok(meta)
@@ -411,12 +423,24 @@ pub async fn add_category(mut playlist: Playlist, song: usize) -> anyhow::Result
         };
     }
     edit!(artist);
-    edit!(genre);
     edit!(recommended_by);
     edit!(language);
 
+    let mut liked_by = std::mem::take(&mut playlist.songs[song].liked_by);
+    list_prompt(LIST_PROMPT_LIKED_BY, &playlist.likers(), &mut liked_by).await?;
+    playlist.songs[song].liked_by = liked_by;
+
+    let mut genres = std::mem::take(&mut playlist.songs[song].genres);
+    list_prompt(LIST_PROMPT_GENRE, &playlist.genres(), &mut genres).await?;
+    playlist.songs[song].genres = genres;
+
     let mut categories = std::mem::take(&mut playlist.songs[song].categories);
-    free_category_prompt(&playlist, &mut categories).await?;
+    list_prompt(
+        LIST_PROMPT_CATEGORIES,
+        &playlist.free_categories(),
+        &mut categories,
+    )
+    .await?;
     playlist.songs[song].categories = categories;
 
     notify!("saving edited song as"; content: "{}", playlist.songs[song]);
@@ -425,8 +449,11 @@ pub async fn add_category(mut playlist: Playlist, song: usize) -> anyhow::Result
 }
 
 pub async fn delete_category(mut playlist: Playlist, song: usize) -> anyhow::Result<()> {
+    while let Some(delete) = prompt::interative_select(&playlist.songs[song].genres, []).await? {
+        playlist.songs[song].genres.remove_at(delete);
+    }
     while let Some(delete) = prompt::interative_select(&playlist.songs[song].liked_by, []).await? {
-        playlist.songs[song].liked_by.remove(delete);
+        playlist.songs[song].liked_by.remove_at(delete);
     }
     while let Some(delete) = prompt::interative_select(&playlist.songs[song].categories, []).await?
     {

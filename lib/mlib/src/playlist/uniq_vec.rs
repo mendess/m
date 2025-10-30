@@ -16,6 +16,16 @@ impl<T> Default for UniqVec<T> {
     }
 }
 
+impl<T> UniqVec<T> {
+    pub fn len(&self) -> usize {
+        self.v.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.v.is_empty()
+    }
+}
+
 impl<T: PartialEq> UniqVec<T> {
     #[inline(always)]
     pub fn new() -> Self {
@@ -58,6 +68,18 @@ impl<T: PartialEq> UniqVec<T> {
 
     pub fn retain(&mut self, f: impl FnMut(&mut T) -> bool) {
         self.v.retain_mut(f)
+    }
+
+    pub fn extract_if(&mut self, f: impl FnMut(&mut T) -> bool) -> impl Iterator<Item = T> {
+        self.v.extract_if(.., f)
+    }
+}
+
+impl<T: PartialEq> Extend<T> for UniqVec<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for i in iter {
+            self.push(i);
+        }
     }
 }
 
