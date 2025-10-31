@@ -173,7 +173,7 @@ pub enum Command {
     ChangeCategories {
         #[arg(short, long)]
         current: bool,
-        song: String,
+        song: Option<String>,
         #[command(subcommand)]
         mode: ChangeCategories,
     },

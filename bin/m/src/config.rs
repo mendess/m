@@ -2,17 +2,12 @@ use std::{path::PathBuf, sync::LazyLock};
 
 use dirs::config_dir;
 
-#[derive(serde::Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum DownloadFormat {
+    #[default]
     Video,
     Audio,
-}
-
-impl Default for DownloadFormat {
-    fn default() -> Self {
-        Self::Video
-    }
 }
 
 #[derive(serde::Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

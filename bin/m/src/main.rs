@@ -226,21 +226,22 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             song,
             mode,
         } => {
-            if song.is_empty() && !current {
-                anyhow::bail!("please provide a song to edit");
-            }
             let playlist = Playlist::load().await?;
-            let song = if current {
-                let filename = PlayerLink::current().playing_item().await?;
-                let Item::Link(item::link::Link::Banger(link)) = filename else {
-                    anyhow::bail!("not currently playing a playlist item");
-                };
-                playlist
-                    .song_index_by_link(&link)
-                    .context("song not in playlist")?
-            } else {
-                crate::handle_search_result(playlist.partial_name_search(song.split_whitespace()))?
-                    .into_index()
+            let song = match song {
+                _ if current => {
+                    let filename = PlayerLink::current().playing_item().await?;
+                    let Item::Link(item::link::Link::Banger(link)) = filename else {
+                        anyhow::bail!("not currently playing a playlist item");
+                    };
+                    playlist
+                        .song_index_by_link(&link)
+                        .context("song not in playlist")?
+                }
+                Some(song) => crate::handle_search_result(
+                    playlist.partial_name_search(song.split_whitespace()),
+                )?
+                .into_index(),
+                None => anyhow::bail!("please provide a song to edit"),
             };
             notify!("editing song"; content: "{}\nmode: {:?}", playlist.songs[song].name, mode);
             match mode {
