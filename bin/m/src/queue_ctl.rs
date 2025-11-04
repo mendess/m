@@ -5,7 +5,7 @@ use crate::{
     util::{DisplayEither, DurationFmt, dl_dir, prompt::selector, with_video::with_video_env},
 };
 
-use std::{collections::HashSet, io::Write, path::PathBuf, pin::pin};
+use std::{collections::HashSet, fmt, io::Write, path::PathBuf, pin::pin, time::Duration};
 
 use anyhow::Context;
 use futures_util::{
@@ -74,47 +74,96 @@ pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<(
     }
 }
 
-pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<()> {
-    const PROGRESS_BAR_LEN: f64 = 11.;
-    let plus = match current.progress {
-        Some(progress) => "+".repeat((progress / 100. * PROGRESS_BAR_LEN).round() as usize),
-        None => "???".into(),
-    };
-    let minus = "-".repeat((PROGRESS_BAR_LEN as usize).saturating_sub(plus.len()));
-    let song = match &current.chapter {
-        Some(c) => {
-            format!("§bVideo§r: {}\n§bSong§r:  {}", current.title, c.1)
+pub struct DisplaySong<'s> {
+    title: &'s str,
+    artist: Option<&'s str>,
+    chapter: Option<&'s str>,
+    categories: &'s [String],
+    playstatus: Option<DisplayPlayStatus>,
+}
+
+pub struct DisplayPlayStatus {
+    playing: bool,
+    volume: f64,
+    progress: Option<f64>,
+    playback_time: Option<Duration>,
+    duration: Duration,
+}
+
+impl fmt::Display for DisplaySong<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(a) = self.artist {
+            write!(f, "{a} - ")?;
         }
-        None => current.title.clone(),
+        match self.chapter {
+            Some(c) => writeln!(f, "§bVideo§r: {}\n§bSong§r:  {}", self.title, c),
+            None => writeln!(f, "{}", self.title),
+        }?;
+        if let Some(ps) = &self.playstatus {
+            const PROGRESS_BAR_LEN: f64 = 11.;
+            let plus = match ps.progress {
+                Some(progress) => "+".repeat((progress / 100. * PROGRESS_BAR_LEN).round() as usize),
+                None => "???".into(),
+            };
+            let minus = "-".repeat((PROGRESS_BAR_LEN as usize).saturating_sub(plus.len()));
+            writeln!(
+                f,
+                "{}🔉{:.0}% | <{}{}> {:.0}%\n          {}/{}",
+                if ps.playing { ">" } else { "||" },
+                ps.volume,
+                plus,
+                minus,
+                ps.progress.as_ref().unwrap_or(&-1.0),
+                ps.playback_time
+                    .map(DurationFmt)
+                    .map(DisplayEither::Left)
+                    .unwrap_or_else(|| DisplayEither::Right(String::new())),
+                DurationFmt(ps.duration),
+            )?;
+        }
+        if !self.categories.is_empty() {
+            writeln!(
+                f,
+                "\n| {} |",
+                self.categories
+                    .iter()
+                    .filter(|s| Some(s.as_str()) != self.artist)
+                    .join(" | ")
+            )?;
+        };
+
+        Ok(())
+    }
+}
+
+pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<()> {
+    let now = DisplaySong {
+        title: &current.title,
+        artist: current.artist.as_deref(),
+        chapter: current.chapter.as_ref().map(|(_, name)| name.as_str()),
+        categories: &current.categories,
+        playstatus: Some(DisplayPlayStatus {
+            playing: current.playing,
+            volume: current.volume,
+            progress: current.progress,
+            playback_time: current.playback_time,
+            duration: current.duration,
+        }),
     };
-    let current_categories = if current.categories.is_empty() {
-        String::new()
-    } else {
-        format!("\n\n| {} |", current.categories.iter().join(" | "))
-    };
-    let up_next = if let Some(next) = current.next.clone() {
-        format!("\n\n=== UP NEXT ===\n{next}")
-    } else {
-        String::new()
-    };
-    notify!("Now Playing";
-        content: "{}\n{}🔉{:.0}% | <{}{}> {:.0}%\n          {}/{}{}{}",
-        song,
-        if current.playing { ">" } else { "||" },
-        current.volume,
-        plus,
-        minus,
-        current.progress.as_ref().unwrap_or(&-1.0),
-        current
-            .playback_time
-            .map(DurationFmt)
-            .map(DisplayEither::Left)
-            .unwrap_or_else(|| DisplayEither::Right(String::new())),
-        DurationFmt(current.duration),
-        current_categories,
-        up_next;
-        force_notify: notify
-    );
+    notify!("Now Playing"; content: "{now}"; force_notify: notify);
+    if let Some(next) = &current.next {
+        notify!("Up Next";
+            content: "{}",
+            DisplaySong {
+                title: &next.title,
+                chapter: None,
+                artist: next.artist.as_deref(),
+                categories: &next.categories,
+                playstatus: None,
+            };
+            force_notify: notify
+        )
+    }
     Ok(())
 }
 

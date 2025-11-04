@@ -234,7 +234,7 @@ impl Search {
         &self.0
     }
 
-    fn into_string(self) -> String {
+    pub fn into_string(self) -> String {
         self.0
     }
 }

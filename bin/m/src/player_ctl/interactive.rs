@@ -38,7 +38,7 @@ enum UiUpdate {
     Title {
         title: String,
         total_time: f64,
-        next: Option<String>,
+        next: Option<mlib::queue::UpNext>,
     },
     Volume(f64),
     Pause {
