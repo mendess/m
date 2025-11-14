@@ -283,6 +283,7 @@ async fn ui_task() -> anyhow::Result<()> {
 }
 
 pub async fn interactive() -> anyhow::Result<()> {
+    tracing::debug!("starting interactive mode");
     let mut input_task = pin!(input_task());
     let mut ui_task = pin!(ui_task());
     tokio::select! {
