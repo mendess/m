@@ -243,6 +243,9 @@ pub async fn interative_select<E: Display, const K: usize>(
     table: &[E],
     custom_keybinds: [CustomKeybind<'_, E>; K],
 ) -> anyhow::Result<Option<usize>> {
+    if table.is_empty() {
+        return Ok(None);
+    }
     if SessionKind::current().await == SessionKind::Gui {
         return Err(anyhow::anyhow!(
             "interative select only works in terminal mode"
@@ -267,6 +270,9 @@ pub async fn interative_select<E: Display, const K: usize>(
             stdout.queue(Print(if i == selected { " ❯ " } else { "   " }))?;
             stdout.queue(Print(e))?.queue(MoveToNextLine(1))?;
         }
+        stdout
+            .queue(Print("Enter to select, Ctrl+d or Esq to quit"))?
+            .queue(MoveToNextLine(1))?;
         stdout.flush()?;
         let e = event::read()?;
         match e {

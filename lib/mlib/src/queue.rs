@@ -165,7 +165,17 @@ impl Queue {
 
         let (
             (current_idx, next),
-            (title, playing, volume, progress, playback_time, duration, categories, chapter, artist),
+            (
+                title,
+                playing,
+                volume,
+                progress,
+                playback_time,
+                duration,
+                categories,
+                chapter,
+                artist,
+            ),
         ) = futures_util::try_join!(next, metadata)?;
 
         Ok(Current {

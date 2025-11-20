@@ -220,7 +220,15 @@ impl Playlist {
     }
 
     pub fn categories(&self) -> HashMap<&str, usize> {
-        counting(self.songs.iter().flat_map(|s| s.all_categories()))
+        self.categories_of_kind(|s| s.all_categories())
+    }
+
+    pub fn categories_of_kind<'p, F, I>(&'p self, f: F) -> HashMap<&'p str, usize>
+    where
+        F: Fn(&'p Song) -> I,
+        I: Iterator<Item = &'p str>,
+    {
+        counting(self.songs.iter().flat_map(f))
     }
 
     pub fn categories_owned(&self) -> HashMap<String, usize> {
@@ -417,7 +425,7 @@ impl Playlist {
 
 fn counting<I>(i: I) -> HashMap<I::Item, usize>
 where
-    I: Iterator<Item: Eq + std::hash::Hash>,
+    I: Iterator<Item: Eq + std::hash::Hash + std::fmt::Debug>,
 {
     i.fold(HashMap::new(), |mut set, c| {
         *set.entry(c).or_default() += 1;

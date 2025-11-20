@@ -2,6 +2,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use crate::playlist_ctl::CategoryType;
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 use serde::{Deserialize, Serialize};
@@ -47,8 +48,8 @@ pub enum Command {
 
     /// List all current categories
     Cat {
-        #[arg(short, long, default_value_t = false)]
-        free: bool,
+        #[arg(short('t'), long("type"))]
+        kind: Option<CategoryType>,
     },
 
     /// Shows the current playlist
@@ -166,6 +167,8 @@ pub enum Command {
     Info {
         #[arg(short, long)]
         id: bool,
+        #[arg(short, long)]
+        verbose: bool,
         song: Vec<String>,
     },
 
@@ -174,8 +177,12 @@ pub enum Command {
         #[arg(short, long)]
         current: bool,
         song: Option<String>,
-        #[command(subcommand)]
-        mode: ChangeCategories,
+        #[arg(long)]
+        categories: Vec<String>,
+        #[command(flatten)]
+        metadata: crate::playlist_ctl::SongMetadata,
+        #[arg(long)]
+        batch: bool,
     },
 
     /// Generate auto complete script
@@ -371,17 +378,4 @@ impl FromStr for EntityStatus {
             _ => Err(format!("Invalid entity: {s}")),
         }
     }
-}
-
-#[derive(Debug, Clone, Subcommand, Serialize, Deserialize)]
-pub enum ChangeCategories {
-    Add {
-        #[arg(long)]
-        categories: Vec<String>,
-        #[command(flatten)]
-        metadata: crate::playlist_ctl::SongMetadata,
-        #[arg(long)]
-        batch: bool,
-    },
-    Delete,
 }

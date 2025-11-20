@@ -17,7 +17,9 @@ use mlib::{
     ytdl::YtdlBuilder,
 };
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::str::FromStr;
 
 pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     let category = category
@@ -37,12 +39,52 @@ pub async fn songs(category: Option<String>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn ls_categories(free_categories: bool) -> anyhow::Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename = "snake_case")]
+pub enum CategoryType {
+    Free,
+    Artist,
+    Genres,
+    Language,
+    RecommendedBy,
+    LikedBy,
+}
+
+impl FromStr for CategoryType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "free" => Ok(Self::Free),
+            "artist" => Ok(Self::Artist),
+            "genres" => Ok(Self::Genres),
+            "language" => Ok(Self::Language),
+            "recommended_by" => Ok(Self::RecommendedBy),
+            "liked_by" => Ok(Self::LikedBy),
+            _ => Err(format!("invalid type: {s:?}")),
+        }
+    }
+}
+
+pub async fn ls_categories(kind: Option<CategoryType>) -> anyhow::Result<()> {
     let playlist = Playlist::load().await?;
-    let mut cat = if free_categories {
-        playlist.free_categories()
-    } else {
-        playlist.categories()
+    let mut cat = match kind {
+        Some(CategoryType::Free) => playlist.free_categories(),
+        Some(CategoryType::Artist) => {
+            playlist.categories_of_kind(|s| s.artist.as_deref().into_iter())
+        }
+        Some(CategoryType::Genres) => {
+            playlist.categories_of_kind(|s| s.genres.iter().map(|s| s.as_str()))
+        }
+        Some(CategoryType::Language) => {
+            playlist.categories_of_kind(|s| s.language.as_deref().into_iter())
+        }
+        Some(CategoryType::RecommendedBy) => {
+            playlist.categories_of_kind(|s| s.recommended_by.as_deref().into_iter())
+        }
+        Some(CategoryType::LikedBy) => {
+            playlist.categories_of_kind(|s| s.liked_by.iter().map(|s| s.as_str()))
+        }
+        None => playlist.categories(),
     }
     .into_iter()
     .collect::<Vec<_>>();
@@ -338,7 +380,7 @@ async fn fetch_song_info(link: &BangerLink) -> anyhow::Result<SongInfo> {
     })
 }
 
-pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()> {
+pub(crate) async fn info(song: Vec<String>, just_id: bool, verbose: bool) -> anyhow::Result<()> {
     let song_iter = song
         .iter()
         .map(String::as_str)
@@ -417,14 +459,30 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
                 println!("{}", s.link.id().as_str());
                 return Ok(());
             }
-            notify!(
-                "song info:";
-                content:
-                    "§bname:§r {}\n§blink:§r {}\n§bcategories:§r {}",
-                    s.name,
-                    s.link,
-                    s.all_categories().format(" | ")
-            );
+            if verbose {
+                notify!(
+                    "song info:";
+                    content:
+                        "§bname:§r {}\n§blink:§r {}\n§bartist:§r {}\n§bgenres:§r {}\n§blanguage:§r {}\n§brecommended_by:§r {}\n§bliked_by:§r {}\n§bcategories:§r {}",
+                        s.name,
+                        s.link,
+                        s.artist.iter().format(" | "),
+                        s.genres.iter().format(" | "),
+                        s.language.iter().format(" | "),
+                        s.recommended_by.iter().format(" | "),
+                        s.liked_by.iter().format(" | "),
+                        s.categories.iter().format(" | "),
+                );
+            } else {
+                notify!(
+                    "song info:";
+                    content:
+                        "§bname:§r {}\n§blink:§r {}\n§bcategories:§r {}",
+                        s.name,
+                        s.link,
+                        s.all_categories().format(" | ")
+                );
+            }
         }
         PartialSearchResult::Many(m) => {
             notify!(
@@ -436,7 +494,7 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool) -> anyhow::Result<()>
     Ok(())
 }
 
-pub async fn add_category(
+pub async fn edit_categories(
     mut playlist: Playlist,
     song: usize,
     new_categories: UniqVec<String>,
@@ -463,6 +521,8 @@ pub async fn add_category(
                         &mut song.$field,
                     )
                     .await?;
+                } else {
+                    playlist.songs[song].$field = None;
                 }
             }
         };
@@ -477,14 +537,20 @@ pub async fn add_category(
             list.extend(new_metadata.$field);
             if !batch {
                 list_prompt($prompt, &playlist.$lister(), &mut list).await?;
+                if !list.is_empty() {
+                    println!("remove {}", $prompt.1);
+                    while let Some(delete) = prompt::interative_select(&list, []).await? {
+                        println!("removed {}", &list[delete]);
+                        list.remove_at(delete);
+                    }
+                }
             }
             playlist.songs[song].$field = list;
         };
     }
 
-    edit_list!(LIST_PROMPT_LIKED_BY, likers, liked_by);
     edit_list!(LIST_PROMPT_GENRE, genres, genres);
-
+    edit_list!(LIST_PROMPT_LIKED_BY, likers, liked_by);
     let mut categories = std::mem::take(&mut playlist.songs[song].categories);
     categories.extend(new_categories);
     if !batch {
@@ -494,25 +560,17 @@ pub async fn add_category(
             &mut categories,
         )
         .await?;
+        if !categories.is_empty() {
+            println!("remove {}", LIST_PROMPT_CATEGORIES.1);
+            while let Some(delete) = prompt::interative_select(&categories, []).await? {
+                println!("removed {}", &categories[delete]);
+                categories.remove_at(delete);
+            }
+        }
     }
     playlist.songs[song].categories = categories;
 
     notify!("saving edited song as"; content: "{}", playlist.songs[song]);
-    playlist.save().await?;
-    Ok(())
-}
-
-pub async fn delete_category(mut playlist: Playlist, song: usize) -> anyhow::Result<()> {
-    while let Some(delete) = prompt::interative_select(&playlist.songs[song].genres, []).await? {
-        playlist.songs[song].genres.remove_at(delete);
-    }
-    while let Some(delete) = prompt::interative_select(&playlist.songs[song].liked_by, []).await? {
-        playlist.songs[song].liked_by.remove_at(delete);
-    }
-    while let Some(delete) = prompt::interative_select(&playlist.songs[song].categories, []).await?
-    {
-        playlist.songs[song].categories.remove_at(delete);
-    }
     playlist.save().await?;
     Ok(())
 }

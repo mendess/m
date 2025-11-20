@@ -38,7 +38,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
     tracing::debug!(?cmd, "running command");
     match cmd {
         Command::Songs { category } => playlist_ctl::songs(category).await?,
-        Command::Cat { free } => playlist_ctl::ls_categories(free).await?,
+        Command::Cat { kind } => playlist_ctl::ls_categories(kind).await?,
         Command::Quit => player_ctl::quit().await?,
         Command::SetPlay => player_ctl::resume().await?,
         Command::SetPause => player_ctl::pause().await?,
@@ -71,7 +71,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         },
         Command::Interactive => player_ctl::interactive().await?,
         Command::Lyrics => todo!("lyrics not implemented"),
-        Command::Info { id, song } => playlist_ctl::info(song, id).await?,
+        Command::Info { id, song, verbose } => playlist_ctl::info(song, id, verbose).await?,
         Command::Socket { new } => {
             if new.is_some() {
                 println!(
@@ -224,7 +224,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::ChangeCategories {
             current,
             song,
-            mode,
+            categories,
+            metadata,
+            batch,
         } => {
             let playlist = Playlist::load().await?;
             let song = match song {
@@ -243,20 +245,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 .into_index(),
                 None => anyhow::bail!("please provide a song to edit"),
             };
-            notify!("editing song"; content: "{}\nmode: {:?}", playlist.songs[song].name, mode);
-            match mode {
-                arg_parse::ChangeCategories::Add {
-                    categories,
-                    metadata,
-                    batch,
-                } => {
-                    playlist_ctl::add_category(playlist, song, categories.into(), metadata, batch)
-                        .await?
-                }
-                arg_parse::ChangeCategories::Delete => {
-                    playlist_ctl::delete_category(playlist, song).await?
-                }
-            }
+            notify!("editing song"; content: "{}", playlist.songs[song].name);
+            playlist_ctl::edit_categories(playlist, song, categories.into(), metadata, batch)
+                .await?
         }
     }
 
