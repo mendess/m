@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.19.1"
+version = "0.19.2"
 edition = { workspace = true }
 
 [dependencies]
@@ -55,17 +55,22 @@ features = ["net", "fs", "process", "rt", "io-util", "macros", "rt-multi-thread"
 name = "observe"
 required-features = ["player"]
 
+[[example]]
+name = "ytdl"
+required-features = ["ytdl"]
+
 [features]
 ytdl = [
     "dep:base64",
     "dep:futures-util",
     "dep:namespaced-tmp",
+    "dep:parking_lot",
     "dep:pin-project",
     "dep:thiserror",
     "dep:tokio",
     "dep:tokio-stream",
-    "dep:trait-gen",
     "dep:tracing",
+    "dep:trait-gen",
 ]
 player = [
     "serde",

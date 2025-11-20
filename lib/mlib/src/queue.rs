@@ -275,7 +275,6 @@ impl Queue {
     }
 }
 
-#[cfg(feature = "ytdl")]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpNext {
     pub title: String,
