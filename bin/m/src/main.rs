@@ -13,7 +13,10 @@ use itertools::Itertools;
 use mlib::{
     Link, Search,
     downloaded::{self, clean_downloads},
-    item::{self, link::BangerLink},
+    item::{
+        self,
+        link::{BangerLink, HasId},
+    },
     players::{self, PlayerIndex, PlayerLink},
     playlist::{PartialSearchResult, Playlist, PlaylistIds},
     queue::Item,
@@ -239,10 +242,15 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                         .song_index_by_link(&link)
                         .context("song not in playlist")?
                 }
-                Some(song) => crate::handle_search_result(
-                    playlist.partial_name_search(song.split_whitespace()),
-                )?
-                .into_index(),
+                Some(song) => match BangerLink::try_from(song) {
+                    Ok(link) => playlist
+                        .song_index_by_id(link.id())
+                        .context("link not in playlist")?,
+                    Err(song) => crate::handle_search_result(
+                        playlist.partial_name_search(song.split_whitespace()),
+                    )?
+                    .into_index(),
+                },
                 None => anyhow::bail!("please provide a song to edit"),
             };
             notify!("editing song"; content: "{}", playlist.songs[song].name);
