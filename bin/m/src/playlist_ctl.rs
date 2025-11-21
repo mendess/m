@@ -138,7 +138,7 @@ pub async fn new(
     let meta = if batch {
         base_meta
     } else {
-        category_prompt(&mut categories).await?.merge(base_meta)
+        category_prompt(&mut categories, base_meta).await?
     };
     for link in links {
         notify!("Fetching song info");
@@ -162,20 +162,6 @@ pub struct SongMetadata {
     pub recommended_by: Option<String>,
     #[arg(long, required = false)]
     pub liked_by: Vec<String>,
-}
-
-impl SongMetadata {
-    fn merge(mut self, other: Self) -> Self {
-        self.genres.extend(other.genres);
-        self.liked_by.extend(other.liked_by);
-        Self {
-            artist: self.artist.or(other.artist),
-            language: self.language.or(other.language),
-            recommended_by: self.recommended_by.or(other.recommended_by),
-            genres: self.genres,
-            liked_by: self.liked_by,
-        }
-    }
 }
 
 const LIST_PROMPT_CATEGORIES: (&str, &str) = ("category", "categories");
@@ -290,11 +276,13 @@ where
     Ok(())
 }
 
-async fn category_prompt(new_categories: &mut UniqVec<String>) -> anyhow::Result<SongMetadata> {
+async fn category_prompt(
+    new_categories: &mut UniqVec<String>,
+    mut meta: SongMetadata,
+) -> anyhow::Result<SongMetadata> {
     let playlist = Playlist::load().await?;
     let playlist_categories = playlist.categories();
-    let mut meta = SongMetadata::default();
-    if let Some(artist) = prompt::prompt("artist").await? {
+    if let Some(artist) = prompt::prompt_with_default("artist", meta.artist.as_deref()).await? {
         let genres = playlist
             .songs
             .iter()
@@ -312,6 +300,7 @@ async fn category_prompt(new_categories: &mut UniqVec<String>) -> anyhow::Result
         )
         .await?;
     }
+    list_prompt(LIST_PROMPT_GENRE, &playlist.genres(), &mut meta.genres).await?;
     if let Some(language) = prompt::prompt("language").await? {
         set(
             &playlist_categories,
@@ -331,7 +320,6 @@ async fn category_prompt(new_categories: &mut UniqVec<String>) -> anyhow::Result
         .await?;
     }
     list_prompt(LIST_PROMPT_LIKED_BY, &playlist.likers(), &mut meta.liked_by).await?;
-    list_prompt(LIST_PROMPT_GENRE, &playlist.genres(), &mut meta.genres).await?;
     list_prompt(
         LIST_PROMPT_CATEGORIES,
         &playlist.free_categories(),
@@ -508,10 +496,11 @@ pub async fn edit_categories(
                 playlist.songs[song].$field = Some(new_f);
             }
             if !batch {
-                let new_f = match &playlist.songs[song].$field {
-                    Some(f) => prompt::prompt_with_default(stringify!($field), f).await?,
-                    None => prompt::prompt(stringify!($field)).await?,
-                };
+                let new_f = prompt::prompt_with_default(
+                    stringify!($field),
+                    playlist.songs[song].$field.as_deref(),
+                )
+                .await?;
                 if let Some(new_f) = new_f {
                     let song = &mut playlist.songs[song];
                     set(

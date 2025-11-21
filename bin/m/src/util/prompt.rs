@@ -45,7 +45,10 @@ where
     }
 }
 
-pub async fn prompt_with_default<T>(prompt: &str, default: &str) -> anyhow::Result<Option<T>>
+pub async fn prompt_with_default<T>(
+    prompt: &str,
+    default: Option<&str>,
+) -> anyhow::Result<Option<T>>
 where
     T: FromStr,
     T::Err: Display,
@@ -57,14 +60,14 @@ where
 pub async fn prompt_validated_with_default<T>(
     prompt: &str,
     validation: impl FnMut(&T) -> Result<(), String>,
-    default: &str,
+    default: Option<&str>,
 ) -> anyhow::Result<Option<T>>
 where
     T: FromStr,
     T::Err: Display,
     anyhow::Error: From<T::Err>,
 {
-    impl_prompt_validated(prompt, validation, Some(default)).await
+    impl_prompt_validated(prompt, validation, default).await
 }
 
 pub async fn prompt<T>(prompt: &str) -> anyhow::Result<Option<T>>
