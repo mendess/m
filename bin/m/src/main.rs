@@ -139,10 +139,14 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 .await?;
             }
         }
-        Command::Current { link, notify } => {
+        Command::Current {
+            link,
+            short,
+            notify,
+        } => {
             queue_ctl::current(
                 match link {
-                    0 => queue_ctl::CurrentDisplayMode::Default,
+                    0 => queue_ctl::CurrentDisplayMode::Default { short },
                     1 => queue_ctl::CurrentDisplayMode::Link,
                     2.. => queue_ctl::CurrentDisplayMode::LinkId,
                 },

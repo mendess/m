@@ -37,20 +37,30 @@ use tokio_stream::wrappers::LinesStream;
 use tracing::debug;
 
 pub enum CurrentDisplayMode {
-    Default,
+    Default { short: bool },
     Link,
     LinkId,
 }
 
 pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<()> {
     match mode {
-        CurrentDisplayMode::Default => {
-            let current =
-                Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
-                    .await
-                    .context("loading the current queue")?;
+        CurrentDisplayMode::Default { short } => {
+            if short {
+                let link = PlayerLink::current();
+                let mut title = link.media_title().await?;
+                if title.is_empty() {
+                    title = link.filename().await?;
+                }
+                println!("{title}");
+                Ok(())
+            } else {
+                let current =
+                    Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
+                        .await
+                        .context("loading the current queue")?;
 
-            display_current(&current, notify).await
+                display_current(&current, notify).await
+            }
         }
         CurrentDisplayMode::Link | CurrentDisplayMode::LinkId => {
             let link = Queue::link(PlayerLink::current())
@@ -58,7 +68,7 @@ pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<(
                 .context("loading the queue to fetch the link")?;
             tracing::debug!("{:?}", link);
             match mode {
-                CurrentDisplayMode::Default => unreachable!(),
+                CurrentDisplayMode::Default { .. } => unreachable!(),
                 CurrentDisplayMode::Link => notify!("{}", link),
                 CurrentDisplayMode::LinkId => {
                     notify!(
