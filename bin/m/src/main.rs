@@ -1,6 +1,7 @@
 mod arg_parse;
 mod config;
 mod download_ctl;
+mod events;
 mod player_ctl;
 mod playlist_ctl;
 mod queue_ctl;
@@ -261,6 +262,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             playlist_ctl::edit_categories(playlist, song, categories.into(), metadata, batch)
                 .await?
         }
+        Command::Events => events::display().await?,
     }
 
     Ok(())

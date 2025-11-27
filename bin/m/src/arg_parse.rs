@@ -199,6 +199,8 @@ pub enum Command {
         category: Option<String>,
         what: Option<Vec<String>>,
     },
+
+    Events,
 }
 
 fn parse_new(s: &str) -> Result<(), &'static str> {
