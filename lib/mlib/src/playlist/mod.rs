@@ -140,7 +140,9 @@ impl Playlist {
         })
     }
 
+    #[tracing::instrument]
     pub async fn load_from(playlist_path: &Path) -> Result<Self, Error> {
+        let now = std::time::Instant::now();
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -148,7 +150,8 @@ impl Playlist {
             }
             Err(e) => return Err(e.into()),
         };
-        let mut songs: Vec<Song> = serde_json::from_reader(file.into_std().await)?;
+        let mut songs: Vec<Song> =
+            serde_json::from_reader(std::io::BufReader::new(file.into_std().await))?;
         let mut changed = false;
         for s in &mut songs {
             #[expect(deprecated)]
@@ -163,6 +166,7 @@ impl Playlist {
         if changed {
             this.save().await?;
         }
+        tracing::debug!("playlist loaded in elapsed: {:?}", now.elapsed());
         Ok(this)
     }
 
