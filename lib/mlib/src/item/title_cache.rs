@@ -7,10 +7,21 @@ use base64::{Engine, engine::GeneralPurpose};
 
 use super::{Search, VideoId};
 
-async fn cache_path_for<S: AsRef<str> + ?Sized>(url: &S) -> PathBuf {
-    let (path, _error) =
-        namespaced_tmp::async_impl::in_user_tmp(&format!("m_title_cache/{}", url.as_ref())).await;
-    path
+async fn cache_path_for<S: AsRef<str> + ?Sized>(id: &S) -> PathBuf {
+    const TITLE_CACHE_DIR: &str = "title-cache";
+    let Some(cache_dir) = dirs::cache_dir() else {
+        let (path, _error) = namespaced_tmp::async_impl::in_user_tmp(&format!(
+            "m-{TITLE_CACHE_DIR}/{}",
+            id.as_ref()
+        ))
+        .await;
+        tracing::warn!(
+            id = %id.as_ref(),
+            "cache dir not present, using {} for title cache", path.display()
+        );
+        return path;
+    };
+    cache_dir.join("m").join(TITLE_CACHE_DIR).join(id.as_ref())
 }
 
 pub async fn get_by_vid_id(id: &VideoId) -> io::Result<Option<String>> {
