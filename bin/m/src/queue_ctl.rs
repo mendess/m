@@ -5,7 +5,14 @@ use crate::{
     util::{DisplayEither, DurationFmt, dl_dir, prompt::selector, with_video::with_video_env},
 };
 
-use std::{collections::HashSet, fmt, io::Write, path::PathBuf, pin::pin, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    io::Write,
+    path::PathBuf,
+    pin::pin,
+    time::Duration,
+};
 
 use anyhow::Context;
 use futures_util::{
@@ -448,6 +455,32 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 print!("removing {index}... ");
                 std::io::stdout().flush()?;
                 player.queue_remove(index).await?;
+                println!(" success");
+            }
+        }
+        DeQueue::Dups => {
+            let queue = Queue::load_full(player)
+                .await
+                .context("loading current queue")?;
+
+            let to_id = |item: &Item| match item.id() {
+                Some(id) => id.as_str().to_owned(),
+                None => item.to_string(),
+            };
+            let mut dups = queue.iter().fold(HashMap::<_, u32>::new(), |mut map, s| {
+                let item = to_id(&s.item);
+                *map.entry(item).or_default() += 1;
+                map
+            });
+
+            for ident in queue.iter().rev().filter(|s| {
+                let count = dups.get_mut(&to_id(&s.item)).unwrap();
+                *count -= 1;
+                *count > 0
+            }) {
+                print!("removing {} @ {}... ", ident.item.as_str(), ident.index);
+                std::io::stdout().flush()?;
+                player.queue_remove(ident.index).await?;
                 println!(" success");
             }
         }

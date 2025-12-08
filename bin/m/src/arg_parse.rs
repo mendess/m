@@ -312,6 +312,8 @@ pub enum DeQueue {
         /// X is the song at position X in the queue
         i: DeQueueIndex,
     },
+
+    Dups,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
