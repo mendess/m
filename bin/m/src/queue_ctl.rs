@@ -192,12 +192,13 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     .await
     .context("failed getting queue")?;
     let current = queue.current_idx();
+    let playlist = Playlist::load().await?;
     stream::iter(queue.iter())
         .map(|i| {
             debug!("translating queue item: {i:?}");
-            async { (i.index, i.item.fetch_item_title().await) }
+            async { (i.index, i.item.fetch_item_title(&playlist).await) }
         })
-        .buffered(8)
+        .buffered(32)
         .for_each(|(index, s)| async move {
             static SEPERATORS: [&str; 2] = ["   ", "==>"];
             println!(

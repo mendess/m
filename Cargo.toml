@@ -57,3 +57,7 @@ default-features = false
 [workspace.dependencies.namespaced-tmp]
 git = "https://github.com/mendess/namespaced-tmp"
 features = ["user", "async"]
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true

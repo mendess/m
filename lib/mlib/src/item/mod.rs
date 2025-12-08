@@ -86,27 +86,34 @@ impl Item {
     }
 
     #[cfg(all(feature = "ytdl", feature = "playlist"))]
-    pub async fn fetch_item_title(&self) -> String {
+    pub async fn fetch_item_title<'s>(
+        &'s self,
+        playlist: &'s crate::playlist::Playlist,
+    ) -> std::borrow::Cow<'s, str> {
         use crate::ytdl::YtdlBuilder;
+        use std::borrow::Cow;
         match self {
             Item::Link(l) => match l.as_video() {
-                Some(l) => l.resolve_link().await,
+                Some(l) => l.resolve_link().await.into(),
                 None => match l.as_banger() {
-                    Some(l) => l
-                        .metadata()
-                        .await
-                        .map(|t| t.title)
-                        .unwrap_or_else(|_| l.to_string()),
-                    None => l.to_string(),
+                    Some(l) => match playlist.find_by_id(l.id()) {
+                        Some(s) => Cow::Borrowed(&s.name),
+                        None => l
+                            .metadata()
+                            .await
+                            .map(|t| t.title.into())
+                            .unwrap_or_else(|_| Cow::Borrowed(l.as_str())),
+                    },
+                    None => Cow::Borrowed(l.as_str()),
                 },
             },
-            Item::File(f) => clean_up_path(&f)
-                .map(ToString::to_string)
-                .unwrap_or_else(|| f.to_string_lossy().into_owned()),
+            Item::File(f) => clean_up_path(f)
+                .map(Cow::Borrowed)
+                .unwrap_or_else(|| f.to_string_lossy().into_owned().into()),
             Item::Search(s) => {
                 tracing::debug!("fetching title of search {s:?}");
                 match title_cache::get_by_search(s).await {
-                    Ok(Some(title)) => return title,
+                    Ok(Some(title)) => return title.into(),
                     Ok(None) => {}
                     Err(e) => {
                         tracing::error!(?s, error = ?e, "failed to fetch cache of search");
@@ -123,9 +130,9 @@ impl Item {
                         if let Err(e) = title_cache::put_by_search(s, &title).await {
                             tracing::warn!(error = ?e, "failed to cache title");
                         }
-                        title
+                        title.into()
                     }
-                    Err(e) => e.to_string(),
+                    Err(e) => e.to_string().into(),
                 }
             }
         }

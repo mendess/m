@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.6.16"
+version = "0.6.17"
 edition = { workspace = true }
 
 [dependencies]
@@ -44,4 +44,3 @@ features = ["macros", "rt-multi-thread", "rt", "parking_lot"]
 
 [features]
 clipboard = ["dep:wl-clipboard-rs", "dep:arboard"]
-
