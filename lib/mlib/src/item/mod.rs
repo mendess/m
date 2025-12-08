@@ -41,6 +41,13 @@ impl<'s> ItemId<'s> {
             Self::BangerId(b) => b.as_str(),
         }
     }
+
+    pub fn to_link(&self) -> Link {
+        match self {
+            ItemId::VideoId(id) => Link::from(id.to_link()),
+            ItemId::BangerId(id) => Link::from(id.to_link()),
+        }
+    }
 }
 
 impl Item {
@@ -67,6 +74,14 @@ impl Item {
             Item::Link(l) => l.as_str().as_bytes(),
             Item::File(f) => f.as_os_str().as_bytes(),
             Item::Search(s) => s.as_str().as_bytes(),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Item::Link(l) => l.as_str(),
+            Item::File(f) => f.as_os_str().to_str().unwrap(),
+            Item::Search(s) => s.as_str(),
         }
     }
 

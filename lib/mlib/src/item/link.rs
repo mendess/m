@@ -326,6 +326,10 @@ impl VideoId {
             .then(|| url.path().trim_start_matches('/'))
             .map(VideoId::new)
     }
+
+    pub fn to_link(&self) -> VideoLink {
+        VideoLink::from_id(self)
+    }
 }
 
 impl Deref for VideoId {
@@ -623,6 +627,10 @@ impl BangerId {
             .then(|| s.path().split("/").last())
             .flatten()
             .map(|s| unsafe { std::mem::transmute(s) })
+    }
+
+    pub fn to_link(&self) -> BangerLink {
+        BangerLink::from_id(self)
     }
 }
 
