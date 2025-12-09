@@ -491,19 +491,21 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
 
 pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
     let q = Queue::load_full(PlayerLink::current()).await?;
-    let mut file = BufWriter::new(File::create(file).await?);
+    let tempfile = tempfile::Builder::new().tempfile_in(".")?;
+    let mut writer = BufWriter::new(File::create(tempfile.path()).await?);
     for s in q.iter() {
         match s.item.id() {
             Some(id) => {
-                file.write_all(id.to_link().as_str().as_bytes()).await?;
+                writer.write_all(id.to_link().as_str().as_bytes()).await?;
             }
             None => {
-                file.write_all(s.item.as_bytes()).await?;
+                writer.write_all(s.item.as_bytes()).await?;
             }
         }
-        file.write_all(b"\n").await?;
+        writer.write_all(b"\n").await?;
     }
-    file.flush().await?;
+    writer.flush().await?;
+    tokio::fs::rename(tempfile.path(), file).await?;
     Ok(())
 }
 
