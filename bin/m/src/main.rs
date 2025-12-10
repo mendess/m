@@ -69,9 +69,14 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Dequeue(d) => queue_ctl::dequeue(d).await?,
         Command::Playlist => queue_ctl::run_interactive_playlist().await?,
         Command::Status { entity } => match entity {
-            EntityStatus::Players => player_ctl::status().await?,
-            EntityStatus::Cache => download_ctl::cache_status().await?,
-            EntityStatus::Downloads => download_ctl::daemon_status().await?,
+            Some(EntityStatus::Players) => player_ctl::status().await?,
+            Some(EntityStatus::Cache) => download_ctl::cache_status().await?,
+            Some(EntityStatus::Downloads) => download_ctl::daemon_status().await?,
+            None => {
+                player_ctl::status().await?;
+                download_ctl::cache_status().await?;
+                download_ctl::daemon_status().await?;
+            }
         },
         Command::Interactive => player_ctl::interactive().await?,
         Command::Lyrics => todo!("lyrics not implemented"),

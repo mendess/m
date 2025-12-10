@@ -243,17 +243,6 @@ impl PlayersDaemon {
             .iter()
             .position(|slot| slot.is_none())
             .unwrap_or(this_ref.players.len());
-        let prepared_items = items
-            .iter()
-            .flat_map(|i| match i.try_into() {
-                Ok(x) => Some(x),
-                Err(e) => {
-                    tracing::error!(?e, ?i, "invalid item");
-                    None
-                }
-            })
-            .map(|i| (i, FileState::AppendPlay, None))
-            .collect::<Vec<_>>();
         let legacy_socket = legacy_socket_for(index).await;
         let mpv = Arc::new(
             Mpv::with_initializer(|mpv| {
@@ -290,6 +279,22 @@ impl PlayersDaemon {
 
         tokio::spawn(tasks::last_queue_monitor::reset(Arc::downgrade(&player)));
 
+        let items = items
+            .into_iter()
+            .map(|i| player.preemptive_download().song_queued(i))
+            .collect::<Vec<_>>();
+
+        let prepared_items = items.iter()
+            .filter_map(|i| match i.try_into() {
+                Ok(x) => Some(x),
+                Err(e) => {
+                    tracing::error!(?e, ?i, "invalid item");
+                    None
+                }
+            })
+            .map(|i| (i, FileState::AppendPlay, None))
+            .collect::<Vec<_>>();
+
         tracing::debug!(?prepared_items, "loading files");
         if let Err(e) = player.handle().playlist_load_files(&prepared_items) {
             if let libmpv::Error::Loadfiles { index, error } = &e {
@@ -301,10 +306,6 @@ impl PlayersDaemon {
                 );
             }
             return Err(e.into());
-        }
-
-        for i in items {
-            player.preemptive_download().song_queued(&i);
         }
 
         let index = this_ref.players.add(player);
@@ -407,12 +408,12 @@ impl PlayersDaemon {
 
     pub(super) async fn load_file(&self, index: PlayerIndex, item: Item) -> MpvResult<()> {
         let player = self.current_player(index)?;
+        let item = player.preemptive_download().song_queued(item);
         player.playlist_load_files(&[(
             (&item).try_into().map_err(|_| MpvError::InvalidUtf8)?,
             FileState::AppendPlay,
             None,
         )])?;
-        player.preemptive_download().song_queued(&item);
         Ok(())
     }
 

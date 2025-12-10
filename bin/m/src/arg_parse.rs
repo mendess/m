@@ -162,8 +162,7 @@ pub enum Command {
 
     /// Status
     Status {
-        #[arg(default_value = "players")]
-        entity: EntityStatus,
+        entity: Option<EntityStatus>,
     },
 
     /// Info

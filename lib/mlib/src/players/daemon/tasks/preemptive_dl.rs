@@ -9,21 +9,34 @@ use crate::{
 };
 use libmpv::{FileState, Mpv};
 use parking_lot::Mutex;
-use std::{collections::HashMap, path::Path, sync::Weak, time::Duration};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Weak,
+    time::Duration,
+};
 use tokio::sync::{Semaphore, oneshot};
 
 pub struct Task {
     cancel: Option<oneshot::Sender<()>>,
 }
 
-#[tracing::instrument(skip_all, fields(%song))]
-async fn do_it(cache_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
-    let path = {
-        let dl_dir = cache_dir.join("m").join("preemptive-dl");
+fn cache_dir() -> Option<PathBuf> {
+    let Some(mut cache_dir) = dirs::cache_dir() else {
+        tracing::warn!("cache dir not present, not preemptively downloading song");
+        return None;
+    };
+    cache_dir.push("m");
+    cache_dir.push("preemptive-dl");
+    Some(cache_dir)
+}
 
+#[tracing::instrument(skip_all, fields(%song))]
+async fn do_it(dl_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
+    let path = {
         static CONCURRENT_DOWNLOADS: Semaphore = Semaphore::const_new(4);
         let _permit = CONCURRENT_DOWNLOADS.acquire().await;
-        match yt_download(dl_dir, song, false).await {
+        match yt_download(dl_dir.to_path_buf(), song, false).await {
             Ok(path) => match path.get().await {
                 Ok(path) => path,
                 Err(e) => {
@@ -98,15 +111,12 @@ async fn do_it(cache_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
 }
 
 impl Task {
+    #[tracing::instrument(fields(%id))]
     fn new(id: &VideoLink, player: Weak<Mpv>) -> Self {
         let (tx, rx) = oneshot::channel();
         let song = id.clone();
         tokio::spawn(async move {
-            let Some(cache_dir) = dirs::cache_dir() else {
-                tracing::warn!(
-                    %song,
-                    "cache dir not present, not preemptively downloading song"
-                );
+            let Some(cache_dir) = cache_dir() else {
                 return;
             };
             let dl = do_it(&cache_dir, &song, player);
@@ -133,6 +143,15 @@ pub struct PreemptiveDownload {
     inflight: Mutex<HashMap<Box<VideoId>, Task>>,
 }
 
+fn check_cache(vid: &VideoId) -> Option<PathBuf> {
+    let cache_dir = cache_dir()?;
+    let cached = glob::glob(&format!("{}/*{}*", cache_dir.to_str()?, vid.as_str()))
+        .ok()?
+        .next()?
+        .ok()?;
+    Some(cached)
+}
+
 impl PreemptiveDownload {
     pub fn new(player: Weak<Mpv>) -> Self {
         Self {
@@ -141,17 +160,24 @@ impl PreemptiveDownload {
         }
     }
 
-    pub fn song_queued(&self, item: &Item) {
-        match item {
+    #[must_use]
+    pub fn song_queued(&self, item: Item) -> Item {
+        match &item {
             Item::Link(Link::Video(video_id)) => {
+                if let Some(cached) = check_cache(video_id.id()) {
+                    return Item::File(cached);
+                }
                 self.inflight.lock().insert(
                     video_id.id().boxed(),
                     Task::new(video_id, self.player.clone()),
                 );
             }
             Item::File(_) => {}
-            i => tracing::warn!(item = ?i, "ignoring"),
+            i => {
+                tracing::warn!(item = ?i, "ignoring")
+            }
         }
+        item
     }
 
     pub fn song_dequeued(&self, item: &VideoLink) {
