@@ -81,19 +81,34 @@ where
     R: DeserializeOwned,
 {
     pub async fn exchange(&mut self, message: M) -> Result<R, io::Error> {
+        async fn exchange(
+            reader: &mut BufReader<OwnedReadHalf>,
+            writer: &mut BufWriter<OwnedWriteHalf>,
+            message: &[u8],
+        ) -> Result<String, io::Error> {
+            writer.write_all(message).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await?;
+            let mut response = String::new();
+            debug!("getting response message from daemon");
+            reader.read_line(&mut response).await?;
+            response.pop(); // trim newline
+            Ok(response)
+        }
         debug!(
             ?message,
             "sending message to daemon, type: {}",
             std::any::type_name::<M>()
         );
         let message = serde_json::to_vec(&message).unwrap();
-        self.writer.write_all(&message).await?;
-        self.writer.write_all(b"\n").await?;
-        self.writer.flush().await?;
-        let mut response = String::new();
-        debug!("getting response message from daemon");
-        self.reader.read_line(&mut response).await?;
-        response.pop(); // trim newline
+        let response = match exchange(&mut self.reader, &mut self.writer, &message).await {
+            Ok(r) => r,
+            Err(e) if e.kind() == io::ErrorKind::BrokenPipe => {
+                *self = Self::new(&self.name, &self.socket_path, false).await?;
+                exchange(&mut self.reader, &mut self.writer, &message).await?
+            }
+            Err(e) => return Err(e),
+        };
         debug!(?response, "got");
         Ok(serde_json::from_str(&response)?)
     }
