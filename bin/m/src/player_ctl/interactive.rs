@@ -36,17 +36,17 @@ struct PlaybackPosition {
 #[derive(Debug)]
 enum UiUpdate {
     Title {
-        title: String,
-        total_time: f64,
-        next: Option<mlib::queue::UpNext>,
+        // title: String,
+        // total_time: f64,
+        // next: Option<mlib::queue::UpNext>,
     },
     Volume(f64),
     Pause {
         is_paused: bool,
     },
     ChapterName {
-        title: String,
-        total_time: f64,
+        // title: String,
+        // total_time: f64,
     },
     ChapterNumber(usize),
     Position(PlaybackPosition),
@@ -174,16 +174,20 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
                 OwnedLibMpvEvent::PropertyChange { name, change, .. } => match name.as_str() {
                     "playlist-pos" => Some(UiUpdate::ClearChapter),
                     "media-title" => {
-                        let title = change.into_string().ok()?;
-                        let total_time = get_duration().await.unwrap_or(f64::INFINITY);
-                        let next = Queue::up_next(PlayerLink::current(), None)
-                            .await
-                            .ok()
-                            .flatten();
+                        // let title = change.into_string().ok()?;
+                        // NOTE: This is very weird, but it's just easier querying for
+                        // Queue::current in the ui task to get correct results. Calling
+                        // get_duration here just delays this event enough to make sure
+                        // Queue::current doesn't fail
+                        let _ = get_duration().await.unwrap_or(f64::INFINITY);
+                        // let next = Queue::up_next(PlayerLink::current(), None)
+                        //     .await
+                        //     .ok()
+                        //     .flatten();
                         Some(UiUpdate::Title {
-                            title,
-                            total_time,
-                            next,
+                            // title,
+                            // total_time,
+                            // next,
                         })
                     }
                     "volume" => {
@@ -195,10 +199,10 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
                         Some(UiUpdate::Pause { is_paused })
                     }
                     "chapter-metadata" => {
-                        let mut map = change.into_map().ok()?;
-                        let title = map.remove("title")?.into_string().ok()?;
-                        let total_time = players::duration().await.ok()?;
-                        Some(UiUpdate::ChapterName { title, total_time })
+                        // let mut map = change.into_map().ok()?;
+                        // let title = map.remove("title")?.into_string().ok()?;
+                        let _ = get_duration().await;
+                        Some(UiUpdate::ChapterName { /*title, total_time*/ })
                     }
                     "chapter" => {
                         let index = change.into_int().ok()?;
@@ -244,29 +248,16 @@ async fn ui_task() -> anyhow::Result<()> {
             }
             Ok(Some(event)) => match event {
                 UiUpdate::ClearChapter => current.chapter = None,
-                UiUpdate::Title {
-                    title,
-                    total_time,
-                    next,
-                } => {
-                    current.title = title;
-                    current.chapter = None;
-                    if let Ok(d) = Duration::try_from_secs_f64(total_time) {
-                        current.duration = d;
-                    }
-                    current.next = next;
-                }
-                UiUpdate::Volume(volume) => current.volume = volume,
-                UiUpdate::Pause { is_paused } => current.playing = !is_paused,
-                UiUpdate::ChapterName { title, total_time } => {
-                    current.chapter.get_or_insert_with(Default::default).1 = title;
-                    if let Ok(d) = Duration::try_from_secs_f64(total_time) {
-                        current.duration = d;
-                    }
+                UiUpdate::Title { .. } | UiUpdate::ChapterName { .. } => {
+                    current =
+                        Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
+                            .await?;
                 }
                 UiUpdate::ChapterNumber(index) => {
                     current.chapter.get_or_insert_with(Default::default).0 = index;
                 }
+                UiUpdate::Volume(volume) => current.volume = volume,
+                UiUpdate::Pause { is_paused } => current.playing = !is_paused,
                 UiUpdate::Position(PlaybackPosition {
                     percent_position,
                     playback_time,

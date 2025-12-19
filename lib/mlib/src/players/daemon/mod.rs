@@ -284,7 +284,8 @@ impl PlayersDaemon {
             .map(|i| player.preemptive_download().song_queued(i))
             .collect::<Vec<_>>();
 
-        let prepared_items = items.iter()
+        let prepared_items = items
+            .iter()
             .filter_map(|i| match i.try_into() {
                 Ok(x) => Some(x),
                 Err(e) => {
