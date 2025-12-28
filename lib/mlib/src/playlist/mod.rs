@@ -468,9 +468,13 @@ pub struct PlaylistIndex<'p> {
     index: usize,
 }
 
-impl PlaylistIndex<'_> {
+impl<'s> PlaylistIndex<'s> {
     pub fn into_index(self) -> usize {
         self.index
+    }
+
+    pub fn get(&self) -> &'s Song {
+        &self.source.songs[self.index]
     }
 }
 
@@ -478,7 +482,7 @@ impl Deref for PlaylistIndex<'_> {
     type Target = Song;
 
     fn deref(&self) -> &Self::Target {
-        &self.source.songs[self.index]
+        self.get()
     }
 }
 
