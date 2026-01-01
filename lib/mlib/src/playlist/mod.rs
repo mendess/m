@@ -386,10 +386,11 @@ impl Playlist {
             [index] => PartialSearchResult::One(*index),
             [] => PartialSearchResult::None,
             many => {
-                let exact_name_regex = regex::RegexBuilder::new(&regex::escape(&name))
-                    .case_insensitive(true)
-                    .build()
-                    .unwrap();
+                let exact_name_regex =
+                    regex::RegexBuilder::new(&format!("^{}$", regex::escape(&name)))
+                        .case_insensitive(true)
+                        .build()
+                        .unwrap();
                 if let Some(index) = many
                     .iter()
                     .find(|i| exact_name_regex.is_match(&self.songs[**i].name))
