@@ -16,6 +16,12 @@ pub struct MConfig {
     pub socket_base_dir: Option<PathBuf>,
     #[serde(default)]
     pub download_format: DownloadFormat,
+    #[serde(default = "download_bangers")]
+    pub download_bangers: bool,
+}
+
+fn download_bangers() -> bool {
+    true
 }
 
 pub static CONFIG: LazyLock<MConfig> = LazyLock::new(|| {

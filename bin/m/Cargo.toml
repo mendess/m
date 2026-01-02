@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.6.22"
+version = "0.6.23"
 edition = { workspace = true }
 
 [dependencies]

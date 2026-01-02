@@ -181,11 +181,14 @@ pub async fn daemon_status() -> anyhow::Result<()> {
 pub async fn check_cache_ref(path: &Path, item: &mut Item) {
     match mlib::downloaded::check_cache_ref(path, item).await {
         CheckCacheDecision::Skip => {}
-        CheckCacheDecision::Download(l) => match DAEMON.exchange(Message::Queue(l)).await {
-            Ok(None) => {}
-            Ok(Some(_)) => panic!("server should not have given me a status"),
-            Err(e) => crate::error!("failed to start myself: {:?}", e),
-        },
+        CheckCacheDecision::Download(l) if crate::config::CONFIG.download_bangers => {
+            match DAEMON.exchange(Message::Queue(l)).await {
+                Ok(None) => {}
+                Ok(Some(_)) => panic!("server should not have given me a status"),
+                Err(e) => crate::error!("failed to start myself: {:?}", e),
+            }
+        }
+        CheckCacheDecision::Download(_) => {}
     }
 }
 
