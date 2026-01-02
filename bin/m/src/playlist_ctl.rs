@@ -1,5 +1,5 @@
-use crate::notify;
 use crate::util::{self, prompt};
+use crate::{chosen_index, notify};
 use anyhow::{Context, bail, ensure};
 use futures_util::{StreamExt, TryStreamExt as _};
 use itertools::Itertools;
@@ -7,7 +7,6 @@ use levenshtein::levenshtein;
 use mlib::Item;
 use mlib::item::ItemId;
 use mlib::item::link::{BangerLink, HasId as _, VideoLink};
-use mlib::players::PlayerLink;
 use mlib::playlist::PartialSearchResult;
 use mlib::playlist::uniq_vec::UniqVec;
 use mlib::{
@@ -340,7 +339,7 @@ async fn category_prompt(
 pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Result<()> {
     let mut playlist = Playlist::load().await?;
     let idx = if current {
-        let current = Queue::link(PlayerLink::current()).await?;
+        let current = Queue::link(&chosen_index()).await?;
         let current = current
             .banger_id()
             .ok_or_else(|| anyhow::anyhow!("current song is not identified"))?;

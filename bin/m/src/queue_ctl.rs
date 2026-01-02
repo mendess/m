@@ -1,5 +1,6 @@
 use crate::{
     arg_parse::{Amount, DeQueue, DeQueueIndex, QueueOpts},
+    chosen_index,
     download_ctl::check_cache_ref,
     notify,
     util::{DisplayEither, DurationFmt, dl_dir, prompt::selector, with_video::with_video_env},
@@ -53,7 +54,7 @@ pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<(
     match mode {
         CurrentDisplayMode::Default { short } => {
             if short {
-                let link = PlayerLink::current();
+                let link = chosen_index();
                 let mut title = link.media_title().await?;
                 if title.is_empty() {
                     title = link.filename().await?;
@@ -61,16 +62,15 @@ pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<(
                 println!("{title}");
                 Ok(())
             } else {
-                let current =
-                    Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
-                        .await
-                        .context("loading the current queue")?;
+                let current = Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
+                    .await
+                    .context("loading the current queue")?;
 
                 display_current(&current, notify).await
             }
         }
         CurrentDisplayMode::Link | CurrentDisplayMode::LinkId => {
-            let link = Queue::link(PlayerLink::current())
+            let link = Queue::link(&chosen_index())
                 .await
                 .context("loading the queue to fetch the link")?;
             tracing::debug!("{:?}", link);
@@ -186,7 +186,7 @@ pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<
 
 pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     let queue = Queue::load(
-        PlayerLink::current(),
+        &chosen_index(),
         amount.unwrap_or(10).unsigned_abs() as usize,
     )
     .await
@@ -385,7 +385,7 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
 }
 
 pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
-    let player = PlayerLink::current();
+    let player = &chosen_index();
     match d {
         DeQueue::Next => {
             player.queue_remove(player.queue_pos().await? + 1).await?;
@@ -490,7 +490,7 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
 }
 
 pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
-    let q = Queue::load_full(PlayerLink::current()).await?;
+    let q = Queue::load_full(&chosen_index()).await?;
     let tempfile = tempfile::Builder::new().tempfile_in(".")?;
     let mut writer = BufWriter::new(File::create(tempfile.path()).await?);
     for s in q.iter() {
@@ -649,7 +649,7 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
     .await
     .context("queueing")?;
     if loop_list {
-        players::queue_loop(true).await?;
+        chosen_index().queue_loop(true).await?;
     }
     Ok(())
 }

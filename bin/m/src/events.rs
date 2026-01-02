@@ -1,12 +1,10 @@
-use mlib::players::{
-    PlayerLink,
-    event::{OwnedLibMpvEvent as Ev, OwnedMpvNode},
-};
+use crate::chosen_index;
+use mlib::players::event::{OwnedLibMpvEvent as Ev, OwnedMpvNode};
 use std::fmt;
 use tokio_stream::StreamExt as _;
 
 pub async fn display() -> anyhow::Result<()> {
-    let mut player = std::pin::pin!(PlayerLink::current().subscribe().await?);
+    let mut player = std::pin::pin!(chosen_index().subscribe().await?);
     while let Some(ev) = player.next().await {
         match ev {
             Ok(ev) => match ev.event {

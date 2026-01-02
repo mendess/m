@@ -32,6 +32,10 @@ impl PlayerIndex {
     pub fn of(index: usize) -> Self {
         Self(Some(index))
     }
+
+    pub fn get(&self) -> Option<usize> {
+        self.0
+    }
 }
 
 #[derive(Debug)]
@@ -67,8 +71,12 @@ impl PlayerLink {
     }
 
     pub fn of(index: usize) -> Self {
+        Self::of_index(PlayerIndex(Some(index)))
+    }
+
+    pub fn of_index(index: PlayerIndex) -> Self {
         Self {
-            index: PlayerIndex(Some(index)),
+            index,
             daemon: StaticOrOwned::Static(&connection::PLAYERS),
         }
     }
@@ -83,6 +91,10 @@ impl PlayerLink {
     pub async fn playing_item(&self) -> Result<Item, crate::Error> {
         let filename = self.filename().await?;
         Ok(Item::from(filename))
+    }
+
+    pub fn index(&self) -> &PlayerIndex {
+        &self.index
     }
 }
 

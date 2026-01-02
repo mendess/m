@@ -89,9 +89,12 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                         .await
                 );
             } else {
-                match players::current().await? {
+                match chosen_index().index().get() {
                     Some(i) => println!("{}", players::legacy_socket_for(i).await),
-                    None => println!("/dev/null"),
+                    None => match players::current().await? {
+                        Some(i) => println!("{}", players::legacy_socket_for(i).await),
+                        None => println!("/dev/null"),
+                    },
                 }
             }
         }
@@ -244,7 +247,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             let playlist = Playlist::load().await?;
             let song = match song {
                 _ if current => {
-                    let filename = PlayerLink::current().playing_item().await?;
+                    let filename = chosen_index().playing_item().await?;
                     let Item::Link(item::link::Link::Banger(link)) = filename else {
                         anyhow::bail!("not currently playing a playlist item");
                     };

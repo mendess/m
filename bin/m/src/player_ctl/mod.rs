@@ -108,7 +108,7 @@ where
 }
 
 pub async fn shuffle() -> anyhow::Result<()> {
-    Ok(players::queue_shuffle().await?)
+    Ok(chosen_index().queue_shuffle().await?)
 }
 
 pub async fn toggle_loop() -> anyhow::Result<()> {

@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{player_ctl, util::RawMode};
+use crate::{chosen_index, player_ctl, util::RawMode};
 use crossterm::{
     QueueableCommand,
     cursor::MoveTo,
@@ -16,7 +16,7 @@ use crossterm::{
 use futures_util::{Stream, StreamExt, future::ready, join};
 use mlib::{
     players::{
-        self, PlayerLink,
+        self,
         error::{MpvError, MpvErrorCode},
         event::OwnedLibMpvEvent,
     },
@@ -138,8 +138,8 @@ async fn current_position() -> Option<PlaybackPosition> {
         None
     }
     let (percent_position, playback_time) = join!(
-        retry_until_positive(|| async { players::percent_position().await.ok() }),
-        retry_until_positive(|| async { players::playback_time().await.ok() }),
+        retry_until_positive(|| async { chosen_index().percent_position().await.ok() }),
+        retry_until_positive(|| async { chosen_index().playback_time().await.ok() }),
     );
     Some(PlaybackPosition {
         percent_position,
@@ -154,7 +154,7 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
         .filter_map(|ev| async move {
             async fn get_duration() -> Option<f64> {
                 for attempt in 0..10 {
-                    match players::duration().await {
+                    match chosen_index().duration().await {
                         Ok(d) => return Some(d),
                         Err(players::Error::Mpv(MpvError::Raw(e))) => match e {
                             MpvErrorCode::PropertyUnavailable => {
@@ -220,7 +220,7 @@ async fn ui_task() -> anyhow::Result<()> {
     let (column, row) = guard.guarantee_space(&mut stdout().lock(), 10)?;
     crate::notify!("Loading....");
     let mut event_listener = pin!(event_listener().await?);
-    let mut current = Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
+    let mut current = Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
         .await
         .unwrap();
     loop {
@@ -249,9 +249,8 @@ async fn ui_task() -> anyhow::Result<()> {
             Ok(Some(event)) => match event {
                 UiUpdate::ClearChapter => current.chapter = None,
                 UiUpdate::Title { .. } | UiUpdate::ChapterName { .. } => {
-                    current =
-                        Queue::current(PlayerLink::current(), mlib::queue::CurrentOptions::GetNext)
-                            .await?;
+                    current = Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
+                        .await?;
                 }
                 UiUpdate::ChapterNumber(index) => {
                     current.chapter.get_or_insert_with(Default::default).0 = index;

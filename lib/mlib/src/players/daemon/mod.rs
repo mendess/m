@@ -334,36 +334,17 @@ impl PlayersDaemon {
     }
 
     pub(super) fn last_queue(&mut self, index: PlayerIndex) -> MpvResult<Option<usize>> {
-        let pl = index
-            .0
-            .or_else(|| *self.current_default.borrow())
-            .and_then(|index| self.players.get(index))
-            .ok_or(MpvError::NoMpvInstance)?;
-
-        Ok(pl.get_last_queue())
+        Ok(self.current_player(index)?.get_last_queue())
     }
 
     pub(super) fn last_queue_clear(&self, index: PlayerIndex) -> MpvResult<()> {
-        let pl = index
-            .0
-            .or_else(|| *self.current_default.borrow())
-            .and_then(|index| self.players.get(index))
-            .ok_or(MpvError::NoMpvInstance)?;
-
-        pl.clear_last_queue();
+        self.current_player(index)?.clear_last_queue();
 
         Ok(())
     }
 
     pub(super) fn last_queue_set(&self, index: PlayerIndex, to: usize) -> MpvResult<()> {
-        let pl = index
-            .0
-            .or_else(|| *self.current_default.borrow())
-            .and_then(|index| self.players.get(index))
-            .ok_or(MpvError::NoMpvInstance)?;
-
-        pl.set_last_queue(to);
-
+        self.current_player(index)?.set_last_queue(to);
         Ok(())
     }
 
@@ -374,6 +355,16 @@ impl PlayersDaemon {
             index
         });
         index
+            .inspect(|i| {
+                self.current_default.send_if_modified(|c| {
+                    if *c == Some(*i) {
+                        false
+                    } else {
+                        *c = Some(*i);
+                        true
+                    }
+                });
+            })
             .and_then(|i| self.players.get(i))
             .ok_or(MpvError::NoMpvInstance)
     }
