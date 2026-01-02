@@ -74,7 +74,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             Some(EntityStatus::Downloads) => download_ctl::daemon_status().await?,
             None => {
                 player_ctl::status().await?;
-                download_ctl::cache_status().await?;
+                if crate::config::CONFIG.download_bangers {
+                    download_ctl::cache_status().await?;
+                }
                 download_ctl::daemon_status().await?;
             }
         },

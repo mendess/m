@@ -219,10 +219,11 @@ pub async fn cache_status() -> anyhow::Result<()> {
         .await;
     crate::notify!("Cache status";
         content:
-            "   Cached: {}\nNot Cached: {}\nMissing:\n  {}",
+            "   Cached: {}\nNot Cached: {}\nMissing:\n  {}{}",
             cached.len(),
             not.len(),
-            not.iter().format("\n  ")
+            not.iter().take(20).format("\n  "),
+            if cached.len() > 20 { "\n..." } else { "" },
     );
     Ok(())
 }
