@@ -223,7 +223,7 @@ pub async fn cache_status() -> anyhow::Result<()> {
             cached.len(),
             not.len(),
             not.iter().take(20).format("\n  "),
-            if cached.len() > 20 { "\n..." } else { "" },
+            if not.len() > 20 { "\n..." } else { "" },
     );
     Ok(())
 }
