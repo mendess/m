@@ -84,11 +84,11 @@ impl Queue {
         let metadata = async {
             tracing::trace!("getting");
             let media_title = player.media_title().await?;
-            let filename = Item::from(player.filename().await?);
-            let id = filename.id();
+            let item = Item::from(player.filename().await?);
+            let id = item.id();
             // TODO: this is wrong
             let title = if media_title.is_empty() {
-                filename.to_string()
+                "unknown".into()
             } else {
                 media_title
             };
@@ -115,8 +115,8 @@ impl Queue {
                 }
             };
             let playlist = playlist::Playlist::load().await?;
-            let (artist, categories) = id
-                .and_then(|id| match id {
+            let (artist, categories) = match id {
+                Some(id) => (match id {
                     crate::item::ItemId::VideoId(_) => None,
                     crate::item::ItemId::BangerId(banger_id) => Some(banger_id),
                 })
@@ -127,7 +127,14 @@ impl Queue {
                         s.all_categories().map(|s| s.to_owned()).collect::<Vec<_>>(),
                     )
                 })
-                .unwrap_or_default();
+                .unwrap_or_default(),
+                None => (
+                    item.fetch_item_artist(&playlist)
+                        .await
+                        .map(|a| a.into_owned()),
+                    vec![],
+                ),
+            };
 
             let chapter = player
                 .chapter_metadata()
@@ -199,7 +206,8 @@ impl Queue {
     where
         I: Into<Option<usize>> + std::fmt::Debug,
     {
-        use crate::item::{ItemId, VideoLink, link::HasId};
+        use crate::{item::link::HasId, playlist::Playlist};
+        use std::borrow::Cow;
 
         tracing::trace!("getting queue_size");
         let size = player.queue_size().await?;
@@ -215,46 +223,18 @@ impl Queue {
         };
         tracing::trace!("getting queue_at");
         let next = player.queue_at((queue_index + 1) % size).await?.filename;
-        fn default_up_next(title: String) -> UpNext {
-            UpNext {
-                title,
-                artist: None,
-                categories: vec![],
-            }
-        }
-        async fn from_banger_id(
-            banger: &crate::item::link::BangerId,
-        ) -> Result<Option<UpNext>, Error> {
-            use crate::playlist::Playlist;
-
-            Ok(Playlist::load().await?.find_by_id(banger).map(|s| UpNext {
-                title: s.name.clone(),
-                categories: s.all_categories().map(|s| s.to_owned()).collect(),
-                artist: s.artist.clone(),
-            }))
-        }
-        let next = match Item::from(next) {
-            Item::Link(Link::Video(v)) => {
-                tracing::trace!("resolving link");
-                default_up_next(v.resolve_link().await)
-            }
-            Item::Link(Link::Banger(b)) => from_banger_id(b.id())
-                .await?
-                .unwrap_or_else(|| default_up_next(b.into_string())),
-            Item::Link(l) => default_up_next(
-                crate::item::clean_up_path(&l.as_str())
-                    .unwrap_or(l.as_str())
-                    .to_owned(),
-            ),
-            Item::Search(s) => default_up_next(s.into_string()),
-            Item::File(s) => match id_from_path(&s) {
-                Some(ItemId::BangerId(b)) => from_banger_id(b)
-                    .await?
-                    .unwrap_or_else(|| default_up_next(s.to_string_lossy().into_owned())),
-                Some(ItemId::VideoId(v)) => {
-                    default_up_next(VideoLink::from_id(v).resolve_link().await)
-                }
-                None => default_up_next(s.to_string_lossy().into_owned()),
+        let item = Item::from(next);
+        let playlist = Playlist::load().await?;
+        let next = UpNext {
+            title: item.fetch_item_title(&playlist).await.into_owned(),
+            artist: item.fetch_item_artist(&playlist).await.map(Cow::into_owned),
+            categories: if let Item::Link(Link::Banger(l)) = item {
+                playlist
+                    .find_by_id(l.id())
+                    .map(|s| s.all_categories().map(|s| s.to_owned()).collect())
+                    .unwrap_or_default()
+            } else {
+                vec![]
             },
         };
         Ok(Some(next))

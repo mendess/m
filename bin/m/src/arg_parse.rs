@@ -53,7 +53,12 @@ pub enum Command {
     },
 
     /// Shows the current playlist
-    Now(Amount),
+    Now {
+        #[arg(short, long)]
+        show_files: bool,
+        #[command(flatten)]
+        amount: Amount,
+    },
 
     /// Show the current song
     #[command(alias = "c")]

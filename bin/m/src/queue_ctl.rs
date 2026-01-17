@@ -51,15 +51,22 @@ pub enum CurrentDisplayMode {
 }
 
 pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<()> {
+    let playlist = Playlist::load().await?;
     match mode {
         CurrentDisplayMode::Default { short } => {
             if short {
                 let link = chosen_index();
                 let mut title = link.media_title().await?;
+                let filename = link.filename().await?;
                 if title.is_empty() {
-                    title = link.filename().await?;
+                    title = filename.clone();
                 }
-                println!("{title}");
+                let item = Item::from(filename);
+                let artist = item.fetch_item_artist(&playlist).await;
+                match artist {
+                    Some(artist) => println!("{artist} - {title}"),
+                    None => println!("{title}"),
+                }
                 Ok(())
             } else {
                 let current = Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
@@ -184,7 +191,7 @@ pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<
     Ok(())
 }
 
-pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
+pub async fn now(Amount { amount }: Amount, show_files: bool) -> anyhow::Result<()> {
     let queue = Queue::load(
         &chosen_index(),
         amount.unwrap_or(10).unsigned_abs() as usize,
@@ -196,17 +203,26 @@ pub async fn now(Amount { amount }: Amount) -> anyhow::Result<()> {
     stream::iter(queue.iter())
         .map(|i| {
             debug!("translating queue item: {i:?}");
-            async { (i.index, i.item.fetch_item_title(&playlist).await) }
+            async {
+                if show_files {
+                    (i.index, i.item.to_string().into(), None)
+                } else {
+                    (
+                        i.index,
+                        i.item.fetch_item_title(&playlist).await,
+                        i.item.fetch_item_artist(&playlist).await,
+                    )
+                }
+            }
         })
         .buffered(32)
-        .for_each(|(index, s)| async move {
+        .for_each(|(index, title, artist)| async move {
             static SEPERATORS: [&str; 2] = ["   ", "==>"];
-            println!(
-                "{:2} {} {}",
-                index,
-                SEPERATORS[(index == current) as usize],
-                s
-            )
+            let sep = SEPERATORS[(index == current) as usize];
+            match artist {
+                Some(artist) => println!("{index:2} {sep} {artist} - {title}",),
+                None => println!("{index:2} {sep} {title}"),
+            }
         })
         .await;
     Ok(())
@@ -219,7 +235,7 @@ where
 {
     tracing::debug!(options = ?q, "queueing songs");
     let player = match players::current().await? {
-        Some(index) => PlayerLink::of(index),
+        Some(_) => chosen_index(),
         None => {
             tracing::debug!("no mpv instance, starting a new one");
             return play(items, with_video_env()).await;

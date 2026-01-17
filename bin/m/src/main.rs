@@ -59,7 +59,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Shuffle => player_ctl::shuffle().await?,
         Command::Loop { flag: None } => player_ctl::toggle_loop().await?,
         Command::Loop { flag: Some(state) } => player_ctl::set_looping(state).await?,
-        Command::Now(a) => queue_ctl::now(a).await?,
+        Command::Now { amount, show_files } => queue_ctl::now(amount, show_files).await?,
         Command::Dump { file } => queue_ctl::dump(file).await?,
         Command::Load { file, shuf } => queue_ctl::load(file, shuf).await?,
         Command::DeleteSong(DeleteSong {

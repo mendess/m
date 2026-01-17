@@ -18,6 +18,9 @@ pub use link::{ChannelLink, Link, PlaylistId, PlaylistLink, VideoId, VideoLink};
 use serde::{Deserialize, Serialize};
 
 use crate::item::link::{BangerId, HasId as _, YtId as _};
+#[cfg(all(feature = "ytdl", feature = "playlist"))]
+use std::borrow::Cow;
+use tokio::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 #[from(forward)]
@@ -89,7 +92,7 @@ impl Item {
     pub async fn fetch_item_title<'s>(
         &'s self,
         playlist: &'s crate::playlist::Playlist,
-    ) -> std::borrow::Cow<'s, str> {
+    ) -> Cow<'s, str> {
         use crate::ytdl::YtdlBuilder;
         use std::borrow::Cow;
         match self {
@@ -109,6 +112,7 @@ impl Item {
             },
             Item::File(f) => clean_up_path(f)
                 .map(Cow::Borrowed)
+                .or_else(|| f.file_stem()?.to_str().map(Cow::Borrowed))
                 .unwrap_or_else(|| f.to_string_lossy().into_owned().into()),
             Item::Search(s) => {
                 tracing::debug!("fetching title of search {s:?}");
@@ -137,6 +141,82 @@ impl Item {
             }
         }
     }
+
+    #[cfg(all(feature = "ytdl", feature = "playlist"))]
+    pub async fn fetch_item_artist<'s>(
+        &'s self,
+        playlist: &'s crate::playlist::Playlist,
+    ) -> Option<Cow<'s, str>> {
+        use std::borrow::Cow;
+        match self {
+            Item::Link(l) => match l.as_video() {
+                Some(_) => None, // TODO artist cache needed for this
+                None => match l.as_banger() {
+                    Some(l) => match playlist.find_by_id(l.id()) {
+                        Some(s) => s.artist.as_deref().map(Cow::Borrowed),
+                        None => None,
+                    },
+                    None => None,
+                },
+            },
+            Item::File(f) if f.metadata().is_ok_and(|f| f.is_file()) => {
+                get_artist_from_tags(f).await.map(Cow::Owned)
+            }
+            Item::File(_) => None,
+            Item::Search(_) => {
+                // TODO artist cache needed for this
+                None
+            }
+        }
+    }
+}
+
+#[tracing::instrument]
+async fn get_artist_from_tags(file: &Path) -> Option<String> {
+    let output = Command::new("ffprobe")
+        .arg(file)
+        .args([
+            "-of",
+            "json",
+            "-hide_banner",
+            "-show_entries",
+            "stream_tags:format_tags",
+        ])
+        .output()
+        .await;
+    let output = match output {
+        Ok(o) => o,
+        Err(e) => {
+            tracing::warn!(error = ?e, "failed to ffprobe");
+            return None;
+        }
+    };
+    #[derive(Deserialize)]
+    struct Metadata {
+        format: Format,
+    }
+    #[derive(Deserialize)]
+    struct Format {
+        tags: Tags,
+    }
+    #[derive(Deserialize)]
+    struct Tags {
+        #[serde(alias = "ARTIST")]
+        #[serde(alias = "Artist")]
+        artist: String,
+    }
+    let Metadata {
+        format: Format {
+            tags: Tags { artist },
+        },
+    } = match serde_json::from_slice::<Metadata>(&output.stdout) {
+        Ok(meta) => meta,
+        Err(e) => {
+            tracing::warn!(error = ?e, "failed to deserialize metadata");
+            return None;
+        }
+    };
+    Some(artist)
 }
 
 impl<'s> TryFrom<&'s Item> for &'s str {
@@ -173,16 +253,18 @@ impl AsRef<OsStr> for Item {
     }
 }
 
+pub fn path_to_title(path: &Path) -> String {
+    match clean_up_path(&path).or_else(|| path.file_stem().and_then(OsStr::to_str)) {
+        Some(p) => p.to_string(),
+        None => format!("{}", path.display()),
+    }
+}
+
 impl Display for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Item::Link(l) => write!(f, "{}", l.as_str()),
-            Item::File(p) => {
-                match clean_up_path(p).or_else(|| p.file_stem().and_then(OsStr::to_str)) {
-                    Some(p) => write!(f, "{p}"),
-                    None => write!(f, "{}", p.display()),
-                }
-            }
+            Item::File(p) => write!(f, "{}", p.display()),
             Item::Search(s) => f.write_str(s.as_str()),
         }
     }
