@@ -1,6 +1,6 @@
 [package]
 name = "mlib"
-version = "0.20.6"
+version = "0.20.7"
 edition = { workspace = true }
 
 [dependencies]
@@ -45,7 +45,6 @@ optional = true
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true, features = ["registry", "env-filter", "fmt"] }
-tracing-log.workspace = true
 
 [dev-dependencies.tokio]
 workspace = true

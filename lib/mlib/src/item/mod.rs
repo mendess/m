@@ -171,8 +171,11 @@ impl Item {
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(level = "warn")]
 async fn get_artist_from_tags(file: &Path) -> Option<String> {
+    if let Some("jpg" | "png") = file.extension().and_then(OsStr::to_str) {
+        return None;
+    }
     let output = Command::new("ffprobe")
         .arg(file)
         .args([

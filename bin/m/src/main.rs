@@ -25,9 +25,7 @@ use mlib::{
 use rand::seq::SliceRandom;
 use std::{pin::pin, process::ExitCode, sync::Mutex};
 use tokio::io;
-use tracing::dispatcher::set_global_default;
-use tracing_log::LogTracer;
-use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _};
 use util::session_kind::SessionKind;
 
 use crate::{
@@ -36,6 +34,7 @@ use crate::{
     util::{dl_dir, with_video::with_video_env},
 };
 use anyhow::Context;
+use tracing::level_filters::LevelFilter;
 
 #[tracing::instrument]
 async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
@@ -328,19 +327,14 @@ async fn run() -> anyhow::Result<()> {
 }
 
 pub fn init_logger() {
-    LogTracer::init().expect("Failed to set logger");
-
-    let env_filter = if let Ok(e) = EnvFilter::try_from_default_env() {
-        e
-    } else {
-        EnvFilter::new("warn")
-    };
-
-    let fmt = fmt::layer().with_writer(std::io::stderr).pretty();
-
-    let sub = Registry::default().with(env_filter).with(fmt);
-
-    set_global_default(sub.into()).expect("Failed to set global default");
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::WARN.into())
+                .from_env_lossy(),
+        )
+        .with(fmt::layer().pretty())
+        .init();
 }
 
 #[tokio::main]

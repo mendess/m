@@ -1,25 +1,19 @@
 use mlib::{item::link::ChannelLink, ytdl::YtdlBuilder};
 use tokio_stream::StreamExt as _;
-use tracing::dispatcher::set_global_default;
-use tracing_log::LogTracer;
-use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _};
 
 #[tokio::main]
 async fn main() {
     {
-        LogTracer::init().expect("Failed to set logger");
-
-        let env_filter = if let Ok(e) = EnvFilter::try_from_default_env() {
-            e
-        } else {
-            EnvFilter::new("debug")
-        };
-
-        let fmt = fmt::layer().with_writer(std::io::stderr).pretty();
-
-        let sub = Registry::default().with(env_filter).with(fmt);
-
-        set_global_default(sub.into()).expect("Failed to set global default");
+        tracing_subscriber::registry()
+            .with(
+                EnvFilter::builder()
+                    .with_default_directive(LevelFilter::INFO.into())
+                    .from_env_lossy(),
+            )
+            .with(fmt::layer().pretty())
+            .init();
     }
 
     let c = "https://www.youtube.com/@iolandamusic/releases"
