@@ -149,8 +149,9 @@ mod player {
         }
 
         pub fn preemptive_download(&self) -> &PreemptiveDownload {
-            self.pre_cacher
-                .get_or_init(|| PreemptiveDownload::new(Arc::downgrade(&self.handle)))
+            self.pre_cacher.get_or_init(|| {
+                PreemptiveDownload::new(Arc::downgrade(&self.handle))
+            })
         }
     }
 
@@ -179,7 +180,9 @@ mod player {
                         PropertyError,
                     ];
                     if CODES.iter().any(|c| *c as i32 == code) {
-                        tracing::error!("failed to get property {prop}: {code:x}");
+                        tracing::error!(
+                            "failed to get property {prop}: {code:x}"
+                        );
                     }
                 }
                 e.into()
@@ -246,13 +249,19 @@ impl PlayersDaemon {
         let legacy_socket = legacy_socket_for(index).await;
         let mpv = Arc::new(
             Mpv::with_initializer(|mpv| {
-                if let Err(e) = mpv.set_property("video", with_video || this_ref.opts.with_video) {
+                if let Err(e) = mpv.set_property(
+                    "video",
+                    with_video || this_ref.opts.with_video,
+                ) {
                     tracing::error!(error = ?e, "failed to set video to true");
                 }
                 #[cfg(debug_assertions)]
                 {
                     mpv.set_property("msg-level", "all=debug")?;
-                    mpv.set_property("log-file", format!("{legacy_socket}.log"))?;
+                    mpv.set_property(
+                        "log-file",
+                        format!("{legacy_socket}.log"),
+                    )?;
                 }
                 mpv.set_property("geometry", "820x466")?;
                 mpv.set_property("input-ipc-server", legacy_socket)?;
@@ -260,16 +269,24 @@ impl PlayersDaemon {
 
                 Ok(())
             })
-            .inspect_err(|e| tracing::debug!(error = ?e, "failed to initialize player"))?,
+            .inspect_err(
+                |e| tracing::debug!(error = ?e, "failed to initialize player"),
+            )?,
         );
 
         let events = event_listener(Arc::downgrade(&mpv), index, {
             let this = this.clone();
             async move {
-                if let Err(e) = this.lock().await.quit(PlayerIndex::of(index)).await {
+                if let Err(e) =
+                    this.lock().await.quit(PlayerIndex::of(index)).await
+                {
                     match e {
                         MpvError::NoMpvInstance => {}
-                        e => tracing::error!(?index, ?e, "failed to quit from player"),
+                        e => tracing::error!(
+                            ?index,
+                            ?e,
+                            "failed to quit from player"
+                        ),
                     }
                 }
             }
@@ -333,7 +350,10 @@ impl PlayersDaemon {
         self.players.len()
     }
 
-    pub(super) fn last_queue(&mut self, index: PlayerIndex) -> MpvResult<Option<usize>> {
+    pub(super) fn last_queue(
+        &mut self,
+        index: PlayerIndex,
+    ) -> MpvResult<Option<usize>> {
         Ok(self.current_player(index)?.get_last_queue())
     }
 
@@ -343,12 +363,19 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    pub(super) fn last_queue_set(&self, index: PlayerIndex, to: usize) -> MpvResult<()> {
+    pub(super) fn last_queue_set(
+        &self,
+        index: PlayerIndex,
+        to: usize,
+    ) -> MpvResult<()> {
         self.current_player(index)?.set_last_queue(to);
         Ok(())
     }
 
-    pub(super) fn current_player(&self, index: PlayerIndex) -> MpvResult<&Player> {
+    pub(super) fn current_player(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<&Player> {
         let index = index.0.or_else(|| {
             let index = *self.current_default.borrow();
             tracing::debug!("current player is {index:?}");
@@ -369,7 +396,10 @@ impl PlayersDaemon {
             .ok_or(MpvError::NoMpvInstance)
     }
 
-    pub(super) async fn cycle_pause(&self, index: PlayerIndex) -> MpvResult<()> {
+    pub(super) async fn cycle_pause(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<()> {
         self.current_player(index)?.cycle_property("pause", true)?;
         Ok(())
     }
@@ -385,20 +415,31 @@ impl PlayersDaemon {
     }
 
     #[cfg(feature = "mpris")]
-    pub(super) async fn jump_to(&self, index: PlayerIndex, pos: usize) -> MpvResult<()> {
+    pub(super) async fn jump_to(
+        &self,
+        index: PlayerIndex,
+        pos: usize,
+    ) -> MpvResult<()> {
         self.current_player(index)?
             .command("playlist-play-index", &[&pos.to_string()])?;
         Ok(())
     }
 
-    pub(super) async fn queue_clear(&self, index: PlayerIndex) -> MpvResult<()> {
+    pub(super) async fn queue_clear(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<()> {
         let player = self.current_player(index)?;
         player.playlist_clear()?;
         player.preemptive_download().stop_all();
         Ok(())
     }
 
-    pub(super) async fn load_file(&self, index: PlayerIndex, item: Item) -> MpvResult<()> {
+    pub(super) async fn load_file(
+        &self,
+        index: PlayerIndex,
+        item: Item,
+    ) -> MpvResult<()> {
         let player = self.current_player(index)?;
         let item = player.preemptive_download().song_queued(item);
         player.playlist_load_files(&[(
@@ -409,9 +450,15 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    pub(super) async fn load_list(&self, index: PlayerIndex, path: PathBuf) -> MpvResult<()> {
-        self.current_player(index)?
-            .playlist_load_list(path.to_str().ok_or(MpvError::InvalidUtf8)?, false)?;
+    pub(super) async fn load_list(
+        &self,
+        index: PlayerIndex,
+        path: PathBuf,
+    ) -> MpvResult<()> {
+        self.current_player(index)?.playlist_load_list(
+            path.to_str().ok_or(MpvError::InvalidUtf8)?,
+            false,
+        )?;
         Ok(())
     }
 
@@ -424,7 +471,11 @@ impl PlayersDaemon {
         self.current_player(index)?.playlist_move_fixed(from, to)
     }
 
-    pub(super) async fn queue_remove(&self, index: PlayerIndex, to_remove: usize) -> MpvResult<()> {
+    pub(super) async fn queue_remove(
+        &self,
+        index: PlayerIndex,
+        to_remove: usize,
+    ) -> MpvResult<()> {
         let player = self.current_player(index)?;
         if self.queue_is_looping(player)? != LoopStatus::No {
             let pos = simple_prop_logged::<i64>(player, "playlist-pos")?;
@@ -449,7 +500,9 @@ impl PlayersDaemon {
                     tracing::error!(error = ?e, "failed to record statistics for skipped songs");
                 }
             }
-            Err(e) => tracing::error!(error = ?e, "failed to get path property"),
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to get path property")
+            }
         }
         Ok(())
     }
@@ -459,12 +512,17 @@ impl PlayersDaemon {
         index: PlayerIndex,
         start_looping: bool,
     ) -> MpvResult<()> {
-        self.current_player(index)?
-            .set_property("loop-playlist", if start_looping { "inf" } else { "no" })?;
+        self.current_player(index)?.set_property(
+            "loop-playlist",
+            if start_looping { "inf" } else { "no" },
+        )?;
         Ok(())
     }
 
-    pub(super) async fn queue_shuffle(&self, index: PlayerIndex) -> MpvResult<()> {
+    pub(super) async fn queue_shuffle(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<()> {
         self.current_player(index)?.playlist_shuffle()?;
         Ok(())
     }
@@ -496,19 +554,30 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    pub(super) async fn change_volume(&self, index: PlayerIndex, delta: i32) -> MpvResult<()> {
+    pub(super) async fn change_volume(
+        &self,
+        index: PlayerIndex,
+        delta: i32,
+    ) -> MpvResult<()> {
         self.current_player(index)?
             .add_property("volume", delta as isize)?;
         Ok(())
     }
 
-    pub(super) async fn cycle_video(&self, index: PlayerIndex) -> MpvResult<()> {
+    pub(super) async fn cycle_video(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<()> {
         self.current_player(index)?
             .cycle_property("vid", true /* up */)?;
         Ok(())
     }
 
-    pub(super) async fn set_video(&self, index: PlayerIndex, on: bool) -> MpvResult<()> {
+    pub(super) async fn set_video(
+        &self,
+        index: PlayerIndex,
+        on: bool,
+    ) -> MpvResult<()> {
         self.current_player(index)?.set_property("vid", on)?;
         Ok(())
     }
@@ -519,14 +588,19 @@ impl PlayersDaemon {
         direction: Direction,
     ) -> MpvResult<()> {
         let player = self.current_player(index)?;
-        let pos: u64 = match simple_prop_logged::<i64>(player, "playlist-pos")?.try_into() {
+        let pos: u64 = match simple_prop_logged::<i64>(player, "playlist-pos")?
+            .try_into()
+        {
             Ok(p) => p,
             Err(_) => return Ok(()),
         };
-        let count: u64 = match simple_prop_logged::<i64>(player, "playlist-count")?.try_into() {
-            Ok(p) if p > 1 => p,
-            _ => return Ok(()),
-        };
+        let count: u64 =
+            match simple_prop_logged::<i64>(player, "playlist-count")?
+                .try_into()
+            {
+                Ok(p) if p > 1 => p,
+                _ => return Ok(()),
+            };
         let new_pos = match direction {
             Direction::Next => (pos + 1) % count,
             Direction::Prev => pos
@@ -538,7 +612,8 @@ impl PlayersDaemon {
         {
             match self.filename(index).await.map(Item::from) {
                 Ok(item) => {
-                    if let Err(e) = crate::statistics::skipped_song(item).await {
+                    if let Err(e) = crate::statistics::skipped_song(item).await
+                    {
                         tracing::error!(error = ?e, "failed to record statistics for skipped songs");
                     }
                 }
@@ -550,7 +625,11 @@ impl PlayersDaemon {
         Ok(())
     }
 
-    pub(super) async fn seek(&self, index: PlayerIndex, seconds: f64) -> MpvResult<()> {
+    pub(super) async fn seek(
+        &self,
+        index: PlayerIndex,
+        seconds: f64,
+    ) -> MpvResult<()> {
         self.current_player(index)?.seek_forward(seconds)?;
         Ok(())
     }
@@ -571,15 +650,20 @@ impl PlayersDaemon {
             )
             .map_err(MpvError::from)
             .map_err(|e| match e {
-                MpvError::Raw(MpvErrorCode::Command) => MpvError::FailedToExecute {
-                    reason: "this file doesn't have any chapters".into(),
-                },
+                MpvError::Raw(MpvErrorCode::Command) => {
+                    MpvError::FailedToExecute {
+                        reason: "this file doesn't have any chapters".into(),
+                    }
+                }
                 e => e,
             })?;
         Ok(())
     }
 
-    pub(super) async fn chapter_metadata(&self, index: PlayerIndex) -> MpvResult<Option<Metadata>> {
+    pub(super) async fn chapter_metadata(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<Option<Metadata>> {
         use MpvErrorCode as MEC;
         let t = match self
             .current_player(index)?
@@ -588,7 +672,11 @@ impl PlayersDaemon {
             Ok(t) => t,
             Err(e) => {
                 return match e {
-                    libmpv::Error::Raw(code) if code == MEC::PropertyUnavailable as i32 => Ok(None),
+                    libmpv::Error::Raw(code)
+                        if code == MEC::PropertyUnavailable as i32 =>
+                    {
+                        Ok(None)
+                    }
                     _ => Err(e.into()),
                 };
             }
@@ -617,24 +705,33 @@ impl PlayersDaemon {
         let index = self.simple_prop::<i64>(index, "chapter")?;
         Ok(Some(Metadata {
             title,
-            index: index
-                .try_into()
-                .map_err(|e: TryFromIntError| MpvError::InvalidData {
+            index: index.try_into().map_err(|e: TryFromIntError| {
+                MpvError::InvalidData {
                     expected: "usize".into(),
                     got: index.to_string(),
                     error: e.to_string(),
-                })?,
+                }
+            })?,
         }))
     }
 
-    fn simple_prop<T: GetData>(&self, index: PlayerIndex, prop: &str) -> MpvResult<T> {
+    fn simple_prop<T: GetData>(
+        &self,
+        index: PlayerIndex,
+        prop: &str,
+    ) -> MpvResult<T> {
         self.current_player(index)?.simple_prop(prop)
     }
 
-    pub(super) async fn filename(&self, index: PlayerIndex) -> MpvResult<String> {
-        let mut filename = self.simple_prop::<String>(index, "stream-open-filename")?;
+    pub(super) async fn filename(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<String> {
+        let mut filename =
+            self.simple_prop::<String>(index, "stream-open-filename")?;
         static YT_ID: OnceLock<Regex> = OnceLock::new();
-        let pat = YT_ID.get_or_init(|| Regex::new(r"^[a-zA-Z\-_0-9]{11}$").unwrap());
+        let pat =
+            YT_ID.get_or_init(|| Regex::new(r"^[a-zA-Z\-_0-9]{11}$").unwrap());
         // mpv now returns only the video id instead of the full youtube url
         if pat.is_match(&filename) {
             filename.insert_str(0, "https://youtu.be/");
@@ -642,26 +739,41 @@ impl PlayersDaemon {
         Ok(filename)
     }
 
-    pub(super) async fn is_paused(&self, index: PlayerIndex) -> MpvResult<bool> {
+    pub(super) async fn is_paused(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<bool> {
         self.simple_prop(index, "pause")
     }
 
-    pub(super) async fn media_title(&self, index: PlayerIndex) -> MpvResult<String> {
+    pub(super) async fn media_title(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<String> {
         self.simple_prop(index, "media-title")
     }
 
-    pub(super) async fn percent_position(&self, index: PlayerIndex) -> MpvResult<f64> {
+    pub(super) async fn percent_position(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<f64> {
         self.simple_prop(index, "percent-pos")
     }
 
-    pub(super) async fn queue(&self, index: PlayerIndex) -> MpvResult<Vec<QueueItem>> {
+    pub(super) async fn queue(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<Vec<QueueItem>> {
         self.current_player(index)?
             .playlist()?
             .into_iter()
             .collect()
     }
 
-    pub(super) fn queue_is_looping(&self, player: &Mpv) -> MpvResult<LoopStatus> {
+    pub(super) fn queue_is_looping(
+        &self,
+        player: &Mpv,
+    ) -> MpvResult<LoopStatus> {
         let s = simple_prop_logged::<String>(player, "loop-playlist")?;
         s.parse::<LoopStatus>()
             .map_err(|error| MpvError::InvalidData {
@@ -671,11 +783,17 @@ impl PlayersDaemon {
             })
     }
 
-    pub(super) async fn queue_position(&self, index: PlayerIndex) -> MpvResult<i64> {
+    pub(super) async fn queue_position(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<i64> {
         self.simple_prop(index, "playlist-pos")
     }
 
-    pub(super) async fn queue_size(&self, index: PlayerIndex) -> MpvResult<i64> {
+    pub(super) async fn queue_size(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<i64> {
         self.simple_prop(index, "playlist-count")
     }
 
@@ -691,7 +809,11 @@ impl PlayersDaemon {
         self.simple_prop(index, &format!("playlist/{at}/filename"))
     }
 
-    pub(super) async fn queue_at(&self, index: PlayerIndex, at: usize) -> MpvResult<QueueItem> {
+    pub(super) async fn queue_at(
+        &self,
+        index: PlayerIndex,
+        at: usize,
+    ) -> MpvResult<QueueItem> {
         libmpv_parsing::parse_queue_item(
             self.simple_prop::<MpvNode>(index, &format!("playlist/{at}"))?,
         )
@@ -701,7 +823,10 @@ impl PlayersDaemon {
         self.simple_prop(index, "duration")
     }
 
-    pub(super) async fn playback_time(&self, index: PlayerIndex) -> MpvResult<f64> {
+    pub(super) async fn playback_time(
+        &self,
+        index: PlayerIndex,
+    ) -> MpvResult<f64> {
         self.simple_prop(index, "playback-time")
     }
 }
@@ -745,7 +870,9 @@ async fn handle_messages(
                 .await
                 .map(Response::Create)
         }
-        MessageKind::PlayerList => Ok(Response::PlayerList(players.lock().await.list().collect())),
+        MessageKind::PlayerList => {
+            Ok(Response::PlayerList(players.lock().await.list().collect()))
+        }
         MessageKind::LastQueue => players
             .lock()
             .await
@@ -828,7 +955,9 @@ async fn handle_messages(
     }
 }
 
-async fn event_stream(daemon: SharedPlayersDaemon) -> impl Stream<Item = PlayerEvent> {
+async fn event_stream(
+    daemon: SharedPlayersDaemon,
+) -> impl Stream<Item = PlayerEvent> {
     let (current_default, events) = {
         let daemon = daemon.lock().await;
         (
@@ -876,10 +1005,13 @@ pub async fn start_daemon_if_running_as_daemon(
     d_opts: PlayersDaemonOptions,
     opts: DaemonOptions,
 ) -> Result<(), super::Error> {
-    if let Some(builder) = super::connection::PLAYERS.build_daemon_process().await {
+    if let Some(builder) =
+        super::connection::PLAYERS.build_daemon_process().await
+    {
         let players = Arc::new(Mutex::new(PlayersDaemon::new(d_opts)));
         if opts.create_default_player {
-            PlayersDaemon::create(players.clone(), vec![], d_opts.with_video).await?;
+            PlayersDaemon::create(players.clone(), vec![], d_opts.with_video)
+                .await?;
         }
         let run_with_events = builder.run_with_events(
             {

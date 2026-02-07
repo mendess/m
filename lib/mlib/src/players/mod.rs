@@ -15,14 +15,29 @@ use serde::{Deserialize, Serialize};
 use crate::Item;
 
 #[cfg(feature = "player")]
-pub use daemon::{DaemonOptions, PlayersDaemonOptions, start_daemon_if_running_as_daemon};
+pub use daemon::{
+    DaemonOptions, PlayersDaemonOptions, start_daemon_if_running_as_daemon,
+};
 pub use error::Error;
-pub use legacy_back_compat::{legacy_socket_for, override_legacy_socket_base_dir};
+pub use legacy_back_compat::{
+    legacy_socket_for, override_legacy_socket_base_dir,
+};
 
 use self::event::PlayerEvent;
 
 /// The index of a player
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 #[serde(transparent)]
 pub struct PlayerIndex(Option<usize>);
 
@@ -84,7 +99,9 @@ impl PlayerLink {
     pub fn linked_to(&self, user: String) -> Self {
         Self {
             index: self.index,
-            daemon: StaticOrOwned::Owned(self.daemon.overriding_socket_namespace_with(user)),
+            daemon: StaticOrOwned::Owned(
+                self.daemon.overriding_socket_namespace_with(user),
+            ),
         }
     }
 
@@ -217,7 +234,18 @@ pub struct QueueItemStatus {
     pub playing: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Copy,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub enum LoopStatus {
     Inf,
     Force,
@@ -293,12 +321,14 @@ macro_rules! commands {(
 impl PlayerLink {
     pub async fn subscribe(
         &self,
-    ) -> Result<impl Stream<Item = io::Result<PlayerEvent>> + use<>, Error> {
+    ) -> Result<impl Stream<Item = io::Result<PlayerEvent>> + use<>, Error>
+    {
         Ok(self.daemon.subscribe().await?)
     }
 }
 
-pub async fn subscribe() -> Result<impl Stream<Item = io::Result<PlayerEvent>>, Error> {
+pub async fn subscribe()
+-> Result<impl Stream<Item = io::Result<PlayerEvent>>, Error> {
     Ok(connection::PLAYERS.subscribe().await?)
 }
 
@@ -327,7 +357,9 @@ pub async fn all() -> Result<Vec<PlayerLink>, Error> {
         .exchange(Message::new(PlayerIndex(None), MessageKind::PlayerList))
         .await??
     {
-        Response::PlayerList(l) => Ok(l.into_iter().map(PlayerLink::from).collect()),
+        Response::PlayerList(l) => {
+            Ok(l.into_iter().map(PlayerLink::from).collect())
+        }
         x => panic!("invalid response: {x:?}"),
     }
 }
@@ -399,7 +431,10 @@ impl PlayerLink {
     }
 }
 
-pub async fn smart_queue(item: Item, opts: SmartQueueOpts) -> Result<SmartQueueSummary, Error> {
+pub async fn smart_queue(
+    item: Item,
+    opts: SmartQueueOpts,
+) -> Result<SmartQueueSummary, Error> {
     PlayerLink::current().smart_queue(item, opts).await
 }
 

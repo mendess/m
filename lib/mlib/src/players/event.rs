@@ -123,7 +123,9 @@ impl OwnedMpvNode {
         }
     }
 
-    pub fn into_map(self) -> Result<HashMap<String, Self>, super::error::MpvError> {
+    pub fn into_map(
+        self,
+    ) -> Result<HashMap<String, Self>, super::error::MpvError> {
         match self {
             Self::Map(m) => Ok(m),
             Self::Invalid(e) => Err(e),
@@ -147,10 +149,12 @@ impl From<&MpvNode> for OwnedMpvNode {
             Ok(MpvNodeValue::Flag(f)) => OwnedMpvNode::Flag(f),
             Ok(MpvNodeValue::Int64(i)) => OwnedMpvNode::Int64(i),
             Ok(MpvNodeValue::Double(d)) => OwnedMpvNode::Double(d),
-            Ok(MpvNodeValue::Array(a)) => OwnedMpvNode::Array(a.map(Into::into).collect()),
-            Ok(MpvNodeValue::Map(m)) => {
-                OwnedMpvNode::Map(m.map(|(k, v)| (k.into(), v.into())).collect())
+            Ok(MpvNodeValue::Array(a)) => {
+                OwnedMpvNode::Array(a.map(Into::into).collect())
             }
+            Ok(MpvNodeValue::Map(m)) => OwnedMpvNode::Map(
+                m.map(|(k, v)| (k.into(), v.into())).collect(),
+            ),
             Ok(MpvNodeValue::None) => OwnedMpvNode::None,
             Err(e) => OwnedMpvNode::Invalid(e.into()),
         }
@@ -244,7 +248,11 @@ impl EventSubscriber {
 }
 
 #[cfg(feature = "player")]
-pub(super) fn event_listener<S>(mpv: Weak<Mpv>, player_index: usize, shutdown: S) -> EventSubscriber
+pub(super) fn event_listener<S>(
+    mpv: Weak<Mpv>,
+    player_index: usize,
+    shutdown: S,
+) -> EventSubscriber
 where
     S: Future<Output = ()> + Send + 'static,
 {
@@ -271,7 +279,9 @@ where
                 events.enable_event(events::mpv_event_id::StartFile)?;
                 let mut first_event = true;
                 loop {
-                    let Some(ev) = events.wait_event(-1. /* never timeout */) else {
+                    let Some(ev) =
+                        events.wait_event(-1. /* never timeout */)
+                    else {
                         tracing::debug!("got none event");
                         continue;
                     };

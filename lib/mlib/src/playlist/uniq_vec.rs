@@ -2,7 +2,9 @@ use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(
+    Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone,
+)]
 #[serde(transparent)]
 pub struct UniqVec<T> {
     v: Vec<T>,
@@ -60,7 +62,10 @@ impl<T> UniqVec<T> {
         self.v.retain_mut(f)
     }
 
-    pub fn extract_if(&mut self, f: impl FnMut(&mut T) -> bool) -> impl Iterator<Item = T> {
+    pub fn extract_if(
+        &mut self,
+        f: impl FnMut(&mut T) -> bool,
+    ) -> impl Iterator<Item = T> {
         self.v.extract_if(.., f)
     }
 }

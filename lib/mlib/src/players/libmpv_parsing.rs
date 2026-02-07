@@ -36,9 +36,22 @@ impl Parse for QueueItem {
                         v.to_map().ok_or("wrong node type, expected map")?,
                     )?)
                 }
-                "current" => current = Some(v.to_bool().ok_or("wrong node type, expected bool")?),
-                "playing" => playing = Some(v.to_bool().ok_or("wrong node type, expected bool")?),
-                "id" => id = Some(v.to_i64().ok_or("wrong node type, expected i64")? as usize),
+                "current" => {
+                    current = Some(
+                        v.to_bool().ok_or("wrong node type, expected bool")?,
+                    )
+                }
+                "playing" => {
+                    playing = Some(
+                        v.to_bool().ok_or("wrong node type, expected bool")?,
+                    )
+                }
+                "id" => {
+                    id = Some(
+                        v.to_i64().ok_or("wrong node type, expected i64")?
+                            as usize,
+                    )
+                }
                 _ => {}
             };
         }
@@ -66,8 +79,16 @@ impl Parse for QueueItemStatus {
         let mut playing = None;
         for (k, v) in m {
             match k {
-                "current" => current = Some(v.to_bool().ok_or("wrong node type, expected bool")?),
-                "playing" => playing = Some(v.to_bool().ok_or("wrong node type, expected bool")?),
+                "current" => {
+                    current = Some(
+                        v.to_bool().ok_or("wrong node type, expected bool")?,
+                    )
+                }
+                "playing" => {
+                    playing = Some(
+                        v.to_bool().ok_or("wrong node type, expected bool")?,
+                    )
+                }
                 _ => {}
             };
         }

@@ -1,7 +1,9 @@
 use mlib::{item::link::ChannelLink, ytdl::YtdlBuilder};
 use tokio_stream::StreamExt as _;
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _};
+use tracing_subscriber::{
+    EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _,
+};
 
 #[tokio::main]
 async fn main() {

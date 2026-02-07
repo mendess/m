@@ -13,7 +13,9 @@ use std::{
 };
 
 use derive_more::derive::From;
-pub use link::{ChannelLink, Link, PlaylistId, PlaylistLink, VideoId, VideoLink};
+pub use link::{
+    ChannelLink, Link, PlaylistId, PlaylistLink, VideoId, VideoLink,
+};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -131,7 +133,9 @@ impl Item {
 
                 match title {
                     Ok(title) => {
-                        if let Err(e) = title_cache::put_by_search(s, &title).await {
+                        if let Err(e) =
+                            title_cache::put_by_search(s, &title).await
+                        {
                             tracing::warn!(error = ?e, "failed to cache title");
                         }
                         title.into()
@@ -257,7 +261,9 @@ impl AsRef<OsStr> for Item {
 }
 
 pub fn path_to_title(path: &Path) -> String {
-    match clean_up_path(&path).or_else(|| path.file_stem().and_then(OsStr::to_str)) {
+    match clean_up_path(&path)
+        .or_else(|| path.file_stem().and_then(OsStr::to_str))
+    {
         Some(p) => p.to_string(),
         None => format!("{}", path.display()),
     }
@@ -281,8 +287,12 @@ impl From<String> for Item {
             match Link::try_from(s) {
                 Ok(l) => Item::Link(l),
                 Err(s) => match id_from_path(&s) {
-                    Some(ItemId::VideoId(id)) => Item::Link(VideoLink::from_id(id).into()),
-                    Some(ItemId::BangerId(id)) => Item::Link(link::BangerLink::from_id(id).into()),
+                    Some(ItemId::VideoId(id)) => {
+                        Item::Link(VideoLink::from_id(id).into())
+                    }
+                    Some(ItemId::BangerId(id)) => {
+                        Item::Link(link::BangerLink::from_id(id).into())
+                    }
                     None => Self::File(PathBuf::from(s)),
                 },
             }
@@ -291,7 +301,8 @@ impl From<String> for Item {
 }
 
 pub(crate) fn id_range(s: &str) -> Option<Range<usize>> {
-    let front_striped = s.strip_suffix("=m").or_else(|| s.strip_suffix("=mart"))?;
+    let front_striped =
+        s.strip_suffix("=m").or_else(|| s.strip_suffix("=mart"))?;
     let start_idx = front_striped.char_indices().rfind(|(_, c)| *c == '=')?.0;
     if front_striped.len() == start_idx {
         return None;
@@ -307,7 +318,8 @@ pub(crate) fn id_from_path<P: AsRef<Path>>(p: &P) -> Option<ItemId<'_>> {
         if new == name {
             break name.to_str()?;
         }
-        if new.as_bytes().ends_with(b"=m") || new.as_bytes().ends_with(b"=mart") {
+        if new.as_bytes().ends_with(b"=m") || new.as_bytes().ends_with(b"=mart")
+        {
             break new.to_str()?;
         }
         name = Path::new(new);

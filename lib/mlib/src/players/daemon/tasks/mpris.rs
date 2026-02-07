@@ -5,9 +5,9 @@ use std::collections::{HashMap, hash_map::Entry};
 use crate::players::daemon;
 use futures_util::{Stream, StreamExt, TryFutureExt, TryStreamExt};
 use mpris_server::{
-    LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, Playlist, PlaylistId,
-    PlaylistOrdering, PlaylistsInterface, RootInterface, Time, TrackId, TrackListInterface, Uri,
-    Volume, builder::MetadataBuilder,
+    LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface,
+    Playlist, PlaylistId, PlaylistOrdering, PlaylistsInterface, RootInterface,
+    Time, TrackId, TrackListInterface, Uri, Volume, builder::MetadataBuilder,
 };
 use zbus::fdo;
 
@@ -65,7 +65,10 @@ impl RootInterface for MprisPlayer {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn set_fullscreen(&self, _fullscreen: bool) -> Result<(), zbus::Error> {
+    async fn set_fullscreen(
+        &self,
+        _fullscreen: bool,
+    ) -> Result<(), zbus::Error> {
         Ok(())
     }
 
@@ -166,7 +169,11 @@ impl PlayerInterface for MprisPlayer {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
+    async fn set_position(
+        &self,
+        track_id: TrackId,
+        position: Time,
+    ) -> fdo::Result<()> {
         let Some(Ok(track_id_pos)) = track_id
             .as_str()
             .split('/')
@@ -222,15 +229,18 @@ impl PlayerInterface for MprisPlayer {
             .queue_is_looping(current)
             .map_err(to_fdo_err)
             .map(|status| match status {
-                daemon::LoopStatus::Inf | daemon::LoopStatus::Force | daemon::LoopStatus::N(_) => {
-                    LoopStatus::Playlist
-                }
+                daemon::LoopStatus::Inf
+                | daemon::LoopStatus::Force
+                | daemon::LoopStatus::N(_) => LoopStatus::Playlist,
                 daemon::LoopStatus::No => LoopStatus::None,
             })
     }
 
     #[tracing::instrument(skip(self))]
-    async fn set_loop_status(&self, loop_status: LoopStatus) -> zbus::Result<()> {
+    async fn set_loop_status(
+        &self,
+        loop_status: LoopStatus,
+    ) -> zbus::Result<()> {
         self.daemon
             .lock()
             .await
@@ -281,9 +291,11 @@ impl PlayerInterface for MprisPlayer {
         let pos = usize::try_from(pos).map_err(to_fdo_err)?;
         let id = daemon.queue(C).await.map_err(to_fdo_err)?[pos].id;
         let title = daemon.media_title(C).await.map_err(to_fdo_err)?;
-        let chapter_metadata = daemon.chapter_metadata(player).await.map_err(to_fdo_err)?;
+        let chapter_metadata =
+            daemon.chapter_metadata(player).await.map_err(to_fdo_err)?;
 
-        let builder = MetadataBuilder::default().trackid(track_id_on_player(player, id));
+        let builder =
+            MetadataBuilder::default().trackid(track_id_on_player(player, id));
 
         let builder = if let Some(m) = chapter_metadata {
             builder
@@ -401,8 +413,12 @@ impl From<PlayerIndex> for PlaylistId {
 
 fn track_id_on_player(pos: PlayerIndex, track_id: usize) -> TrackId {
     TrackId::try_from(match pos.0 {
-        Some(id) => format!("{OBJ_PREFIX}/{OBJ_PLAYER}/{id}/{OBJ_TRACK_ID}/{track_id}"),
-        None => format!("{OBJ_PREFIX}/{OBJ_PLAYER}/current/{OBJ_TRACK_ID}/{track_id}"),
+        Some(id) => {
+            format!("{OBJ_PREFIX}/{OBJ_PLAYER}/{id}/{OBJ_TRACK_ID}/{track_id}")
+        }
+        None => format!(
+            "{OBJ_PREFIX}/{OBJ_PLAYER}/current/{OBJ_TRACK_ID}/{track_id}"
+        ),
     })
     .unwrap()
 }
@@ -451,7 +467,10 @@ impl From<PlayerIndex> for Playlist {
 
 impl PlaylistsInterface for MprisPlayer {
     #[tracing::instrument(skip(self))]
-    async fn activate_playlist(&self, playlist_id: PlaylistId) -> fdo::Result<()> {
+    async fn activate_playlist(
+        &self,
+        playlist_id: PlaylistId,
+    ) -> fdo::Result<()> {
         let id = playlist_id.try_into()?;
         let daemon = self.daemon.lock().await;
         let _exists = daemon.is_paused(id).await.map_err(to_fdo_err)?;
@@ -499,7 +518,10 @@ impl PlaylistsInterface for MprisPlayer {
 
 impl TrackListInterface for MprisPlayer {
     #[tracing::instrument(skip(self))]
-    async fn get_tracks_metadata(&self, track_ids: Vec<TrackId>) -> fdo::Result<Vec<Metadata>> {
+    async fn get_tracks_metadata(
+        &self,
+        track_ids: Vec<TrackId>,
+    ) -> fdo::Result<Vec<Metadata>> {
         let daemon = self.daemon.lock().await;
 
         let mut queues = HashMap::new();
@@ -509,7 +531,8 @@ impl TrackListInterface for MprisPlayer {
             let (player, pos) = track_id_to_parts(&track_id)?;
             let queue = match queues.entry(player) {
                 Entry::Vacant(slot) => {
-                    let queue = daemon.queue(player).await.map_err(to_fdo_err)?;
+                    let queue =
+                        daemon.queue(player).await.map_err(to_fdo_err)?;
                     slot.insert(queue)
                 }
                 Entry::Occupied(queue) => queue.into_mut(),
@@ -582,7 +605,9 @@ impl TrackListInterface for MprisPlayer {
     async fn tracks(&self) -> fdo::Result<Vec<TrackId>> {
         let daemon = self.daemon.lock().await;
         let v = futures_util::stream::iter(daemon.list())
-            .then(|player| daemon.queue(player).map_ok(move |queue| (player, queue)))
+            .then(|player| {
+                daemon.queue(player).map_ok(move |queue| (player, queue))
+            })
             .map_ok(|(player, queue)| {
                 queue
                     .into_iter()
@@ -604,8 +629,10 @@ impl TrackListInterface for MprisPlayer {
     }
 }
 
-pub async fn signal_mpris_events<S>(server: mpris_server::Server<MprisPlayer>, events: S)
-where
+pub async fn signal_mpris_events<S>(
+    server: mpris_server::Server<MprisPlayer>,
+    events: S,
+) where
     S: Stream<Item = PlayerEvent>,
 {
     // Missing Property signals
@@ -624,15 +651,22 @@ where
     // - PlaylistsCount when a new player is created.
     use mpris_server::PlaylistsProperty;
 
-    async fn emit_seek(server: &mpris_server::Server<MprisPlayer>, index: PlayerIndex) {
-        let playback_time = server.imp().daemon.lock().await.playback_time(index).await;
+    async fn emit_seek(
+        server: &mpris_server::Server<MprisPlayer>,
+        index: PlayerIndex,
+    ) {
+        let playback_time =
+            server.imp().daemon.lock().await.playback_time(index).await;
         match playback_time.map(|t| Time::from_secs(t as i64)) {
             Ok(position) => {
                 if let Err(e) = server.emit(Signal::Seeked { position }).await {
                     tracing::error!(?e, "failed signal seeked");
                 }
             }
-            Err(e) => tracing::error!(?e, "failed to get playback time when signaling"),
+            Err(e) => tracing::error!(
+                ?e,
+                "failed to get playback time when signaling"
+            ),
         }
     }
     let mut events = std::pin::pin!(events);
@@ -658,13 +692,16 @@ where
                     );
                 }
             }
-            event::OwnedLibMpvEvent::PropertyChange { name, change, .. } => {
+            event::OwnedLibMpvEvent::PropertyChange {
+                name, change, ..
+            } => {
                 let properties = match name.as_str() {
                     "pause" => {
                         let Ok(paused) = change.into_bool() else {
                             continue;
                         };
-                        emit_seek(&server, PlayerIndex::of(event.player_index)).await;
+                        emit_seek(&server, PlayerIndex::of(event.player_index))
+                            .await;
                         Property::PlaybackStatus(if paused {
                             PlaybackStatus::Paused
                         } else {
@@ -686,13 +723,17 @@ where
                     _ => continue,
                 };
                 if let Err(e) = server.properties_changed([properties]).await {
-                    tracing::error!(?e, "failed to emit properties_changed playback status");
+                    tracing::error!(
+                        ?e,
+                        "failed to emit properties_changed playback status"
+                    );
                 }
             }
             event::OwnedLibMpvEvent::StartFile
             | event::OwnedLibMpvEvent::EndFile(_)
             | event::OwnedLibMpvEvent::PlaybackRestart
-            | event::OwnedLibMpvEvent::FileLoaded => { /* TODO maybe these are important */ }
+            | event::OwnedLibMpvEvent::FileLoaded => { /* TODO maybe these are important */
+            }
             event::OwnedLibMpvEvent::GetPropertyReply { .. }
             | event::OwnedLibMpvEvent::SetPropertyReply(_)
             | event::OwnedLibMpvEvent::CommandReply(_)

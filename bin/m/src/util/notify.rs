@@ -121,7 +121,9 @@ impl<'path> Notify<'path> {
             if crossterm::terminal::is_raw_mode_enabled()? {
                 for line in s.split_inclusive('\n') {
                     if line.ends_with('\n') {
-                        stdout.queue(Print(&line[..(line.len().saturating_sub(1))]))?;
+                        stdout.queue(Print(
+                            &line[..(line.len().saturating_sub(1))],
+                        ))?;
                         stdout.queue(MoveToNextLine(1))?;
                     } else {
                         stdout.queue(Print(line))?;
@@ -139,9 +141,11 @@ impl<'path> Notify<'path> {
                 let is_tty = stdout.is_tty();
                 is_tty.paint(&mut stdout, SetAttribute(Attribute::Bold))?;
                 if self.error {
-                    is_tty.paint(&mut stdout, SetForegroundColor(Color::Red))?;
+                    is_tty
+                        .paint(&mut stdout, SetForegroundColor(Color::Red))?;
                     stdout.queue(Print("Error: "))?;
-                    is_tty.paint(&mut stdout, SetForegroundColor(Color::Reset))?;
+                    is_tty
+                        .paint(&mut stdout, SetForegroundColor(Color::Reset))?;
                 }
                 for (s, c) in triplets(&self.title) {
                     print(&mut stdout, s)?;
@@ -233,7 +237,10 @@ impl<'s> Iterator for Triplets<'s> {
                     self.s = "";
                     Some(r)
                 } else {
-                    let r = (&self.s[..i], &self.s[end_of_symbol..(end_of_symbol + 1)]);
+                    let r = (
+                        &self.s[..i],
+                        &self.s[end_of_symbol..(end_of_symbol + 1)],
+                    );
                     self.s = &self.s[(end_of_symbol + 1)..];
                     Some(r)
                 }

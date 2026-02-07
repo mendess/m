@@ -106,21 +106,31 @@ where
             let mut editor = rustyline::DefaultEditor::new()?;
             let mut rl_prompt = format!("{prompt}: ");
             loop {
-                match editor.readline_with_initial(&rl_prompt, (default.unwrap_or_default(), "")) {
-                    Ok(input) => match (!input.is_empty()).then(|| input.parse()) {
-                        Some(Ok(t)) => match validation(&t) {
-                            Ok(()) => return Ok(Some(t)),
-                            Err(reason) => {
+                match editor.readline_with_initial(
+                    &rl_prompt,
+                    (default.unwrap_or_default(), ""),
+                ) {
+                    Ok(input) => {
+                        match (!input.is_empty()).then(|| input.parse()) {
+                            Some(Ok(t)) => match validation(&t) {
+                                Ok(()) => return Ok(Some(t)),
+                                Err(reason) => {
+                                    rl_prompt.clear();
+                                    writeln!(
+                                        rl_prompt,
+                                        "error: {reason}. {prompt}: "
+                                    )
+                                    .unwrap();
+                                }
+                            },
+                            Some(Err(e)) => {
                                 rl_prompt.clear();
-                                writeln!(rl_prompt, "error: {reason}. {prompt}: ").unwrap();
+                                writeln!(rl_prompt, "error: {e}. {prompt}: ")
+                                    .unwrap();
                             }
-                        },
-                        Some(Err(e)) => {
-                            rl_prompt.clear();
-                            writeln!(rl_prompt, "error: {e}. {prompt}: ").unwrap();
+                            None => return Ok(None),
                         }
-                        None => return Ok(None),
-                    },
+                    }
                     Err(ReadlineError::Eof) => return Ok(None),
                     Err(ReadlineError::Interrupted) => bail!("canceled"),
                     Err(ReadlineError::WindowResized) => {}
@@ -134,7 +144,9 @@ where
                 Ok(Some(r)) => match r.parse() {
                     Ok(t) => match validation(&t) {
                         Ok(()) => return Ok(Some(t)),
-                        Err(reason) => error!("invalid response"; content: "{reason}"),
+                        Err(reason) => {
+                            error!("invalid response"; content: "{reason}")
+                        }
                     },
                     Err(e) => error!("invalid response"; content: "{e}"),
                 },
@@ -153,7 +165,12 @@ where
     let mut command = Command::new("fzf");
     let FeedAndRead { line, status, .. } = feed_and_read(
         items,
-        command.args(["-i", "--prompt", &format!("{prompt} "), "--print-query"]),
+        command.args([
+            "-i",
+            "--prompt",
+            &format!("{prompt} "),
+            "--print-query",
+        ]),
     )
     .await?;
     match status.code() {
@@ -172,7 +189,11 @@ where
     }
 }
 
-async fn dmenu<I, S>(items: I, prompt: &str, list_len: usize) -> anyhow::Result<Option<String>>
+async fn dmenu<I, S>(
+    items: I,
+    prompt: &str,
+    list_len: usize,
+) -> anyhow::Result<Option<String>>
 where
     S: AsRef<str>,
     I: Iterator<Item = S>,
@@ -204,7 +225,10 @@ struct FeedAndRead {
     status: ExitStatus,
 }
 
-async fn feed_and_read<I, S>(items: I, command: &mut Command) -> anyhow::Result<FeedAndRead>
+async fn feed_and_read<I, S>(
+    items: I,
+    command: &mut Command,
+) -> anyhow::Result<FeedAndRead>
 where
     S: AsRef<str>,
     I: Iterator<Item = S>,
@@ -262,7 +286,8 @@ pub async fn interative_select<E: Display, const K: usize>(
 
     let start_position = raw_mode.guarantee_space(
         &mut stdout,
-        u16::try_from(table.len()).context("too many items in the input table")?,
+        u16::try_from(table.len())
+            .context("too many items in the input table")?,
     )?;
 
     loop {
@@ -295,7 +320,8 @@ pub async fn interative_select<E: Display, const K: usize>(
                 code: KeyCode::Char('j'),
                 ..
             }) => {
-                selected = (selected + 1).clamp(0, table.len().saturating_sub(1));
+                selected =
+                    (selected + 1).clamp(0, table.len().saturating_sub(1));
             }
             Event::Key(
                 KeyEvent {
@@ -311,7 +337,9 @@ pub async fn interative_select<E: Display, const K: usize>(
                 code: KeyCode::Char(ch),
                 ..
             }) => {
-                if let Some(ckey) = custom_keybinds.iter().find(|ckey| ch == ckey.key) {
+                if let Some(ckey) =
+                    custom_keybinds.iter().find(|ckey| ch == ckey.key)
+                {
                     (ckey.action)(&table[selected], selected).await;
                 }
             }

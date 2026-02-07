@@ -9,7 +9,8 @@ pub async fn reset(player: Weak<Player>) {
     tracing::info!("starting");
     let mut last_pos = 0;
     while let Ok(e) = events.recv().await {
-        let OwnedLibMpvEvent::PropertyChange { name, change, .. } = e.event else {
+        let OwnedLibMpvEvent::PropertyChange { name, change, .. } = e.event
+        else {
             continue;
         };
         if name != "playlist-pos" {

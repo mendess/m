@@ -32,7 +32,9 @@ pub struct DaemonProcess<'s, M, R, E = Infallible> {
 }
 
 impl<'s, M, R, E> DaemonProcess<'s, M, R, E> {
-    pub async fn new(daemon: &'s Daemon<M, R, E>) -> DaemonProcess<'s, M, R, E> {
+    pub async fn new(
+        daemon: &'s Daemon<M, R, E>,
+    ) -> DaemonProcess<'s, M, R, E> {
         Self {
             socket_path: daemon.socket_path().await,
             shutdown: None,
@@ -136,8 +138,11 @@ where
     }
 }
 
-async fn handle_task<M, H, Fut, E, EFut>(mut stream: UnixStream, mut handler: H, events: E)
-where
+async fn handle_task<M, H, Fut, E, EFut>(
+    mut stream: UnixStream,
+    mut handler: H,
+    events: E,
+) where
     E: FnOnce() -> EFut,
     EFut: Future,
     EFut::Output: Stream,
@@ -168,7 +173,9 @@ where
                     }
                     Err(_) => {
                         let e = match serde_json::from_str(&line) {
-                            Ok(m) => send_msg(&mut send, &handler(m).await).await,
+                            Ok(m) => {
+                                send_msg(&mut send, &handler(m).await).await
+                            }
                             Err(e) => send_msg(&mut send, &e.to_string()).await,
                         };
                         if let Err(e) = e {
@@ -185,7 +192,10 @@ where
         }
     }
 
-    async fn send_msg<M: Serialize>(sink: &mut BufWriter<WriteHalf<'_>>, m: &M) -> io::Result<()> {
+    async fn send_msg<M: Serialize>(
+        sink: &mut BufWriter<WriteHalf<'_>>,
+        m: &M,
+    ) -> io::Result<()> {
         let response = serde_json::to_string(m).unwrap();
         debug!(?response, "sending response");
         sink.write_all(response.as_bytes()).await?;

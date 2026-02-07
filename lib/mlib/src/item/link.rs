@@ -87,7 +87,9 @@ impl Link {
     pub fn from_id(id: super::ItemId<'_>) -> Self {
         match id {
             super::ItemId::VideoId(video_id) => Self::from_video_id(video_id),
-            super::ItemId::BangerId(banger_id) => Self::from_banger_id(banger_id),
+            super::ItemId::BangerId(banger_id) => {
+                Self::from_banger_id(banger_id)
+            }
         }
     }
 
@@ -114,14 +116,20 @@ impl Link {
     pub fn banger_id(&self) -> Option<&BangerId> {
         match self {
             Self::Banger(l) => Some(l.id()),
-            Self::Playlist(_) | Self::Video(_) | Self::Channel(_) | Self::OtherPlatform(_) => None,
+            Self::Playlist(_)
+            | Self::Video(_)
+            | Self::Channel(_)
+            | Self::OtherPlatform(_) => None,
         }
     }
 
     pub fn playlist_id(&self) -> Option<&PlaylistId> {
         match self {
             Self::Playlist(l) => Some(l.id()),
-            Self::Video(_) | Self::Banger(_) | Self::Channel(_) | Self::OtherPlatform(_) => None,
+            Self::Video(_)
+            | Self::Banger(_)
+            | Self::Channel(_)
+            | Self::OtherPlatform(_) => None,
         }
     }
 
@@ -156,7 +164,10 @@ impl Link {
     pub fn as_banger(&self) -> Option<&BangerLink> {
         match self {
             Self::Banger(l) => Some(l),
-            Self::Playlist(_) | Self::Channel(_) | Self::Video(_) | Self::OtherPlatform(_) => None,
+            Self::Playlist(_)
+            | Self::Channel(_)
+            | Self::Video(_)
+            | Self::OtherPlatform(_) => None,
         }
     }
 
@@ -164,21 +175,29 @@ impl Link {
         match self {
             Self::Video(l) => Ok(l),
             Self::Playlist(l) => l.into_video_link().map_err(Self::Playlist),
-            s @ (Self::Banger(_) | Self::Channel(_) | Self::OtherPlatform(_)) => Err(s),
+            s @ (Self::Banger(_)
+            | Self::Channel(_)
+            | Self::OtherPlatform(_)) => Err(s),
         }
     }
 
     pub fn as_playlist(&self) -> Option<&PlaylistLink> {
         match self {
             Self::Playlist(l) => Some(l),
-            Self::Video(_) | Self::Channel(_) | Self::Banger(_) | Self::OtherPlatform(_) => None,
+            Self::Video(_)
+            | Self::Channel(_)
+            | Self::Banger(_)
+            | Self::OtherPlatform(_) => None,
         }
     }
 
     pub fn as_playlist_mut(&mut self) -> Option<&mut PlaylistLink> {
         match self {
             Self::Playlist(l) => Some(l),
-            Self::Video(_) | Self::Banger(_) | Self::Channel(_) | Self::OtherPlatform(_) => None,
+            Self::Video(_)
+            | Self::Banger(_)
+            | Self::Channel(_)
+            | Self::OtherPlatform(_) => None,
         }
     }
 }
@@ -267,7 +286,9 @@ impl VideoLink {
         match YtdlBuilder::new(self).get_title().request().await {
             Ok(r) => {
                 let title = r.title();
-                if let Err(e) = title_cache::put_by_vid_id(self.id(), &title).await {
+                if let Err(e) =
+                    title_cache::put_by_vid_id(self.id(), &title).await
+                {
                     tracing::warn!(error = ?e, "failed to cache title");
                 }
                 title
@@ -408,7 +429,9 @@ impl PlaylistLink {
 
     pub fn as_video_link(&self) -> Result<&VideoLink, &Self> {
         if VideoLink::is_video_link(&self.0) {
-            Ok(unsafe { std::mem::transmute::<&PlaylistLink, &VideoLink>(self) })
+            Ok(unsafe {
+                std::mem::transmute::<&PlaylistLink, &VideoLink>(self)
+            })
         } else {
             Err(self)
         }
@@ -555,8 +578,9 @@ impl BangerLink {
 
     fn is_valid_link(s: &Url) -> bool {
         s.scheme().starts_with("http")
-            && s.host_str()
-                .is_some_and(|host| host.contains("blind-eternities.mendess.xyz"))
+            && s.host_str().is_some_and(|host| {
+                host.contains("blind-eternities.mendess.xyz")
+            })
             && s.path().starts_with("/playlist/song/audio")
     }
 
@@ -654,10 +678,8 @@ mod test {
 
     #[test]
     fn strip_video_id() {
-        const BEFORE: &str =
-            "https://www.youtube.com/watch?v=UpIBKNxSeZU&list=PL17PSucW5L7nEPyX3tqEzq_wmyYk2IkXr";
-        const AFTER: &str =
-            "https://www.youtube.com/playlist?list=PL17PSucW5L7nEPyX3tqEzq_wmyYk2IkXr";
+        const BEFORE: &str = "https://www.youtube.com/watch?v=UpIBKNxSeZU&list=PL17PSucW5L7nEPyX3tqEzq_wmyYk2IkXr";
+        const AFTER: &str = "https://www.youtube.com/playlist?list=PL17PSucW5L7nEPyX3tqEzq_wmyYk2IkXr";
 
         let playlist_link = PlaylistLink::try_from(BEFORE.to_string())
             .unwrap()

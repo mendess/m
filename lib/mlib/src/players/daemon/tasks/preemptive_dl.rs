@@ -23,7 +23,9 @@ pub struct Task {
 
 fn cache_dir() -> Option<PathBuf> {
     let Some(mut cache_dir) = dirs::cache_dir() else {
-        tracing::warn!("cache dir not present, not preemptively downloading song");
+        tracing::warn!(
+            "cache dir not present, not preemptively downloading song"
+        );
         return None;
     };
     cache_dir.push("m");
@@ -60,7 +62,9 @@ async fn do_it(dl_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
         let Ok(from) = player.simple_prop::<i64>("playlist-count") else {
             return;
         };
-        let Some(from) = usize::try_from(from).ok().and_then(|f| f.checked_sub(1)) else {
+        let Some(from) =
+            usize::try_from(from).ok().and_then(|f| f.checked_sub(1))
+        else {
             return;
         };
         tracing::debug!(?from);
@@ -68,11 +72,12 @@ async fn do_it(dl_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
             let Ok(playlist) = player.playlist() else {
                 return;
             };
-            let position = playlist.into_iter().enumerate().find_map(|(pos, item)| {
-                item.as_ref()
-                    .is_ok_and(|i| i.filename == song.as_str())
-                    .then_some(pos)
-            });
+            let position =
+                playlist.into_iter().enumerate().find_map(|(pos, item)| {
+                    item.as_ref()
+                        .is_ok_and(|i| i.filename == song.as_str())
+                        .then_some(pos)
+                });
             match position {
                 Some(position) => position,
                 None => return,
@@ -84,16 +89,20 @@ async fn do_it(dl_dir: &Path, song: &VideoLink, player: Weak<Mpv>) {
         };
         tracing::debug!(?current_pos);
         if to == current_pos as usize {
-            tracing::debug!("playing this song right now. Waiting for a chance to replace");
+            tracing::debug!(
+                "playing this song right now. Waiting for a chance to replace"
+            );
             drop(permit);
             drop(player);
             tokio::time::sleep(Duration::from_secs(60)).await;
             continue;
         }
         tracing::debug!("queueing cached version");
-        if let Err(e) =
-            player.playlist_load_files(&[(path.to_str().unwrap(), FileState::AppendPlay, None)])
-        {
+        if let Err(e) = player.playlist_load_files(&[(
+            path.to_str().unwrap(),
+            FileState::AppendPlay,
+            None,
+        )]) {
             tracing::error!(error = ?e, "failed to load the downloaded version");
             return;
         };
@@ -145,10 +154,11 @@ pub struct PreemptiveDownload {
 
 fn check_cache(vid: &VideoId) -> Option<PathBuf> {
     let cache_dir = cache_dir()?;
-    let cached = glob::glob(&format!("{}/*{}*", cache_dir.to_str()?, vid.as_str()))
-        .ok()?
-        .next()?
-        .ok()?;
+    let cached =
+        glob::glob(&format!("{}/*{}*", cache_dir.to_str()?, vid.as_str()))
+            .ok()?
+            .next()?
+            .ok()?;
     Some(cached)
 }
 

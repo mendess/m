@@ -3,7 +3,10 @@ use crate::{
     chosen_index,
     download_ctl::check_cache_ref,
     notify,
-    util::{DisplayEither, DurationFmt, dl_dir, prompt::selector, with_video::with_video_env},
+    util::{
+        DisplayEither, DurationFmt, dl_dir, prompt::selector,
+        with_video::with_video_env,
+    },
 };
 
 use std::{
@@ -28,7 +31,9 @@ use mlib::{
         PlaylistLink,
         link::{ChannelLink, HasId as _, VideoLink},
     },
-    players::{self, PlayerLink, SmartQueueOpts, SmartQueueSummary, error::MpvError},
+    players::{
+        self, PlayerLink, SmartQueueOpts, SmartQueueSummary, error::MpvError,
+    },
     playlist::Playlist,
     queue::{Current, Item, Queue},
     ytdl::YtdlBuilder,
@@ -50,7 +55,10 @@ pub enum CurrentDisplayMode {
     LinkId,
 }
 
-pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<()> {
+pub async fn current(
+    mode: CurrentDisplayMode,
+    notify: bool,
+) -> anyhow::Result<()> {
     let playlist = Playlist::load().await?;
     match mode {
         CurrentDisplayMode::Default { short } => {
@@ -69,9 +77,12 @@ pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<(
                 }
                 Ok(())
             } else {
-                let current = Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
-                    .await
-                    .context("loading the current queue")?;
+                let current = Queue::current(
+                    &chosen_index(),
+                    mlib::queue::CurrentOptions::GetNext,
+                )
+                .await
+                .context("loading the current queue")?;
 
                 display_current(&current, notify).await
             }
@@ -88,7 +99,9 @@ pub async fn current(mode: CurrentDisplayMode, notify: bool) -> anyhow::Result<(
                     notify!(
                         "{}",
                         link.id()
-                            .ok_or_else(|| anyhow::anyhow!("no id for this video"))?
+                            .ok_or_else(|| anyhow::anyhow!(
+                                "no id for this video"
+                            ))?
                             .as_str()
                     )
                 }
@@ -120,16 +133,21 @@ impl fmt::Display for DisplaySong<'_> {
             write!(f, "{a} - ")?;
         }
         match self.chapter {
-            Some(c) => writeln!(f, "§bVideo§r: {}\n§bSong§r:  {}", self.title, c),
+            Some(c) => {
+                writeln!(f, "§bVideo§r: {}\n§bSong§r:  {}", self.title, c)
+            }
             None => writeln!(f, "{}", self.title),
         }?;
         if let Some(ps) = &self.playstatus {
             const PROGRESS_BAR_LEN: f64 = 11.;
             let plus = match ps.progress {
-                Some(progress) => "+".repeat((progress / 100. * PROGRESS_BAR_LEN).round() as usize),
+                Some(progress) => "+".repeat(
+                    (progress / 100. * PROGRESS_BAR_LEN).round() as usize,
+                ),
                 None => "???".into(),
             };
-            let minus = "-".repeat((PROGRESS_BAR_LEN as usize).saturating_sub(plus.len()));
+            let minus = "-"
+                .repeat((PROGRESS_BAR_LEN as usize).saturating_sub(plus.len()));
             writeln!(
                 f,
                 "{}🔉{:.0}% | <{}{}> {:.0}%\n          {}/{}",
@@ -160,7 +178,10 @@ impl fmt::Display for DisplaySong<'_> {
     }
 }
 
-pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<()> {
+pub async fn display_current(
+    current: &Current,
+    notify: bool,
+) -> anyhow::Result<()> {
     let now = DisplaySong {
         title: &current.title,
         artist: current.artist.as_deref(),
@@ -191,7 +212,10 @@ pub async fn display_current(current: &Current, notify: bool) -> anyhow::Result<
     Ok(())
 }
 
-pub async fn now(Amount { amount }: Amount, show_files: bool) -> anyhow::Result<()> {
+pub async fn now(
+    Amount { amount }: Amount,
+    show_files: bool,
+) -> anyhow::Result<()> {
     let queue = Queue::load(
         &chosen_index(),
         amount.unwrap_or(10).unsigned_abs() as usize,
@@ -228,7 +252,10 @@ pub async fn now(Amount { amount }: Amount, show_files: bool) -> anyhow::Result<
     Ok(())
 }
 
-pub async fn queue<I>(q: crate::arg_parse::QueueOpts, items: I) -> anyhow::Result<PlayerLink>
+pub async fn queue<I>(
+    q: crate::arg_parse::QueueOpts,
+    items: I,
+) -> anyhow::Result<PlayerLink>
 where
     I: IntoIterator<Item = Item>,
     I::IntoIter: ExactSizeIterator,
@@ -254,7 +281,8 @@ where
     let mut notify_tasks = FuturesUnordered::new();
     let items = items.into_iter();
     let item_count = items.len();
-    let mut expanded_items = pin!(expand_playlists(items).inspect(|_| n_targets += 1));
+    let mut expanded_items =
+        pin!(expand_playlists(items).inspect(|_| n_targets += 1));
     let dl_dir = dl_dir().await?;
     while let Some(mut item) = expanded_items.next().await {
         check_cache_ref(&dl_dir, &mut item).await;
@@ -271,7 +299,9 @@ where
 
         if from != moved_to {
             println!("success");
-            println!("Moved from {from} -> {moved_to} [now playing: {current}] ... ",);
+            println!(
+                "Moved from {from} -> {moved_to} [now playing: {current}] ... ",
+            );
         }
         if q.notify && item_count < 30 {
             notify_tasks.push(tokio::spawn(notify(item, current, moved_to)));
@@ -299,7 +329,11 @@ where
     Ok(player)
 }
 
-async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()> {
+async fn notify(
+    item: Item,
+    current: usize,
+    target: usize,
+) -> anyhow::Result<()> {
     let img = tempfile::Builder::new().suffix(".png").tempfile()?;
     let (img_file, img_path) = img.into_parts();
     tracing::debug!("image tmp path: {}", img_path.display());
@@ -312,7 +346,9 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
                     let thumb = reqwest::get(thumbnail).await?;
                     let mut byte_stream = thumb.bytes_stream();
                     let mut img_file = BufWriter::new(File::from(img_file));
-                    while let Some(chunk) = byte_stream.next().await.transpose()? {
+                    while let Some(chunk) =
+                        byte_stream.next().await.transpose()?
+                    {
                         img_file.write_all(&chunk).await?;
                     }
                     img_file.flush().await?;
@@ -338,7 +374,9 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
                             .await?
                             .next()
                             .await
-                            .ok_or_else(|| anyhow::anyhow!("playlist was emtpy"))??;
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("playlist was emtpy")
+                            })??;
                         handle!(b.thumbnail(), b.title())
                     }
                     None => handle!("", String::from("url")),
@@ -347,7 +385,14 @@ async fn notify(item: Item, current: usize, target: usize) -> anyhow::Result<()>
         }
         Item::File(f) => {
             let mut ffmpeg = Fork::new("ffmpeg")
-                .args(["-y", "-loglevel", "error", "-hide_banner", "-vsync", "2"])
+                .args([
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-hide_banner",
+                    "-vsync",
+                    "2",
+                ])
                 .arg("-i")
                 .arg(&f)
                 .args(["-frames:v", "1"])
@@ -420,7 +465,9 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
         DeQueue::Pop => {
             let last = match player.last_queue().await? {
                 Some(l) => l,
-                None => return Err(anyhow::anyhow!("no last queue to pop from")),
+                None => {
+                    return Err(anyhow::anyhow!("no last queue to pop from"));
+                }
             };
             player.queue_remove(last).await?;
         }
@@ -484,18 +531,23 @@ pub async fn dequeue(d: crate::arg_parse::DeQueue) -> anyhow::Result<()> {
                 Some(id) => id.as_str().to_owned(),
                 None => item.to_string(),
             };
-            let mut dups = queue.iter().fold(HashMap::<_, u32>::new(), |mut map, s| {
-                let item = to_id(&s.item);
-                *map.entry(item).or_default() += 1;
-                map
-            });
+            let mut dups =
+                queue.iter().fold(HashMap::<_, u32>::new(), |mut map, s| {
+                    let item = to_id(&s.item);
+                    *map.entry(item).or_default() += 1;
+                    map
+                });
 
             for ident in queue.iter().rev().filter(|s| {
                 let count = dups.get_mut(&to_id(&s.item)).unwrap();
                 *count -= 1;
                 *count > 0
             }) {
-                print!("removing {} @ {}... ", ident.item.as_str(), ident.index);
+                print!(
+                    "removing {} @ {}... ",
+                    ident.item.as_str(),
+                    ident.index
+                );
                 std::io::stdout().flush()?;
                 player.queue_remove(ident.index).await?;
                 println!(" success");
@@ -526,10 +578,11 @@ pub async fn dump(file: PathBuf) -> anyhow::Result<()> {
 }
 
 pub async fn load(file: PathBuf, shuf: bool) -> anyhow::Result<()> {
-    let mut items = LinesStream::new(BufReader::new(File::open(file).await?).lines())
-        .map_ok(Item::from)
-        .try_collect::<Vec<_>>()
-        .await?;
+    let mut items =
+        LinesStream::new(BufReader::new(File::open(file).await?).lines())
+            .map_ok(Item::from)
+            .try_collect::<Vec<_>>()
+            .await?;
 
     if shuf {
         items.shuffle(&mut rngs::OsRng);
@@ -627,8 +680,12 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
             .map(|l| Item::Link(l.link.into()))
             .collect(),
         "Category" => {
-            let category =
-                selector(playlist.categories().keys().unique(), "Which category?", 30).await?;
+            let category = selector(
+                playlist.categories().keys().unique(),
+                "Which category?",
+                30,
+            )
+            .await?;
             let category = match category {
                 Some(c) => c,
                 None => return Ok(()),
@@ -674,14 +731,20 @@ pub async fn run_interactive_playlist() -> anyhow::Result<()> {
 fn get_clipboard_contents() -> anyhow::Result<String> {
     use anyhow::bail;
     use arboard::Clipboard;
-    use wl_clipboard_rs::paste::{ClipboardType, Error, MimeType, Seat, get_contents};
+    use wl_clipboard_rs::paste::{
+        ClipboardType, Error, MimeType, Seat, get_contents,
+    };
     let mut clip = Clipboard::new()?;
     match clip.get().text() {
         Ok(content) => Ok(content),
         Err(_) => {
             use std::io::Read;
 
-            let result = get_contents(ClipboardType::Regular, Seat::Unspecified, MimeType::Text);
+            let result = get_contents(
+                ClipboardType::Regular,
+                Seat::Unspecified,
+                MimeType::Text,
+            );
             match result {
                 Ok((mut pipe, _)) => {
                     let mut contents = vec![];
@@ -689,7 +752,11 @@ fn get_clipboard_contents() -> anyhow::Result<String> {
                     Ok(String::from_utf8_lossy(&contents).into_owned())
                 }
 
-                Err(e @ (Error::NoSeats | Error::ClipboardEmpty | Error::NoMimeType)) => {
+                Err(
+                    e @ (Error::NoSeats
+                    | Error::ClipboardEmpty
+                    | Error::NoMimeType),
+                ) => {
                     bail!("clipboard is empty: {e:?}")
                 }
 
@@ -699,7 +766,9 @@ fn get_clipboard_contents() -> anyhow::Result<String> {
     }
 }
 
-fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item = Item> {
+fn expand_playlists<I: IntoIterator<Item = Item>>(
+    items: I,
+) -> impl Stream<Item = Item> {
     use mlib::ytdl::YtdlStream;
 
     async fn expand(
@@ -734,7 +803,9 @@ fn expand_playlists<I: IntoIterator<Item = Item>>(items: I) -> impl Stream<Item 
         expand(YtdlBuilder::new(l).request_playlist().await?).await
     }
 
-    async fn expand_channel(l: &ChannelLink) -> Result<Option<BoxStream<'static, Item>>, Error> {
+    async fn expand_channel(
+        l: &ChannelLink,
+    ) -> Result<Option<BoxStream<'static, Item>>, Error> {
         expand(YtdlBuilder::new(l).request_channel().await?).await
     }
 

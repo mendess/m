@@ -35,7 +35,11 @@ impl<M, R, E> DaemonLink<M, R, E> {
     ///
     /// If the daemon isn't running and `auto_start` is `true`. It will attempt to start the daemon
     /// and connect to it.
-    pub async fn new(name: &str, socket_path: &Path, auto_start: bool) -> io::Result<Self> {
+    pub async fn new(
+        name: &str,
+        socket_path: &Path,
+        auto_start: bool,
+    ) -> io::Result<Self> {
         let try_connect = || async {
             debug!(?socket_path, "attempt to connect");
             UnixStream::connect(socket_path).await.map(|sock| {
@@ -101,7 +105,13 @@ where
             std::any::type_name::<M>()
         );
         let message = serde_json::to_vec(&message).unwrap();
-        let response = match exchange(&mut self.reader, &mut self.writer, &message).await {
+        let response = match exchange(
+            &mut self.reader,
+            &mut self.writer,
+            &message,
+        )
+        .await
+        {
             Ok(r) => r,
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => {
                 *self = Self::new(&self.name, &self.socket_path, false).await?;
@@ -121,7 +131,9 @@ impl<M, R, E> DaemonLink<M, R, E>
 where
     E: DeserializeOwned,
 {
-    pub async fn subscribe(mut self) -> Result<impl Stream<Item = io::Result<E>>, io::Error> {
+    pub async fn subscribe(
+        mut self,
+    ) -> Result<impl Stream<Item = io::Result<E>>, io::Error> {
         let message = serde_json::to_vec(&EventSubscription).unwrap();
         tracing::debug!(message = ?std::str::from_utf8(&message), "sending event subscription message");
         self.writer.write_all(&message).await?;

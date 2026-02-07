@@ -26,8 +26,9 @@ pub enum YtdlError {
     },
 }
 
-static ID: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(v=|youtu.be/)(?P<id>[A-Za-z0-9_\-]{11})").unwrap());
+static ID: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(v=|youtu.be/)(?P<id>[A-Za-z0-9_\-]{11})").unwrap()
+});
 
 pub fn extract_id(s: &str) -> Option<&str> {
     Some(ID.captures(s)?.name("id").unwrap().as_str())

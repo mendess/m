@@ -50,7 +50,9 @@ pub async fn put_by_search(id: &Search, title: &str) -> io::Result<()> {
 
 async fn get_inner(path: &Path) -> io::Result<Option<String>> {
     match tokio::fs::read(path).await {
-        Ok(title) => String::from_utf8(title).map(Some).map_err(io::Error::other),
+        Ok(title) => {
+            String::from_utf8(title).map(Some).map_err(io::Error::other)
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
     }

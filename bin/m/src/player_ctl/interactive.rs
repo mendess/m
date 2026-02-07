@@ -113,8 +113,12 @@ async fn input_task() {
                     ('k', Mod::NONE) => player_ctl::vu(2).await,
                     ('h' | 'H', Mod::SHIFT) => player_ctl::prev(1).await,
                     ('l' | 'L', Mod::SHIFT) => player_ctl::next(1).await,
-                    ('j' | 'J', Mod::SHIFT) | ('u', Mod::NONE) => player_ctl::back(2).await,
-                    ('k' | 'K', Mod::SHIFT) | ('i', Mod::NONE) => player_ctl::frwd(2).await,
+                    ('j' | 'J', Mod::SHIFT) | ('u', Mod::NONE) => {
+                        player_ctl::back(2).await
+                    }
+                    ('k' | 'K', Mod::SHIFT) | ('i', Mod::NONE) => {
+                        player_ctl::frwd(2).await
+                    }
                     _ => Ok(()),
                 };
             }
@@ -138,16 +142,22 @@ async fn current_position() -> Option<PlaybackPosition> {
         None
     }
     let (percent_position, playback_time) = join!(
-        retry_until_positive(|| async { chosen_index().percent_position().await.ok() }),
-        retry_until_positive(|| async { chosen_index().playback_time().await.ok() }),
+        retry_until_positive(|| async {
+            chosen_index().percent_position().await.ok()
+        }),
+        retry_until_positive(|| async {
+            chosen_index().playback_time().await.ok()
+        }),
     );
     Some(PlaybackPosition {
         percent_position,
-        playback_time: playback_time.and_then(|d| Duration::try_from_secs_f64(d).ok()),
+        playback_time: playback_time
+            .and_then(|d| Duration::try_from_secs_f64(d).ok()),
     })
 }
 
-async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players::Error> {
+async fn event_listener()
+-> Result<impl Stream<Item = UiUpdate>, mlib::players::Error> {
     let event_stream = players::subscribe().await?;
     Ok(event_stream
         .filter_map(|r| ready(r.ok()))
@@ -169,47 +179,55 @@ async fn event_listener() -> Result<impl Stream<Item = UiUpdate>, mlib::players:
             }
             match ev.event {
                 OwnedLibMpvEvent::Shutdown => Some(UiUpdate::Quit),
-                OwnedLibMpvEvent::FileLoaded | OwnedLibMpvEvent::PlaybackRestart => None,
-                OwnedLibMpvEvent::Seek => Some(UiUpdate::Position(current_position().await?)),
-                OwnedLibMpvEvent::PropertyChange { name, change, .. } => match name.as_str() {
-                    "playlist-pos" => Some(UiUpdate::ClearChapter),
-                    "media-title" => {
-                        // let title = change.into_string().ok()?;
-                        // NOTE: This is very weird, but it's just easier querying for
-                        // Queue::current in the ui task to get correct results. Calling
-                        // get_duration here just delays this event enough to make sure
-                        // Queue::current doesn't fail
-                        let _ = get_duration().await.unwrap_or(f64::INFINITY);
-                        // let next = Queue::up_next(PlayerLink::current(), None)
-                        //     .await
-                        //     .ok()
-                        //     .flatten();
-                        Some(UiUpdate::Title {
+                OwnedLibMpvEvent::FileLoaded
+                | OwnedLibMpvEvent::PlaybackRestart => None,
+                OwnedLibMpvEvent::Seek => {
+                    Some(UiUpdate::Position(current_position().await?))
+                }
+                OwnedLibMpvEvent::PropertyChange { name, change, .. } => {
+                    match name.as_str() {
+                        "playlist-pos" => Some(UiUpdate::ClearChapter),
+                        "media-title" => {
+                            // let title = change.into_string().ok()?;
+                            // NOTE: This is very weird, but it's just easier querying for
+                            // Queue::current in the ui task to get correct results. Calling
+                            // get_duration here just delays this event enough to make sure
+                            // Queue::current doesn't fail
+                            let _ =
+                                get_duration().await.unwrap_or(f64::INFINITY);
+                            // let next = Queue::up_next(PlayerLink::current(), None)
+                            //     .await
+                            //     .ok()
+                            //     .flatten();
+                            Some(UiUpdate::Title {
                             // title,
                             // total_time,
                             // next,
                         })
+                        }
+                        "volume" => {
+                            let volume = change.into_double().ok()?;
+                            Some(UiUpdate::Volume(volume))
+                        }
+                        "pause" => {
+                            let is_paused = change.into_bool().ok()?;
+                            Some(UiUpdate::Pause { is_paused })
+                        }
+                        "chapter-metadata" => {
+                            // let mut map = change.into_map().ok()?;
+                            // let title = map.remove("title")?.into_string().ok()?;
+                            let _ = get_duration().await;
+                            Some(
+                                UiUpdate::ChapterName { /*title, total_time*/ },
+                            )
+                        }
+                        "chapter" => {
+                            let index = change.into_int().ok()?;
+                            Some(UiUpdate::ChapterNumber(index as _))
+                        }
+                        _ => None,
                     }
-                    "volume" => {
-                        let volume = change.into_double().ok()?;
-                        Some(UiUpdate::Volume(volume))
-                    }
-                    "pause" => {
-                        let is_paused = change.into_bool().ok()?;
-                        Some(UiUpdate::Pause { is_paused })
-                    }
-                    "chapter-metadata" => {
-                        // let mut map = change.into_map().ok()?;
-                        // let title = map.remove("title")?.into_string().ok()?;
-                        let _ = get_duration().await;
-                        Some(UiUpdate::ChapterName { /*title, total_time*/ })
-                    }
-                    "chapter" => {
-                        let index = change.into_int().ok()?;
-                        Some(UiUpdate::ChapterNumber(index as _))
-                    }
-                    _ => None,
-                },
+                }
                 _ => None,
             }
         }))
@@ -220,9 +238,10 @@ async fn ui_task() -> anyhow::Result<()> {
     let (column, row) = guard.guarantee_space(&mut stdout().lock(), 10)?;
     crate::notify!("Loading....");
     let mut event_listener = pin!(event_listener().await?);
-    let mut current = Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
-        .await
-        .unwrap();
+    let mut current =
+        Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
+            .await
+            .unwrap();
     loop {
         let r = stdout()
             .lock()
@@ -234,7 +253,8 @@ async fn ui_task() -> anyhow::Result<()> {
             Err(e) => anyhow::Result::Err(e.into()),
         }
         .unwrap();
-        let listen = timeout(Duration::from_secs(1), event_listener.next()).await;
+        let listen =
+            timeout(Duration::from_secs(1), event_listener.next()).await;
         match listen {
             Err(_timedout) => {
                 if let Some(PlaybackPosition {
@@ -249,11 +269,15 @@ async fn ui_task() -> anyhow::Result<()> {
             Ok(Some(event)) => match event {
                 UiUpdate::ClearChapter => current.chapter = None,
                 UiUpdate::Title { .. } | UiUpdate::ChapterName { .. } => {
-                    current = Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
-                        .await?;
+                    current = Queue::current(
+                        &chosen_index(),
+                        mlib::queue::CurrentOptions::GetNext,
+                    )
+                    .await?;
                 }
                 UiUpdate::ChapterNumber(index) => {
-                    current.chapter.get_or_insert_with(Default::default).0 = index;
+                    current.chapter.get_or_insert_with(Default::default).0 =
+                        index;
                 }
                 UiUpdate::Volume(volume) => current.volume = volume,
                 UiUpdate::Pause { is_paused } => current.playing = !is_paused,

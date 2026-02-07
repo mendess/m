@@ -77,12 +77,10 @@ pub async fn ls_categories(kind: Option<CategoryType>) -> anyhow::Result<()> {
         Some(CategoryType::Language) => {
             playlist.categories_of_kind(|s| s.language.as_deref().into_iter())
         }
-        Some(CategoryType::RecommendedBy) => {
-            playlist.categories_of_kind(|s| s.recommended_by.as_deref().into_iter())
-        }
-        Some(CategoryType::LikedBy) => {
-            playlist.categories_of_kind(|s| s.liked_by.iter().map(|s| s.as_str()))
-        }
+        Some(CategoryType::RecommendedBy) => playlist
+            .categories_of_kind(|s| s.recommended_by.as_deref().into_iter()),
+        Some(CategoryType::LikedBy) => playlist
+            .categories_of_kind(|s| s.liked_by.iter().map(|s| s.as_str())),
         None => playlist.categories(),
     }
     .into_iter()
@@ -142,14 +140,21 @@ pub async fn new(
     for link in links {
         notify!("Fetching song info");
         let song_info = fetch_song_info(link).await?;
-        let song = make_song(link.clone(), song_info, meta.clone(), categories.clone());
+        let song = make_song(
+            link.clone(),
+            song_info,
+            meta.clone(),
+            categories.clone(),
+        );
         Playlist::add_song(&song).await?;
         notify!("Song added"; content: "{}", song);
     }
     Ok(())
 }
 
-#[derive(Debug, Default, Clone, clap::Parser, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Default, Clone, clap::Parser, serde::Serialize, serde::Deserialize,
+)]
 pub struct SongMetadata {
     #[arg(long)]
     pub artist: Option<String>,
@@ -251,7 +256,9 @@ where
             .collect::<Vec<_>>();
         if !close_matches.is_empty() {
             println!("You said {cat}. Did you mean any of these?");
-            if let Some(index) = util::prompt::interative_select(&close_matches, []).await? {
+            if let Some(index) =
+                util::prompt::interative_select(&close_matches, []).await?
+            {
                 *cat = close_matches[index].to_owned();
             }
         }
@@ -281,7 +288,9 @@ async fn category_prompt(
 ) -> anyhow::Result<SongMetadata> {
     let playlist = Playlist::load().await?;
     let playlist_categories = playlist.categories();
-    if let Some(artist) = prompt::prompt_with_default("artist", meta.artist.as_deref()).await? {
+    if let Some(artist) =
+        prompt::prompt_with_default("artist", meta.artist.as_deref()).await?
+    {
         let genres = playlist
             .songs
             .iter()
@@ -299,7 +308,8 @@ async fn category_prompt(
         )
         .await?;
     }
-    list_prompt(LIST_PROMPT_GENRE, &playlist.genres(), &mut meta.genres).await?;
+    list_prompt(LIST_PROMPT_GENRE, &playlist.genres(), &mut meta.genres)
+        .await?;
     if let Some(language) = prompt::prompt("language").await? {
         set(
             &playlist_categories,
@@ -318,7 +328,8 @@ async fn category_prompt(
         )
         .await?;
     }
-    list_prompt(LIST_PROMPT_LIKED_BY, &playlist.likers(), &mut meta.liked_by).await?;
+    list_prompt(LIST_PROMPT_LIKED_BY, &playlist.likers(), &mut meta.liked_by)
+        .await?;
     list_prompt(
         LIST_PROMPT_CATEGORIES,
         &playlist.free_categories(),
@@ -336,7 +347,10 @@ async fn category_prompt(
     Ok(meta)
 }
 
-pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Result<()> {
+pub async fn delete_song(
+    current: bool,
+    partial_name: Vec<String>,
+) -> anyhow::Result<()> {
     let mut playlist = Playlist::load().await?;
     let idx = if current {
         let current = Queue::link(&chosen_index()).await?;
@@ -345,7 +359,8 @@ pub async fn delete_song(current: bool, partial_name: Vec<String>) -> anyhow::Re
             .ok_or_else(|| anyhow::anyhow!("current song is not identified"))?;
         playlist.find_song_mut(|s| s.link.id() == current).into()
     } else if !partial_name.is_empty() {
-        playlist.partial_name_search_mut(partial_name.iter().map(String::as_str))
+        playlist
+            .partial_name_search_mut(partial_name.iter().map(String::as_str))
     } else {
         unreachable!()
     };
@@ -367,7 +382,11 @@ async fn fetch_song_info(link: &BangerLink) -> anyhow::Result<SongInfo> {
     })
 }
 
-pub(crate) async fn info(song: Vec<String>, just_id: bool, verbose: bool) -> anyhow::Result<()> {
+pub(crate) async fn info(
+    song: Vec<String>,
+    just_id: bool,
+    verbose: bool,
+) -> anyhow::Result<()> {
     let song_iter = song
         .iter()
         .map(String::as_str)
@@ -391,7 +410,8 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool, verbose: bool) -> any
                     println!("{}", l.id().as_str());
                 }
                 Item::Link(Link::Video(l)) => {
-                    let vid = YtdlBuilder::new(&l).get_title().request().await?;
+                    let vid =
+                        YtdlBuilder::new(&l).get_title().request().await?;
                     print_full_info(vid).await;
                 }
                 Item::Link(Link::Banger(l)) if just_id => {
@@ -409,16 +429,23 @@ pub(crate) async fn info(song: Vec<String>, just_id: bool, verbose: bool) -> any
                     };
                 }
                 Item::Search(s) => {
-                    print_full_info(YtdlBuilder::new(&s).get_title().search().await?).await;
+                    print_full_info(
+                        YtdlBuilder::new(&s).get_title().search().await?,
+                    )
+                    .await;
                 }
                 Item::Link(Link::Playlist(l)) if just_id => {
-                    let mut playlist = YtdlBuilder::new(&l).request_playlist().await?;
+                    let mut playlist =
+                        YtdlBuilder::new(&l).request_playlist().await?;
                     while let Some(i) = playlist.next().await {
                         println!("{}", i?.id().as_str());
                     }
                 }
                 Item::Link(Link::Playlist(l)) => {
-                    let mut playlist = YtdlBuilder::new(&l).get_title().request_playlist().await?;
+                    let mut playlist = YtdlBuilder::new(&l)
+                        .get_title()
+                        .request_playlist()
+                        .await?;
                     while let Some(i) = playlist.next().await {
                         print_full_info(i?).await;
                     }
@@ -527,7 +554,9 @@ pub async fn edit_categories(
                 list_prompt($prompt, &playlist.$lister(), &mut list).await?;
                 if !list.is_empty() {
                     println!("remove {}", $prompt.1);
-                    while let Some(delete) = prompt::interative_select(&list, []).await? {
+                    while let Some(delete) =
+                        prompt::interative_select(&list, []).await?
+                    {
                         println!("removed {}", &list[delete]);
                         list.remove_at(delete);
                     }
@@ -550,7 +579,9 @@ pub async fn edit_categories(
         .await?;
         if !categories.is_empty() {
             println!("remove {}", LIST_PROMPT_CATEGORIES.1);
-            while let Some(delete) = prompt::interative_select(&categories, []).await? {
+            while let Some(delete) =
+                prompt::interative_select(&categories, []).await?
+            {
                 println!("removed {}", &categories[delete]);
                 categories.remove_at(delete);
             }

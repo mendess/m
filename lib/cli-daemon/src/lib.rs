@@ -52,20 +52,32 @@ impl<M, R, E> Daemon<M, R, E> {
         self.socket_path
             .get_or_init(|| async {
                 let (path, e) = match &self.socket_namespace {
-                    None => namespaced_tmp::async_impl::in_user_tmp(self.name).await,
-                    Some(ns) => namespaced_tmp::async_impl::in_tmp(ns, self.name).await,
+                    None => {
+                        namespaced_tmp::async_impl::in_user_tmp(self.name).await
+                    }
+                    Some(ns) => {
+                        namespaced_tmp::async_impl::in_tmp(ns, self.name).await
+                    }
                 };
                 if let Some(e) = e {
-                    error!("failed to create tmp dir for {} daemon: {:?}", self.name, e);
+                    error!(
+                        "failed to create tmp dir for {} daemon: {:?}",
+                        self.name, e
+                    );
                 }
                 path
             })
             .await
     }
 
-    pub fn overriding_socket_namespace_with(&self, new_namepsace: String) -> Self {
+    pub fn overriding_socket_namespace_with(
+        &self,
+        new_namepsace: String,
+    ) -> Self {
         Self {
-            start_daemon: AtomicBool::new(self.start_daemon.load(Ordering::Relaxed)),
+            start_daemon: AtomicBool::new(
+                self.start_daemon.load(Ordering::Relaxed),
+            ),
             name: self.name,
             socket_namespace: Some(new_namepsace),
             channels: Mutex::const_new(None),
@@ -85,7 +97,9 @@ impl<M, R, E> Daemon<M, R, E> {
         }
     }
 
-    pub async fn build_daemon_process(&'_ self) -> Option<DaemonProcess<'_, M, R, E>> {
+    pub async fn build_daemon_process(
+        &'_ self,
+    ) -> Option<DaemonProcess<'_, M, R, E>> {
         if matches!(std::env::args().next(), Some(arg0) if arg0 == self.name) {
             Some(DaemonProcess::new(self).await)
         } else {
@@ -131,7 +145,8 @@ where
     #[tracing::instrument(skip_all)]
     pub async fn subscribe(
         &self,
-    ) -> Result<impl Stream<Item = io::Result<E>> + use<M, R, E>, io::Error> {
+    ) -> Result<impl Stream<Item = io::Result<E>> + use<M, R, E>, io::Error>
+    {
         tracing::debug!("getting channels");
         let ch = self.channels().await?;
         tracing::debug!("getting channels lock");

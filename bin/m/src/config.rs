@@ -2,7 +2,9 @@ use std::{path::PathBuf, sync::LazyLock};
 
 use dirs::config_dir;
 
-#[derive(serde::Deserialize, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    serde::Deserialize, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum DownloadFormat {
     #[default]
@@ -28,7 +30,8 @@ pub static CONFIG: LazyLock<MConfig> = LazyLock::new(|| {
     let mut config = config::Config::builder()
         .add_source({
             let mut base = config_dir().unwrap_or_else(|| {
-                let mut home = dirs::home_dir().expect("can't find config dir or home dir");
+                let mut home = dirs::home_dir()
+                    .expect("can't find config dir or home dir");
                 home.push(".config");
                 home
             });

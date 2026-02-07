@@ -43,7 +43,10 @@ impl Queue {
         Self::load(player, usize::MAX).await
     }
 
-    pub async fn load(player: &PlayerLink, at_most: usize) -> Result<Self, Error> {
+    pub async fn load(
+        player: &PlayerLink,
+        at_most: usize,
+    ) -> Result<Self, Error> {
         let queue = player.queue().await?;
         let last_queue = player.last_queue().await?;
         let (items, current_idx, playing) = slice_queue(queue, at_most);
@@ -70,7 +73,10 @@ impl Queue {
 
     #[tracing::instrument(skip(player))]
     #[cfg(feature = "ytdl")]
-    pub async fn current(player: &PlayerLink, opt: CurrentOptions) -> Result<Current, Error> {
+    pub async fn current(
+        player: &PlayerLink,
+        opt: CurrentOptions,
+    ) -> Result<Current, Error> {
         pub use crate::Item;
         use crate::{
             Error,
@@ -97,7 +103,9 @@ impl Queue {
             let volume = player.volume().await?;
             let progress = match player.percent_position().await {
                 Ok(progress) => Some(progress),
-                Err(PlayerError::Mpv(MpvError::Raw(MpvErrorCode::PropertyUnavailable))) => None,
+                Err(PlayerError::Mpv(MpvError::Raw(
+                    MpvErrorCode::PropertyUnavailable,
+                ))) => None,
                 Err(e) => return Err(e.into()),
             };
             let playback_time = match player.playback_time().await {
@@ -124,7 +132,9 @@ impl Queue {
                 .map(|s| {
                     (
                         s.artist.clone(),
-                        s.all_categories().map(|s| s.to_owned()).collect::<Vec<_>>(),
+                        s.all_categories()
+                            .map(|s| s.to_owned())
+                            .collect::<Vec<_>>(),
                     )
                 })
                 .unwrap_or_default(),
@@ -162,7 +172,9 @@ impl Queue {
             tracing::trace!("getting");
             let current_idx = player.queue_pos().await?;
             let next = match opt {
-                CurrentOptions::GetNext => Self::up_next(player, current_idx).await?,
+                CurrentOptions::GetNext => {
+                    Self::up_next(player, current_idx).await?
+                }
                 CurrentOptions::None => None,
             };
             tracing::trace!("done");
@@ -202,7 +214,10 @@ impl Queue {
 
     #[tracing::instrument(skip(player))]
     #[cfg(feature = "ytdl")]
-    pub async fn up_next<I>(player: &PlayerLink, queue_index: I) -> Result<Option<UpNext>, Error>
+    pub async fn up_next<I>(
+        player: &PlayerLink,
+        queue_index: I,
+    ) -> Result<Option<UpNext>, Error>
     where
         I: Into<Option<usize>> + std::fmt::Debug,
     {
@@ -227,7 +242,10 @@ impl Queue {
         let playlist = Playlist::load().await?;
         let next = UpNext {
             title: item.fetch_item_title(&playlist).await.into_owned(),
-            artist: item.fetch_item_artist(&playlist).await.map(Cow::into_owned),
+            artist: item
+                .fetch_item_artist(&playlist)
+                .await
+                .map(Cow::into_owned),
             categories: if let Item::Link(Link::Banger(l)) = item {
                 playlist
                     .find_by_id(l.id())
@@ -244,7 +262,11 @@ impl Queue {
         self.items.iter()
     }
 
-    pub fn for_each<F: FnMut(&SongIdent), C: FnOnce(&SongIdent)>(&self, mut f: F, c: C) {
+    pub fn for_each<F: FnMut(&SongIdent), C: FnOnce(&SongIdent)>(
+        &self,
+        mut f: F,
+        c: C,
+    ) {
         for i in self.before() {
             f(i)
         }
@@ -293,7 +315,10 @@ pub struct Current {
     pub next: Option<UpNext>,
 }
 
-fn slice_queue(mut queue: Vec<QueueItem>, at_most: usize) -> (Vec<SongIdent>, usize, bool) {
+fn slice_queue(
+    mut queue: Vec<QueueItem>,
+    at_most: usize,
+) -> (Vec<SongIdent>, usize, bool) {
     let Some((mut current_idx, st)) = queue
         .iter()
         .enumerate()

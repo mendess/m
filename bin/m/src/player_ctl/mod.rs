@@ -141,9 +141,12 @@ pub async fn set_looping(state: bool) -> anyhow::Result<()> {
 pub async fn status() -> anyhow::Result<()> {
     let all = players::all().await?;
     for player in all {
-        let current = Queue::current(&player, mlib::queue::CurrentOptions::None)
-            .await
-            .with_context(|| format!("[{player}] fetching current in queue"))?;
+        let current =
+            Queue::current(&player, mlib::queue::CurrentOptions::None)
+                .await
+                .with_context(|| {
+                    format!("[{player}] fetching current in queue")
+                })?;
         let queue_size = player
             .queue_size()
             .await

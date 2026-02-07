@@ -74,7 +74,9 @@ macro_rules! impl_request {
             }
         }
 
-        impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse for $name<T> {
+        impl<Y: 'static, T: IntoResponse<Output = Y>> IntoResponse
+            for $name<T>
+        {
             type Output = $output<Y>;
             fn response<S>($buf: &mut Vec<S>) -> Self::Output
             where
@@ -212,22 +214,29 @@ where
 {
     pub async fn search(self) -> Result<Ytdl<Y>, Error> {
         let (link, n_fields) = self.0.link_and_param_count();
-        request_impl::<_, T, _>(link.as_str().trim_start_matches("ytdl://"), n_fields)
-            .await?
-            .next()
-            .await
-            .ok_or_else(|| {
-                Error::from(YtdlError::InsufisientFields {
-                    expected: n_fields,
-                    found: 0,
-                    fields: vec![],
-                })
-            })?
+        request_impl::<_, T, _>(
+            link.as_str().trim_start_matches("ytdl://"),
+            n_fields,
+        )
+        .await?
+        .next()
+        .await
+        .ok_or_else(|| {
+            Error::from(YtdlError::InsufisientFields {
+                expected: n_fields,
+                found: 0,
+                fields: vec![],
+            })
+        })?
     }
 
     pub async fn search_multiple(&self) -> Result<YtdlStream<Y>, Error> {
         let (link, n_fields) = self.0.link_and_param_count();
-        request_impl::<&str, T, Y>(link.as_str().trim_start_matches("ytdl://"), n_fields).await
+        request_impl::<&str, T, Y>(
+            link.as_str().trim_start_matches("ytdl://"),
+            n_fields,
+        )
+        .await
     }
 }
 
@@ -253,7 +262,10 @@ where
     }
 }
 
-async fn request_impl<'l, L, T, Y>(link: L, n_fields: usize) -> Result<YtdlStream<Y>, Error>
+async fn request_impl<'l, L, T, Y>(
+    link: L,
+    n_fields: usize,
+) -> Result<YtdlStream<Y>, Error>
 where
     T: IntoResponse<Output = Y>,
     T: YtdlParam<'l>,
@@ -267,8 +279,10 @@ where
     let mut child = cmd.kill_on_drop(true).stdout(Stdio::piped()).spawn()?;
 
     Ok(YtdlStream {
-        stream: LinesStream::new(BufReader::new(child.stdout.take().unwrap()).lines())
-            .chunks(n_fields),
+        stream: LinesStream::new(
+            BufReader::new(child.stdout.take().unwrap()).lines(),
+        )
+        .chunks(n_fields),
         n_fields,
         response: T::response,
         _child: child,
@@ -288,7 +302,10 @@ pub struct YtdlStream<Y> {
 impl<Y> Stream for YtdlStream<Y> {
     type Item = Result<Ytdl<Y>, Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
         let n_fields = self.n_fields;
         let response = self.response;
         match self.project().stream.poll_next(cx) {

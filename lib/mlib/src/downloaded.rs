@@ -120,7 +120,10 @@ pub async fn search_cache_for(
     .unwrap()
 }
 
-pub async fn check_cache_ref(dl_dir: &Path, item: &mut Item) -> CheckCacheDecision {
+pub async fn check_cache_ref(
+    dl_dir: &Path,
+    item: &mut Item,
+) -> CheckCacheDecision {
     let link = match item {
         Item::Link(l) => match l.as_banger() {
             Some(v) => v,
@@ -182,8 +185,9 @@ impl GetDlPath<'_> {
         } else {
             Err(YtdlError::NonZeroStatus {
                 status_code: output.status,
-                stderr: String::from_utf8(output.stderr)
-                    .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
+                stderr: String::from_utf8(output.stderr).unwrap_or_else(|e| {
+                    String::from_utf8_lossy(e.as_bytes()).into_owned()
+                }),
             }
             .into())
         }
@@ -225,8 +229,9 @@ pub async fn yt_download(
     } else {
         Err(YtdlError::NonZeroStatus {
             status_code: output.status,
-            stderr: String::from_utf8(output.stderr)
-                .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
+            stderr: String::from_utf8(output.stderr).unwrap_or_else(|e| {
+                String::from_utf8_lossy(e.as_bytes()).into_owned()
+            }),
         }
         .into())
     }
@@ -245,7 +250,8 @@ pub async fn download(dl_dir: PathBuf, link: &BangerLink) -> Result<(), Error> {
     }
 
     let response = reqwest::get(link.as_str()).await?.error_for_status()?;
-    let id = if let Some(disposition) = response.headers().get(header::CONTENT_DISPOSITION)
+    let id = if let Some(disposition) =
+        response.headers().get(header::CONTENT_DISPOSITION)
         && let Ok(value) = disposition.to_str()
         && let Some(filename) = parse_filename(value)
     {

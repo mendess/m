@@ -13,8 +13,8 @@ use mlib::{
 
 mod daemon {
     use std::{
-        collections::HashSet, num::NonZeroUsize, sync::LazyLock, thread::available_parallelism,
-        time::Duration,
+        collections::HashSet, num::NonZeroUsize, sync::LazyLock,
+        thread::available_parallelism, time::Duration,
     };
 
     use cli_daemon::Daemon;
@@ -81,10 +81,11 @@ mod daemon {
         let dl_dir = crate::util::dl_dir().await?;
 
         static STATUS: LazyLock<Mutex<Status>> = LazyLock::new(Mutex::default);
-        let paralellism = match available_parallelism().map(NonZeroUsize::get).unwrap_or(1) {
-            1 => 1,
-            x => x >> 1,
-        };
+        let paralellism =
+            match available_parallelism().map(NonZeroUsize::get).unwrap_or(1) {
+                1 => 1,
+                x => x >> 1,
+            };
 
         let (shutdown_send, shutdown_recv) = oneshot::channel();
 
@@ -99,7 +100,9 @@ mod daemon {
                         task_set.push(tokio::spawn({
                             let dl_dir = dl_dir.clone();
                             async move {
-                                let result = downloaded::download(dl_dir.clone(), &l).await;
+                                let result =
+                                    downloaded::download(dl_dir.clone(), &l)
+                                        .await;
                                 match result {
                                     Ok(_) => {
                                         info!(?l, "downloaded");
@@ -108,12 +111,17 @@ mod daemon {
                                     Err(e) => {
                                         let playlist = Playlist::load().await;
 
-                                        let song = playlist.as_ref().ok().map(|pl| {
-                                            pl.find_by_link(&l)
-                                                .map(|s| s.name.as_str())
-                                                .unwrap_or(l.as_str())
-                                        });
-                                        error!(?e, ?song, "error downloading link");
+                                        let song =
+                                            playlist.as_ref().ok().map(|pl| {
+                                                pl.find_by_link(&l)
+                                                    .map(|s| s.name.as_str())
+                                                    .unwrap_or(l.as_str())
+                                            });
+                                        error!(
+                                            ?e,
+                                            ?song,
+                                            "error downloading link"
+                                        );
                                         STATUS.lock().await.move_to_errored(&l);
                                     }
                                 }
@@ -124,7 +132,9 @@ mod daemon {
                             let _ = task_set.next().await.unwrap();
                         }
                     }
-                    Err(_) if !STATUS.lock().await.downloading.is_empty() => continue,
+                    Err(_) if !STATUS.lock().await.downloading.is_empty() => {
+                        continue;
+                    }
                     Ok(None) | Err(_) => break,
                 }
             }
@@ -181,10 +191,14 @@ pub async fn daemon_status() -> anyhow::Result<()> {
 pub async fn check_cache_ref(path: &Path, item: &mut Item) {
     match mlib::downloaded::check_cache_ref(path, item).await {
         CheckCacheDecision::Skip => {}
-        CheckCacheDecision::Download(l) if crate::config::CONFIG.download_bangers => {
+        CheckCacheDecision::Download(l)
+            if crate::config::CONFIG.download_bangers =>
+        {
             match DAEMON.exchange(Message::Queue(l)).await {
                 Ok(None) => {}
-                Ok(Some(_)) => panic!("server should not have given me a status"),
+                Ok(Some(_)) => {
+                    panic!("server should not have given me a status")
+                }
                 Err(e) => crate::error!("failed to start myself: {:?}", e),
             }
         }

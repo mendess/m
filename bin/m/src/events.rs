@@ -30,17 +30,30 @@ pub async fn display() -> anyhow::Result<()> {
                 Ev::SetPropertyReply(d) => {
                     println!("[{}] set-property-reply: {d}", ev.player_index)
                 }
-                Ev::CommandReply(d) => println!("[{}] command-reply: {d}", ev.player_index),
+                Ev::CommandReply(d) => {
+                    println!("[{}] command-reply: {d}", ev.player_index)
+                }
                 Ev::StartFile => println!("[{}] start-file", ev.player_index),
-                Ev::EndFile(d) => println!("[{}] end-file: {d}", ev.player_index),
+                Ev::EndFile(d) => {
+                    println!("[{}] end-file: {d}", ev.player_index)
+                }
                 Ev::FileLoaded => println!("[{}] file-loaded", ev.player_index),
                 Ev::ClientMessage(items) => {
-                    println!("[{}] client-message: {:?}", ev.player_index, items)
+                    println!(
+                        "[{}] client-message: {:?}",
+                        ev.player_index, items
+                    )
                 }
-                Ev::VideoReconfig => println!("[{}] video-reconfig", ev.player_index),
-                Ev::AudioReconfig => println!("[{}] audio-reconfig", ev.player_index),
+                Ev::VideoReconfig => {
+                    println!("[{}] video-reconfig", ev.player_index)
+                }
+                Ev::AudioReconfig => {
+                    println!("[{}] audio-reconfig", ev.player_index)
+                }
                 Ev::Seek => println!("[{}] seek", ev.player_index),
-                Ev::PlaybackRestart => println!("[{}] playback-restart", ev.player_index),
+                Ev::PlaybackRestart => {
+                    println!("[{}] playback-restart", ev.player_index)
+                }
                 Ev::PropertyChange {
                     name,
                     change,
@@ -50,11 +63,15 @@ pub async fn display() -> anyhow::Result<()> {
                     ev.player_index,
                     DisplayOwnedMpvNode(&change)
                 ),
-                Ev::QueueOverflow => println!("[{}] queue-overflow", ev.player_index),
+                Ev::QueueOverflow => {
+                    println!("[{}] queue-overflow", ev.player_index)
+                }
                 Ev::Deprecated { event_id } => {
                     println!("[{}] deprecated: {event_id}", ev.player_index)
                 }
-                Ev::Errored(err) => println!("[{}] error: {:?}", ev.player_index, err),
+                Ev::Errored(err) => {
+                    println!("[{}] error: {:?}", ev.player_index, err)
+                }
             },
             Err(error) => {
                 crate::error!("Event failed"; content: "{error:?}");

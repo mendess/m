@@ -22,7 +22,9 @@ pub enum MpvError {
     NoMpvInstance,
     #[error("invalid utf8")]
     InvalidUtf8,
-    #[error("invalid data returned from mpv. Expected {expected} but got '{got}': {error:?}")]
+    #[error(
+        "invalid data returned from mpv. Expected {expected} but got '{got}': {error:?}"
+    )]
     InvalidData {
         expected: String,
         got: String,

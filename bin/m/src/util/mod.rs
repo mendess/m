@@ -46,7 +46,8 @@ pub async fn dl_dir() -> anyhow::Result<PathBuf> {
     static PATH: OnceCell<PathBuf> = OnceCell::const_new();
 
     PATH.get_or_try_init(|| async {
-        let mut p = dirs::audio_dir().ok_or_else(|| anyhow::anyhow!("couldn't find audio dir"))?;
+        let mut p = dirs::audio_dir()
+            .ok_or_else(|| anyhow::anyhow!("couldn't find audio dir"))?;
         p.push("m");
         tokio::fs::create_dir_all(&p).await?;
         Ok(p)
@@ -70,8 +71,10 @@ impl RawMode {
         use crossterm::terminal::ScrollUp;
 
         let (_, rows) = crossterm::terminal::size()?;
-        let start_position @ (cursor_x, cursor_y) = crossterm::cursor::position()?;
-        let missing_rows = required_space.saturating_sub(rows.saturating_sub(cursor_y + 1));
+        let start_position @ (cursor_x, cursor_y) =
+            crossterm::cursor::position()?;
+        let missing_rows =
+            required_space.saturating_sub(rows.saturating_sub(cursor_y + 1));
         if missing_rows != 0 {
             stdout.queue(ScrollUp(missing_rows))?.flush()?;
             Ok((cursor_x, cursor_y - missing_rows))

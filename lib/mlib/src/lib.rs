@@ -17,14 +17,22 @@ pub mod ytdl;
 
 pub use item::{Item, Link, Search, VideoId};
 
-#[cfg(any(feature = "ytdl", feature = "playlist", feature = "player-connection"))]
+#[cfg(any(
+    feature = "ytdl",
+    feature = "playlist",
+    feature = "player-connection"
+))]
 #[derive(Debug)]
 #[cfg_attr(
     any(feature = "ytdl", feature = "playlist", feature = "player-connection"),
     derive(thiserror::Error)
 )]
 pub enum Error {
-    #[cfg(any(feature = "ytdl", feature = "player-connection", feature = "playlist"))]
+    #[cfg(any(
+        feature = "ytdl",
+        feature = "player-connection",
+        feature = "playlist"
+    ))]
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 

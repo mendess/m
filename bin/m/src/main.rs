@@ -25,7 +25,9 @@ use mlib::{
 use rand::seq::SliceRandom;
 use std::{pin::pin, process::ExitCode, sync::Mutex};
 use tokio::io;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _};
+use tracing_subscriber::{
+    EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _,
+};
 use util::session_kind::SessionKind;
 
 use crate::{
@@ -57,8 +59,12 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Prev(a) => player_ctl::prev(a).await?,
         Command::Shuffle => player_ctl::shuffle().await?,
         Command::Loop { flag: None } => player_ctl::toggle_loop().await?,
-        Command::Loop { flag: Some(state) } => player_ctl::set_looping(state).await?,
-        Command::Now { amount, show_files } => queue_ctl::now(amount, show_files).await?,
+        Command::Loop { flag: Some(state) } => {
+            player_ctl::set_looping(state).await?
+        }
+        Command::Now { amount, show_files } => {
+            queue_ctl::now(amount, show_files).await?
+        }
         Command::Dump { file } => queue_ctl::dump(file).await?,
         Command::Load { file, shuf } => queue_ctl::load(file, shuf).await?,
         Command::DeleteSong(DeleteSong {
@@ -70,7 +76,9 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Status { entity } => match entity {
             Some(EntityStatus::Players) => player_ctl::status().await?,
             Some(EntityStatus::Cache) => download_ctl::cache_status().await?,
-            Some(EntityStatus::Downloads) => download_ctl::daemon_status().await?,
+            Some(EntityStatus::Downloads) => {
+                download_ctl::daemon_status().await?
+            }
             None => {
                 player_ctl::status().await?;
                 if crate::config::CONFIG.download_bangers {
@@ -81,19 +89,27 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         },
         Command::Interactive => player_ctl::interactive().await?,
         Command::Lyrics => todo!("lyrics not implemented"),
-        Command::Info { id, song, verbose } => playlist_ctl::info(song, id, verbose).await?,
+        Command::Info { id, song, verbose } => {
+            playlist_ctl::info(song, id, verbose).await?
+        }
         Command::Socket { new } => {
             if new.is_some() {
                 println!(
                     "{}",
-                    players::legacy_socket_for(players::current().await?.unwrap_or_default() + 1)
-                        .await
+                    players::legacy_socket_for(
+                        players::current().await?.unwrap_or_default() + 1
+                    )
+                    .await
                 );
             } else {
                 match chosen_index().index().get() {
-                    Some(i) => println!("{}", players::legacy_socket_for(i).await),
+                    Some(i) => {
+                        println!("{}", players::legacy_socket_for(i).await)
+                    }
                     None => match players::current().await? {
-                        Some(i) => println!("{}", players::legacy_socket_for(i).await),
+                        Some(i) => {
+                            println!("{}", players::legacy_socket_for(i).await)
+                        }
                         None => println!("/dev/null"),
                     },
                 }
@@ -115,9 +131,12 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             queue_opts,
             play_opts,
         }) => {
-            let items =
-                search_params_to_items(play_opts.what, play_opts.search, play_opts.category)
-                    .await?;
+            let items = search_params_to_items(
+                play_opts.what,
+                play_opts.search,
+                play_opts.category,
+            )
+            .await?;
             queue_ctl::queue(queue_opts, items).await?;
         }
         Command::AutoComplete { shell } => {
@@ -139,8 +158,11 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 .into_iter()
                 .map(BangerLink::try_from)
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|link| anyhow::anyhow!("{} is not a valid link", link))?;
-            playlist_ctl::new(&links, metadata, categories.into(), batch).await?;
+                .map_err(|link| {
+                    anyhow::anyhow!("{} is not a valid link", link)
+                })?;
+            playlist_ctl::new(&links, metadata, categories.into(), batch)
+                .await?;
             if queue {
                 queue_ctl::queue(
                     Default::default(),
@@ -166,7 +188,8 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         }
         Command::CleanDownloads => {
             let ids = PlaylistIds::load().await?;
-            let mut to_delete = pin!(clean_downloads(dl_dir().await?, &ids).await?);
+            let mut to_delete =
+                pin!(clean_downloads(dl_dir().await?, &ids).await?);
             while let Some(f) = to_delete.next().await {
                 match f {
                     Ok(f) => {
@@ -191,7 +214,12 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     .map(|i| Item::Link(i.link.into()))
                     .collect()
             } else {
-                search_params_to_items(what.unwrap_or_default(), false, category).await?
+                search_params_to_items(
+                    what.unwrap_or_default(),
+                    false,
+                    category,
+                )
+                .await?
             };
             let dl_dir = dl_dir().await?;
             let total = items.len();
@@ -204,27 +232,43 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                                 if let Err(e) = downloaded::yt_download(
                                     dl_dir.clone(),
                                     &l,
-                                    config::CONFIG.download_format == DownloadFormat::Audio,
+                                    config::CONFIG.download_format
+                                        == DownloadFormat::Audio,
                                 )
                                 .await
                                 {
-                                    tracing::error!(?e, "failed to download {l}");
+                                    tracing::error!(
+                                        ?e,
+                                        "failed to download {l}"
+                                    );
                                 }
                             }
                         }
                         Link::Banger(l) => {
                             if !downloaded::is_in_cache(&dl_dir, &l).await {
                                 notify!("[{idx}/{total}] downloading {l}");
-                                if let Err(e) = downloaded::download(dl_dir.clone(), &l).await {
-                                    tracing::error!(?e, "failed to download {l}");
+                                if let Err(e) =
+                                    downloaded::download(dl_dir.clone(), &l)
+                                        .await
+                                {
+                                    tracing::error!(
+                                        ?e,
+                                        "failed to download {l}"
+                                    );
                                 }
                             }
                         }
                         Link::Playlist(link) => {
-                            tracing::warn!(?link, "donwloading playlists is not supported")
+                            tracing::warn!(
+                                ?link,
+                                "donwloading playlists is not supported"
+                            )
                         }
                         Link::Channel(link) => {
-                            tracing::warn!(?link, "donwloading channels is not supported")
+                            tracing::warn!(
+                                ?link,
+                                "donwloading channels is not supported"
+                            )
                         }
                         Link::OtherPlatform(link) => {
                             tracing::warn!(
@@ -249,7 +293,8 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             let song = match song {
                 _ if current => {
                     let filename = chosen_index().playing_item().await?;
-                    let Item::Link(item::link::Link::Banger(link)) = filename else {
+                    let Item::Link(item::link::Link::Banger(link)) = filename
+                    else {
                         anyhow::bail!("not currently playing a playlist item");
                     };
                     playlist
@@ -268,8 +313,14 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 None => anyhow::bail!("please provide a song to edit"),
             };
             notify!("editing song"; content: "{}", playlist.songs[song].name);
-            playlist_ctl::edit_categories(playlist, song, categories.into(), metadata, batch)
-                .await?
+            playlist_ctl::edit_categories(
+                playlist,
+                song,
+                categories.into(),
+                metadata,
+                batch,
+            )
+            .await?
         }
         Command::Events => events::display().await?,
     }
@@ -284,7 +335,11 @@ pub fn chosen_index() -> PlayerLink {
 
 async fn run() -> anyhow::Result<()> {
     download_ctl::start_daemon_if_running_as_daemon().await?;
-    players::start_daemon_if_running_as_daemon(Default::default(), Default::default()).await?;
+    players::start_daemon_if_running_as_daemon(
+        Default::default(),
+        Default::default(),
+    )
+    .await?;
 
     let Args {
         socket,
@@ -361,7 +416,9 @@ async fn main() -> ExitCode {
 fn handle_search_result<T>(r: PartialSearchResult<T>) -> anyhow::Result<T> {
     match r {
         PartialSearchResult::One(t) => Ok(t),
-        PartialSearchResult::None => Err(anyhow::anyhow!("song not in playlist")),
+        PartialSearchResult::None => {
+            Err(anyhow::anyhow!("song not in playlist"))
+        }
         PartialSearchResult::Many(too_many_matches) => Err(anyhow::anyhow!(
             "too many matches:\n  {}",
             too_many_matches.into_iter().format("\n  ")
@@ -399,7 +456,11 @@ impl SongQuery {
                         words.push(s)
                     }
                     Err(e) => {
-                        tracing::error!("error checking if {:?} was a path to a file: {:?}", s, e)
+                        tracing::error!(
+                            "error checking if {:?} was a path to a file: {:?}",
+                            s,
+                            e
+                        )
                     }
                 },
             }
@@ -440,9 +501,9 @@ async fn search_params_to_items(
         } else {
             Item::Link(
                 handle_search_result(
-                    Playlist::load()
-                        .await?
-                        .partial_name_search_mut(words.iter().map(String::as_str)),
+                    Playlist::load().await?.partial_name_search_mut(
+                        words.iter().map(String::as_str),
+                    ),
                 )?
                 .delete()
                 .link

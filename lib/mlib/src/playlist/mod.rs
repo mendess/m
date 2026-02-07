@@ -18,7 +18,10 @@ use std::{
 };
 use tokio::{
     fs::File,
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt as _, AsyncWriteExt as _, BufReader},
+    io::{
+        AsyncBufReadExt, AsyncReadExt, AsyncSeekExt as _, AsyncWriteExt as _,
+        BufReader,
+    },
 };
 
 use crate::{
@@ -35,7 +38,11 @@ pub struct Song {
     pub categories: uniq_vec::UniqVec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artist: Option<String>,
-    #[serde(default, rename = "genre", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "genre",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[deprecated]
     pub _genre: Option<String>,
     #[serde(default, skip_serializing_if = "uniq_vec::UniqVec::is_empty")]
@@ -146,12 +153,16 @@ impl Playlist {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Self::legacy_load_from(&playlist_path.with_extension("")).await;
+                return Self::legacy_load_from(
+                    &playlist_path.with_extension(""),
+                )
+                .await;
             }
             Err(e) => return Err(e.into()),
         };
-        let mut songs: Vec<Song> =
-            serde_json::from_reader(std::io::BufReader::new(file.into_std().await))?;
+        let mut songs: Vec<Song> = serde_json::from_reader(
+            std::io::BufReader::new(file.into_std().await),
+        )?;
         let mut changed = false;
         for s in &mut songs {
             #[expect(deprecated)]
@@ -174,7 +185,9 @@ impl Playlist {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::PlaylistFileNotFound(playlist_path.to_owned()));
+                return Err(Error::PlaylistFileNotFound(
+                    playlist_path.to_owned(),
+                ));
             }
             Err(e) => return Err(e.into()),
         };
@@ -184,7 +197,8 @@ impl Playlist {
         })
     }
 
-    pub async fn stream() -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
+    pub async fn stream()
+    -> Result<impl Stream<Item = Result<Song, csv_async::Error>>, Error> {
         let playlist_path = Self::path()?;
         Self::stream_from(playlist_path).await
     }
@@ -195,9 +209,11 @@ impl Playlist {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Self::legacy_stream_from(playlist_path.with_extension(""))
-                    .await
-                    .map(|s| s.boxed());
+                return Self::legacy_stream_from(
+                    playlist_path.with_extension(""),
+                )
+                .await
+                .map(|s| s.boxed());
             }
             Err(e) => return Err(e.into()),
         };
@@ -215,7 +231,9 @@ impl Playlist {
         let file = match File::open(&playlist_path).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::PlaylistFileNotFound(playlist_path.to_owned()));
+                return Err(Error::PlaylistFileNotFound(
+                    playlist_path.to_owned(),
+                ));
             }
             Err(e) => return Err(e.into()),
         };
@@ -227,7 +245,10 @@ impl Playlist {
         self.categories_of_kind(|s| s.all_categories())
     }
 
-    pub fn categories_of_kind<'p, F, I>(&'p self, f: F) -> HashMap<&'p str, usize>
+    pub fn categories_of_kind<'p, F, I>(
+        &'p self,
+        f: F,
+    ) -> HashMap<&'p str, usize>
     where
         F: Fn(&'p Song) -> I,
         I: Iterator<Item = &'p str>,
@@ -292,7 +313,8 @@ impl Playlist {
         let mut file = match File::options().write(true).open(&path).await {
             Ok(file) => file,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                let playlist = Self::legacy_load_from(&path.with_extension("")).await?;
+                let playlist =
+                    Self::legacy_load_from(&path.with_extension("")).await?;
                 playlist.save().await?;
                 File::options().write(true).open(&path).await?
             }
@@ -326,7 +348,10 @@ impl Playlist {
         Ok(())
     }
 
-    pub fn find_song<F: FnMut(&Song) -> bool>(&self, f: F) -> Option<PlaylistIndex<'_>> {
+    pub fn find_song<F: FnMut(&Song) -> bool>(
+        &self,
+        f: F,
+    ) -> Option<PlaylistIndex<'_>> {
         self.songs.iter().position(f).map(|index| PlaylistIndex {
             source: self,
             index,
@@ -386,11 +411,13 @@ impl Playlist {
             [index] => PartialSearchResult::One(*index),
             [] => PartialSearchResult::None,
             many => {
-                let exact_name_regex =
-                    regex::RegexBuilder::new(&format!("^{}$", regex::escape(&name)))
-                        .case_insensitive(true)
-                        .build()
-                        .unwrap();
+                let exact_name_regex = regex::RegexBuilder::new(&format!(
+                    "^{}$",
+                    regex::escape(&name)
+                ))
+                .case_insensitive(true)
+                .build()
+                .unwrap();
                 if let Some(index) = many
                     .iter()
                     .find(|i| exact_name_regex.is_match(&self.songs[**i].name))
@@ -398,7 +425,9 @@ impl Playlist {
                     PartialSearchResult::One(*index)
                 } else {
                     PartialSearchResult::Many(
-                        many.iter().map(|i| self.songs[*i].name.clone()).collect(),
+                        many.iter()
+                            .map(|i| self.songs[*i].name.clone())
+                            .collect(),
                     )
                 }
             }
@@ -537,7 +566,12 @@ impl PlaylistIds {
                 let line = &line[(idx + LINK_FIELD.len())..];
                 if let Some(end) = line.find('"') {
                     //TODO: unwrap
-                    set.insert(BangerId::new(line[..end].split('/').next_back().unwrap()).boxed());
+                    set.insert(
+                        BangerId::new(
+                            line[..end].split('/').next_back().unwrap(),
+                        )
+                        .boxed(),
+                    );
                 }
             }
         }
