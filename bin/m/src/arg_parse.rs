@@ -106,6 +106,8 @@ pub enum Command {
     #[command(alias = "j")]
     Vd(Amount),
 
+    Volume,
+
     /// Previous chapter in a file
     #[command(alias = "H")]
     Prev(Amount),

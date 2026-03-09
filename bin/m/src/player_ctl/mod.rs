@@ -42,6 +42,12 @@ where
     Ok(chosen_index().change_volume(-amount.unwrap_or(2)).await?)
 }
 
+pub async fn volume() -> anyhow::Result<()> {
+    let volume = chosen_index().volume().await?;
+    println!("{volume}");
+    Ok(())
+}
+
 pub async fn toggle_video() -> anyhow::Result<()> {
     Ok(chosen_index().toggle_video().await?)
 }

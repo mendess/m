@@ -50,6 +50,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         Command::Pause => player_ctl::cycle_pause().await?,
         Command::Vu(a) => player_ctl::vu(a).await?,
         Command::Vd(a) => player_ctl::vd(a).await?,
+        Command::Volume => player_ctl::volume().await?,
         Command::ToggleVideo => player_ctl::toggle_video().await?,
         Command::NextFile(a) => player_ctl::next_file(a).await?,
         Command::PrevFile(a) => player_ctl::prev_file(a).await?,
