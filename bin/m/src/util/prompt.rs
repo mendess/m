@@ -13,7 +13,7 @@ use futures_util::future::BoxFuture;
 use rustyline::error::ReadlineError;
 use std::{
     fmt::{Display, Write as _},
-    io::{Write as _, stdout},
+    io::{self, Write as _, stdout},
     os::unix::prelude::ExitStatusExt,
     process::{ExitStatus, Stdio},
     str::FromStr,
@@ -162,17 +162,20 @@ where
     S: AsRef<str>,
     I: Iterator<Item = S>,
 {
-    let mut command = Command::new("fzf");
-    let FeedAndRead { line, status, .. } = feed_and_read(
+    let FeedAndRead { line, status, .. } = match feed_and_read(
         items,
-        command.args([
+        Command::new("fzf").args([
             "-i",
             "--prompt",
             &format!("{prompt} "),
             "--print-query",
         ]),
     )
-    .await?;
+    .await?
+    {
+        FeedAndReadResult::PickerNotInstalled(_) => bail!("fzf no installed"),
+        FeedAndReadResult::Ok(o) => o,
+    };
     match status.code() {
         Some(0 | 1) => Ok(line),
         Some(130) => Ok(None),
@@ -198,12 +201,21 @@ where
     S: AsRef<str>,
     I: Iterator<Item = S>,
 {
-    let mut command = Command::new("dmenu");
-    let FeedAndRead { line, status, .. } = feed_and_read(
-        items,
-        command.args(["-i", "-p", prompt, "-l", &list_len.to_string()]),
-    )
-    .await?;
+    let args = ["-i", "-p", prompt, "-l", &list_len.to_string()];
+    let FeedAndRead { line, status, .. } =
+        match feed_and_read(items, Command::new("picker").args(args)).await? {
+            FeedAndReadResult::Ok(o) => o,
+            FeedAndReadResult::PickerNotInstalled(items) => {
+                match feed_and_read(items, Command::new("dmenu").args(args))
+                    .await?
+                {
+                    FeedAndReadResult::Ok(o) => o,
+                    FeedAndReadResult::PickerNotInstalled(_) => {
+                        bail!("dmenu not installed")
+                    }
+                }
+            }
+        };
     if !status.success() {
         if status.core_dumped() {
             return Err(anyhow::anyhow!("core dumped :("));
@@ -225,10 +237,15 @@ struct FeedAndRead {
     status: ExitStatus,
 }
 
+enum FeedAndReadResult<I> {
+    Ok(FeedAndRead),
+    PickerNotInstalled(I),
+}
+
 async fn feed_and_read<I, S>(
     items: I,
     command: &mut Command,
-) -> anyhow::Result<FeedAndRead>
+) -> anyhow::Result<FeedAndReadResult<I>>
 where
     S: AsRef<str>,
     I: Iterator<Item = S>,
@@ -238,10 +255,14 @@ where
         command.as_std().get_program(),
         command.as_std().get_args()
     );
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
+    let mut child =
+        match command.stdin(Stdio::piped()).stdout(Stdio::piped()).spawn() {
+            Ok(c) => c,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(FeedAndReadResult::PickerNotInstalled(items));
+            }
+            Err(e) => return Err(e.into()),
+        };
     let mut writer = BufWriter::new(child.stdin.take().unwrap());
     for i in items {
         writer.write_all(i.as_ref().as_bytes()).await?;
@@ -255,10 +276,10 @@ where
         last = Some(line)
     }
 
-    Ok(FeedAndRead {
+    Ok(FeedAndReadResult::Ok(FeedAndRead {
         line: last,
         status: child.wait().await?,
-    })
+    }))
 }
 
 pub struct CustomKeybind<'c, E> {
