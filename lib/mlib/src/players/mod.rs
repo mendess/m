@@ -157,30 +157,58 @@ pub enum Direction {
 #[derive(Debug, Serialize, Deserialize)]
 enum MessageKind {
     // meta
-    Create { items: Vec<Item>, with_video: bool },
+    Create {
+        items: Vec<Item>,
+        with_video: bool,
+    },
     PlayerList,
     LastQueue,
     LastClear,
-    LastQueueSet { to: usize },
+    LastQueueSet {
+        to: usize,
+    },
     Current,
     // actions
     CyclePause,
     Pause,
     Resume,
     QueueClear,
-    LoadFile { item: Item },
-    LoadList { path: PathBuf },
-    QueueMove { from: usize, to: usize },
-    QueueRemove { to_remove: usize },
-    QueueLoop { start_looping: bool },
+    LoadFile {
+        item: Item,
+    },
+    LoadList {
+        path: PathBuf,
+    },
+    QueueMove {
+        from: usize,
+        to: usize,
+    },
+    QueueRemove {
+        to_remove: usize,
+    },
+    QueueLoop {
+        start_looping: bool,
+    },
     QueueShuffle,
     Quit,
-    ChangeVolume { delta: i32 },
+    ChangeVolume {
+        delta: i32,
+    },
     CycleVideo,
-    SetVideo { on: bool },
-    ChangeFile { direction: Direction },
-    Seek { seconds: f64 },
-    ChangeChapter { direction: Direction, amount: i32 },
+    SetVideo {
+        on: bool,
+    },
+    ChangeFile {
+        direction: Direction,
+        count: Option<u64>,
+    },
+    Seek {
+        seconds: f64,
+    },
+    ChangeChapter {
+        direction: Direction,
+        amount: i32,
+    },
     // getters
     ChapterMetadata,
     Filename,
@@ -192,8 +220,12 @@ enum MessageKind {
     QueuePos,
     QueueSize,
     Volume,
-    QueueNFilename { at: usize },
-    QueueN { at: usize },
+    QueueNFilename {
+        at: usize,
+    },
+    QueueN {
+        at: usize,
+    },
     Duration,
     PlaybackTime,
 }
@@ -474,7 +506,7 @@ commands! {
     /// Set video
     set_video as SetVideo { on: bool };
     /// Change the currently playing file
-    change_file as ChangeFile { direction: Direction };
+    change_file as ChangeFile { direction: Direction, count: Option<u64> };
     /// Seek to a new point in the file
     seek as Seek { seconds: f64 };
     /// Jump to a chapter in the file

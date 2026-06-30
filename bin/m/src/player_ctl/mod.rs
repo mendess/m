@@ -58,10 +58,13 @@ where
 {
     let Amount { amount } = amount.into();
     let player = chosen_index();
-    for _ in 0..amount.unwrap_or(1) {
-        tracing::debug!("going to next file");
-        player.change_file(players::Direction::Next).await?;
-    }
+    tracing::debug!("going to next file");
+    player
+        .change_file(
+            players::Direction::Next,
+            amount.map(|a| u64::try_from(a).unwrap_or(0)),
+        )
+        .await?;
     Ok(())
 }
 
@@ -71,9 +74,12 @@ where
 {
     let Amount { amount } = amount.into();
     let player = chosen_index();
-    for _ in 0..amount.unwrap_or(1) {
-        player.change_file(players::Direction::Prev).await?;
-    }
+    player
+        .change_file(
+            players::Direction::Prev,
+            amount.map(|a| u64::try_from(a).unwrap_or(0)),
+        )
+        .await?;
     Ok(())
 }
 

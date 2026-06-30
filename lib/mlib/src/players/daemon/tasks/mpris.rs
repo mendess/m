@@ -114,7 +114,7 @@ impl PlayerInterface for MprisPlayer {
         self.daemon
             .lock()
             .await
-            .change_file(C, Direction::Next)
+            .change_file(C, Direction::Next, 1)
             .await
             .map_err(to_fdo_err)
     }
@@ -124,7 +124,7 @@ impl PlayerInterface for MprisPlayer {
         self.daemon
             .lock()
             .await
-            .change_file(C, Direction::Prev)
+            .change_file(C, Direction::Prev, 1)
             .await
             .map_err(to_fdo_err)
     }

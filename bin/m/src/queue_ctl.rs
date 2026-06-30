@@ -907,13 +907,24 @@ pub async fn find(query: String) -> anyhow::Result<()> {
 
     notify!("Seeking to {}", picks[pick].0);
 
-    let target_index = picks[pick].1.index;
+    let target_index = picks[pick].1.index as isize;
     let player = chosen_index();
-    while player.queue_pos().await? > target_index {
-        player.change_file(players::Direction::Prev).await?;
-    }
-    while player.queue_pos().await? < target_index {
-        player.change_file(players::Direction::Next).await?;
+    let queue_pos = player.queue_pos().await? as isize;
+    match queue_pos - target_index {
+        n @ ..0 => {
+            player
+                .change_file(
+                    players::Direction::Next,
+                    Some(n.unsigned_abs() as u64),
+                )
+                .await?
+        }
+        n @ 1.. => {
+            player
+                .change_file(players::Direction::Prev, Some(n as u64))
+                .await?
+        }
+        0 => {}
     }
 
     Ok(())

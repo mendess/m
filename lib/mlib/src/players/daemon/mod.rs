@@ -586,6 +586,7 @@ impl PlayersDaemon {
         &self,
         index: PlayerIndex,
         direction: Direction,
+        skip_over_n: u64,
     ) -> MpvResult<()> {
         let player = self.current_player(index)?;
         let pos: u64 = match simple_prop_logged::<i64>(player, "playlist-pos")?
@@ -602,9 +603,9 @@ impl PlayersDaemon {
                 _ => return Ok(()),
             };
         let new_pos = match direction {
-            Direction::Next => (pos + 1) % count,
+            Direction::Next => (pos + skip_over_n) % count,
             Direction::Prev => pos
-                .checked_sub(1)
+                .checked_sub(skip_over_n)
                 .unwrap_or_else(|| count.saturating_sub(1)),
         };
         player.command("playlist-play-index", &[&new_pos.to_string()])?;
@@ -913,8 +914,8 @@ async fn handle_messages(
         }
         MessageKind::CycleVideo => call!(players.cycle_video(index)),
         MessageKind::SetVideo { on } => call!(players.set_video(index, on)),
-        MessageKind::ChangeFile { direction } => {
-            call!(players.change_file(index, direction))
+        MessageKind::ChangeFile { direction, count } => {
+            call!(players.change_file(index, direction, count.unwrap_or(1)))
         }
         MessageKind::Seek { seconds } => call!(players.seek(index, seconds)),
         MessageKind::ChangeChapter { direction, amount } => {
