@@ -4,12 +4,14 @@ use crate::{
     download_ctl::check_cache_ref,
     notify,
     util::{
-        DisplayEither, DurationFmt, dl_dir, prompt::selector,
+        DisplayEither, DurationFmt, dl_dir,
+        prompt::{self, selector},
         with_video::with_video_env,
     },
 };
 
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     fmt,
     io::Write,
@@ -22,7 +24,7 @@ use anyhow::Context;
 use futures_util::{
     Stream, StreamExt, TryStreamExt,
     future::ready,
-    stream::{self, BoxStream, FuturesUnordered},
+    stream::{self, BoxStream, FuturesOrdered, FuturesUnordered},
 };
 use itertools::Itertools;
 use mlib::{
@@ -839,4 +841,80 @@ fn expand_playlists<I: IntoIterator<Item = Item>>(
             expanded.unwrap_or_else(|| single(i))
         })
         .flatten()
+}
+
+pub async fn find(query: String) -> anyhow::Result<()> {
+    let query = query.to_lowercase();
+    let queue = Queue::load_full(&chosen_index()).await?;
+    let playlist = Playlist::load().await?;
+    enum Match<'s> {
+        Artist(Cow<'s, str>),
+        Title(Cow<'s, str>),
+        None,
+    }
+    let futures = queue
+        .iter()
+        .map(async |i| {
+            if let Some(artist) = i.item.fetch_item_artist(&playlist).await
+                && artist.to_lowercase().contains(&query)
+            {
+                return Match::Artist(artist);
+            }
+            let title = i.item.fetch_item_title(&playlist).await;
+            if title.to_lowercase().contains(&query) {
+                Match::Title(title)
+            } else {
+                Match::None
+            }
+        })
+        .collect::<FuturesOrdered<_>>();
+
+    let picks = futures
+        .zip(futures_util::stream::iter(queue.iter()))
+        .fold(Vec::new(), async |mut acc, (matches, item)| {
+            match matches {
+                Match::None => {}
+                Match::Title(t) => {
+                    acc.push((t, item));
+                }
+                Match::Artist(a) => {
+                    if !matches!(acc.last(), Some((l, _)) if *l == a) {
+                        acc.push((a, item))
+                    }
+                }
+            }
+            acc
+        })
+        .await;
+
+    let pick = match picks.len() {
+        0 => return Ok(()),
+        1 => 0,
+        _ => {
+            let pick = prompt::selector(
+                picks.iter().map(|(t, _)| t),
+                "Which one?",
+                picks.len(),
+            )
+            .await?;
+            if let Some(pick) = pick {
+                picks.iter().position(|(i, _)| i.as_ref() == pick).unwrap()
+            } else {
+                return Ok(());
+            }
+        }
+    };
+
+    notify!("Seeking to {}", picks[pick].0);
+
+    let target_index = picks[pick].1.index;
+    let player = chosen_index();
+    while player.queue_pos().await? > target_index {
+        player.change_file(players::Direction::Prev).await?;
+    }
+    while player.queue_pos().await? < target_index {
+        player.change_file(players::Direction::Next).await?;
+    }
+
+    Ok(())
 }

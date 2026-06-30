@@ -206,6 +206,10 @@ pub enum Command {
         what: Option<Vec<String>>,
     },
 
+    Find {
+        query: String,
+    },
+
     Events,
 }
 

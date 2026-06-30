@@ -323,6 +323,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             )
             .await?
         }
+        Command::Find { query } => queue_ctl::find(query).await?,
         Command::Events => events::display().await?,
     }
 
