@@ -238,32 +238,31 @@ pub async fn yt_download(
 }
 
 pub async fn download(dl_dir: PathBuf, link: &BangerLink) -> Result<(), Error> {
-    fn parse_filename(content_disposition: &str) -> Option<&str> {
-        content_disposition.split(';').find_map(|part| {
-            let part = part.trim();
-            if part.starts_with("filename=") {
-                Some(part.trim_start_matches("filename=").trim_matches('"'))
-            } else {
-                None
-            }
-        })
-    }
-
     let response = reqwest::get(link.as_str()).await?.error_for_status()?;
-    let id = if let Some(disposition) =
-        response.headers().get(header::CONTENT_DISPOSITION)
-        && let Ok(value) = disposition.to_str()
-        && let Some(filename) = parse_filename(value)
+    let id = link.id();
+    let ext = if let Some(content_type) =
+        response.headers().get(header::CONTENT_TYPE)
     {
-        filename
+        match content_type.to_str() {
+            Ok("audio/x-matroska") => "mka",
+            Ok("audio/flac") => "flac",
+            Ok(other) => {
+                tracing::error!("unexpected mime type: {other}");
+                return Ok(());
+            }
+            Err(_) => {
+                tracing::error!("content type was invalid utf8");
+                return Ok(());
+            }
+        }
     } else {
-        panic!()
+        tracing::error!("no content type returned");
+        return Ok(());
     };
     let BangerMetadata { title, .. } = link.metadata().await?;
     let title = title.replace("/", "_").replace("\"", "'");
-    let (id, ext) = id.split_once('.').unwrap();
 
-    let file_name = format!("{title}={id}=m.{ext}");
+    let file_name = format!("{title}={}=m.{ext}", id.as_str());
     let path = dl_dir.join(file_name);
     use tokio_util::compat::FuturesAsyncReadCompatExt;
 
