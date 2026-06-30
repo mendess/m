@@ -118,17 +118,15 @@ static READER_BUILDER: LazyLock<AsyncReaderBuilder> = LazyLock::new(|| {
 impl Playlist {
     fn path() -> io::Result<&'static PathBuf> {
         static PATH: LazyLock<io::Result<PathBuf>> = LazyLock::new(|| {
-            let mut path = env::var_os("PLAYLIST")
+            env::var_os("PLAYLIST")
                 .map(PathBuf::from)
                 .or_else(|| {
                     let mut playlist_path = config_dir()?;
                     playlist_path.push("m");
-                    playlist_path.push("playlist");
+                    playlist_path.push("playlist.json");
                     Some(playlist_path)
                 })
-                .ok_or(io::ErrorKind::NotFound)?;
-            path.set_extension("json");
-            Ok(path)
+                .ok_or(io::ErrorKind::NotFound.into())
         });
         PATH.as_ref().map_err(|e| {
             tracing::error!(error = ?e, "failed to find playlist path");
