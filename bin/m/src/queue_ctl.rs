@@ -24,7 +24,7 @@ use anyhow::Context;
 use futures_util::{
     Stream, StreamExt, TryStreamExt,
     future::ready,
-    stream::{self, BoxStream, FuturesOrdered, FuturesUnordered},
+    stream::{self, BoxStream, FuturesUnordered},
 };
 use itertools::Itertools;
 use mlib::{
@@ -852,26 +852,26 @@ pub async fn find(query: String) -> anyhow::Result<()> {
         Title(Cow<'s, str>),
         None,
     }
-    let futures = queue
-        .iter()
-        .map(async |i| {
-            if let Some(artist) = i.item.fetch_item_artist(&playlist).await
-                && artist.to_lowercase().contains(&query)
-            {
-                return Match::Artist(artist);
-            }
-            let title = i.item.fetch_item_title(&playlist).await;
-            if title.to_lowercase().contains(&query) {
-                Match::Title(title)
-            } else {
-                Match::None
-            }
-        })
-        .collect::<FuturesOrdered<_>>();
+    let matches = futures_util::stream::iter(queue.iter().map(async |i| {
+        if let Some(artist) = i.item.fetch_item_artist(&playlist).await
+            && artist.to_lowercase().contains(&query)
+        {
+            return Match::Artist(artist);
+        }
+        let title = i.item.fetch_item_title(&playlist).await;
+        if title.to_lowercase().contains(&query) {
+            Match::Title(title)
+        } else {
+            Match::None
+        }
+    }))
+    .buffered(256)
+    .collect::<Vec<_>>()
+    .await;
 
-    let picks = futures
-        .zip(futures_util::stream::iter(queue.iter()))
-        .fold(Vec::new(), async |mut acc, (matches, item)| {
+    let picks = matches.iter().zip(queue.iter()).fold(
+        Vec::new(),
+        |mut acc, (matches, item)| {
             match matches {
                 Match::None => {}
                 Match::Title(t) => {
@@ -884,8 +884,8 @@ pub async fn find(query: String) -> anyhow::Result<()> {
                 }
             }
             acc
-        })
-        .await;
+        },
+    );
 
     let pick = match picks.len() {
         0 => return Ok(()),
