@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.6.34"
+version = "0.7.0"
 edition = { workspace = true }
 
 [dependencies]
@@ -17,7 +17,6 @@ futures-util.workspace = true
 itertools = { workspace = true }
 levenshtein = { workspace = true }
 memchr.workspace = true
-mlib = { path = "../../lib/mlib", default-features = true }
 mpris-server = { workspace = true }
 namespaced-tmp.workspace  = true
 rand = { workspace = true, features = ["getrandom"] }
@@ -41,5 +40,19 @@ zbus = { workspace = true }
 workspace = true
 features = ["macros", "rt-multi-thread", "rt", "parking_lot"]
 
+[dependencies.mlib]
+path = "../../lib/mlib"
+default-features = false
+features = [
+    "ytdl",
+    "player",
+    "player-connection",
+    "statistics",
+    "playlist",
+    "queue",
+    "downloads"
+]
+
 [features]
 clipboard = ["dep:wl-clipboard-rs", "dep:arboard"]
+mpris = ["mlib/mpris"]
