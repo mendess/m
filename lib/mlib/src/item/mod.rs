@@ -20,9 +20,6 @@ pub use link::{
 use serde::{Deserialize, Serialize};
 
 use crate::item::link::{BangerId, HasId as _, YtId as _};
-#[cfg(all(feature = "ytdl", feature = "playlist"))]
-use std::borrow::Cow;
-use tokio::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 #[from(forward)]
@@ -94,7 +91,7 @@ impl Item {
     pub async fn fetch_item_title<'s>(
         &'s self,
         playlist: &'s crate::playlist::Playlist,
-    ) -> Cow<'s, str> {
+    ) -> std::borrow::Cow<'s, str> {
         use crate::ytdl::YtdlBuilder;
         use std::borrow::Cow;
         match self {
@@ -150,7 +147,7 @@ impl Item {
     pub async fn fetch_item_artist<'s>(
         &'s self,
         playlist: &'s crate::playlist::Playlist,
-    ) -> Option<Cow<'s, str>> {
+    ) -> Option<std::borrow::Cow<'s, str>> {
         use std::borrow::Cow;
         match self {
             Item::Link(l) => match l.as_video() {
@@ -176,11 +173,12 @@ impl Item {
 }
 
 #[tracing::instrument(level = "warn")]
+#[cfg(all(feature = "ytdl", feature = "playlist"))]
 async fn get_artist_from_tags(file: &Path) -> Option<String> {
     if let Some("jpg" | "png") = file.extension().and_then(OsStr::to_str) {
         return None;
     }
-    let output = Command::new("ffprobe")
+    let output = tokio::process::Command::new("ffprobe")
         .arg(file)
         .args([
             "-of",

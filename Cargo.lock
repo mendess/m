@@ -255,12 +255,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async_once"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce4f10ea3abcd6617873bae9f91d1c5332b4a778bd9ce34d0cd517474c1de82"
-
-[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1634,7 +1628,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "m"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1643,32 +1637,23 @@ dependencies = [
  "cli-daemon",
  "config",
  "crossterm",
- "derive_more",
  "dirs",
  "futures-util",
  "itertools",
  "levenshtein",
- "memchr",
  "mlib",
- "mpris-server",
- "namespaced-tmp",
  "rand 0.8.5",
  "regex",
  "reqwest",
  "rustyline",
  "serde",
- "serde-map-to-array",
  "serde_json",
  "tempfile",
- "thiserror",
  "tokio",
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
- "trait-gen",
- "whoami",
  "wl-clipboard-rs",
- "zbus",
 ]
 
 [[package]]
@@ -1731,17 +1716,15 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.20.10"
+version = "0.21.0"
 dependencies = [
  "arc-swap",
- "async_once",
  "base64 0.22.1",
  "chrono",
  "cli-daemon",
  "csv-async",
  "derive_more",
  "dirs",
- "form_urlencoded",
  "futures-util",
  "glob",
  "libmpv",
@@ -1766,7 +1749,6 @@ dependencies = [
  "tracing-subscriber",
  "trait-gen",
  "url",
- "whoami",
  "zbus",
 ]
 
@@ -1795,7 +1777,7 @@ dependencies = [
 
 [[package]]
 name = "mtv"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "mlib",
  "tokio",

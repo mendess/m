@@ -1,6 +1,6 @@
 [package]
 name = "m"
-version = "0.7.1"
+version = "0.7.2"
 edition = { workspace = true }
 
 [dependencies]
@@ -11,30 +11,21 @@ clap_complete = { workspace = true }
 cli-daemon = { path = "../../lib/cli-daemon" }
 config = { workspace = true }
 crossterm = { workspace = true }
-derive_more = { workspace = true }
 dirs = { workspace = true }
 futures-util.workspace = true
 itertools = { workspace = true }
 levenshtein = { workspace = true }
-memchr.workspace = true
-mpris-server = { workspace = true }
-namespaced-tmp.workspace  = true
 rand = { workspace = true, features = ["getrandom"] }
 regex.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls", "stream", "json"] }
 rustyline = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde-map-to-array = { workspace = true }
 serde_json.workspace = true
 tempfile.workspace = true
-thiserror = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
 tracing-subscriber = { workspace = true, features = ["registry", "env-filter", "fmt"] }
 tracing.workspace = true
-trait-gen = { workspace = true }
-whoami.workspace = true
 wl-clipboard-rs = { optional = true, workspace = true }
-zbus = { workspace = true }
 
 [dependencies.tokio]
 workspace = true
