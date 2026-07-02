@@ -173,7 +173,8 @@ pub async fn status() -> anyhow::Result<()> {
 
         notify!(
             "{player}";
-            content: " §btitle:§r {}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}",
+            content: " §btitle:§r {}{}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}",
+                current.artist.map(|a| format!("{a} - ")).unwrap_or_default(),
                 current.title,
                 current.progress.as_ref().map(ToString::to_string).unwrap_or_else(|| String::from("none")),
                 if current.playing { ">" } else { "||" },
