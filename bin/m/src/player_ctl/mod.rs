@@ -7,7 +7,9 @@ use super::arg_parse::Amount;
 use anyhow::Context;
 use mlib::{players, queue::Queue};
 
-use crate::{chosen_index, notify};
+use crate::{chosen_index, notify, util::DurationFmt};
+use futures_util::StreamExt as _;
+use std::time::Duration;
 
 pub async fn resume() -> anyhow::Result<()> {
     Ok(chosen_index().resume().await?)
@@ -153,12 +155,9 @@ pub async fn set_looping(state: bool) -> anyhow::Result<()> {
 pub async fn status() -> anyhow::Result<()> {
     let all = players::all().await?;
     for player in all {
-        let current =
-            Queue::current(&player, mlib::queue::CurrentOptions::None)
-                .await
-                .with_context(|| {
-                    format!("[{player}] fetching current in queue")
-                })?;
+        let queue = Queue::load_full(&player)
+            .await
+            .with_context(|| format!("[{player}] fetching current in queue"))?;
         let queue_size = player
             .queue_size()
             .await
@@ -171,9 +170,30 @@ pub async fn status() -> anyhow::Result<()> {
             .map(|l| format!(" (last queued {l})"))
             .unwrap_or_default();
 
+        let current = queue
+            .current_song(&player, mlib::queue::CurrentOptions::None)
+            .await?;
+        let total_runtime = futures_util::stream::iter(queue.iter())
+            .map(|s| async {
+                match s.item.runtime().await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::warn!(
+                            ?e,
+                            "failed to get runtime for {}",
+                            s.item
+                        );
+                        Duration::ZERO
+                    }
+                }
+            })
+            .buffer_unordered(32)
+            .fold(Duration::ZERO, |acc, i| std::future::ready(acc + i))
+            .await;
+
         notify!(
             "{player}";
-            content: " §btitle:§r {}{}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}",
+            content: " §btitle:§r {}{}\n §b meta:§r {:.0}% {}\n §bqueue:§r {}/{}{}\n §btotal runtime:§r {}",
                 current.artist.map(|a| format!("{a} - ")).unwrap_or_default(),
                 current.title,
                 current.progress.as_ref().map(ToString::to_string).unwrap_or_else(|| String::from("none")),
@@ -181,6 +201,7 @@ pub async fn status() -> anyhow::Result<()> {
                 current.index,
                 queue_size.saturating_sub(1),
                 last_queue,
+                DurationFmt(total_runtime),
         );
     }
     Ok(())

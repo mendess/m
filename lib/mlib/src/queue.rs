@@ -31,8 +31,13 @@ impl Queue {
         self.items.get(self.current_idx + 1..).unwrap_or_default()
     }
 
-    pub fn current_song(&self) -> &SongIdent {
-        &self.items[self.current_idx]
+    pub async fn current_song(
+        &self,
+        player: &PlayerLink,
+        opts: CurrentOptions,
+    ) -> Result<Current, Error> {
+        Self::current_inner(player, opts, &self.items[self.current_idx].item)
+            .await
     }
 
     pub fn current_idx(&self) -> usize {
@@ -71,13 +76,11 @@ impl Queue {
         }
     }
 
-    #[tracing::instrument(skip(player))]
-    #[cfg(feature = "ytdl")]
-    pub async fn current(
+    async fn current_inner(
         player: &PlayerLink,
         opt: CurrentOptions,
+        item: &Item,
     ) -> Result<Current, Error> {
-        pub use crate::Item;
         use crate::{
             Error,
             players::error::{Error as PlayerError, MpvError, MpvErrorCode},
@@ -90,7 +93,6 @@ impl Queue {
         let metadata = async {
             tracing::trace!("getting");
             let media_title = player.media_title().await?;
-            let item = Item::from(player.filename().await?);
             let id = item.id();
             // TODO: this is wrong
             let title = if media_title.is_empty() {
@@ -214,6 +216,16 @@ impl Queue {
 
     #[tracing::instrument(skip(player))]
     #[cfg(feature = "ytdl")]
+    pub async fn current(
+        player: &PlayerLink,
+        opt: CurrentOptions,
+    ) -> Result<Current, Error> {
+        Self::current_inner(player, opt, &Item::from(player.filename().await?))
+            .await
+    }
+
+    #[tracing::instrument(skip(player))]
+    #[cfg(feature = "ytdl")]
     pub async fn up_next<I>(
         player: &PlayerLink,
         queue_index: I,
@@ -270,7 +282,7 @@ impl Queue {
         for i in self.before() {
             f(i)
         }
-        c(self.current_song());
+        c(&self.items[self.current_idx]);
         for i in self.after() {
             f(i)
         }

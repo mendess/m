@@ -582,7 +582,7 @@ pub async fn edit_categories(
             while let Some(delete) =
                 prompt::interative_select(&categories, []).await?
             {
-                println!("removed {}", &categories[delete]);
+                println!("removed {}", categories[delete]);
                 categories.remove_at(delete);
             }
         }

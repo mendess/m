@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
     str::Utf8Error,
     string::FromUtf8Error,
+    time::Duration,
 };
 
 use derive_more::derive::From;
@@ -84,6 +85,68 @@ impl Item {
             Item::Link(l) => l.as_str(),
             Item::File(f) => f.as_os_str().to_str().unwrap(),
             Item::Search(s) => s.as_str(),
+        }
+    }
+
+    #[cfg(all(feature = "ytdl", feature = "playlist"))]
+    pub async fn runtime(&self) -> Result<Duration, crate::Error> {
+        use crate::ytdl::YtdlBuilder;
+
+        match self {
+            Item::Link(link) => link.runtime().await,
+            Item::File(path_buf) => {
+                if tokio::fs::metadata(path_buf).await?.is_dir() {
+                    // TODO
+                    tracing::warn!(?path_buf, "can't get runtime of directory");
+                    return Ok(Duration::ZERO);
+                }
+                // ffprobe -i <file> -show_entries format=duration -v quiet -of csv=p=0
+
+                use tokio::process::Command;
+                let duration_output = Command::new("ffprobe")
+                    .arg("-i")
+                    .arg(path_buf)
+                    .args([
+                        "-show_entries",
+                        "format=duration",
+                        "-v",
+                        "quiet",
+                        "-of",
+                        "csv=p=0",
+                    ])
+                    .output()
+                    .await?;
+                if !duration_output.status.success() {
+                    return Err(crate::Error::Io(std::io::Error::other(
+                        format!(
+                            "ffprobe for {} failed with status: {:?}",
+                            path_buf.display(),
+                            duration_output.status.code(),
+                        ),
+                    )));
+                }
+                let duration_str = std::str::from_utf8(&duration_output.stdout)
+                    .map_err(|_| {
+                        std::io::Error::other(format!(
+                            "ffprobe for {} output is not utf8",
+                            path_buf.display()
+                        ))
+                    })?;
+
+                let duration = duration_str.trim().parse::<f32>().map_err(|_| {
+                    std::io::Error::other(format!(
+                        "ffprobe for {} output is not a float: {duration_str:?}",
+                        path_buf.display()
+                    ))
+                })?;
+
+                Ok(Duration::from_secs_f32(duration))
+            }
+            Item::Search(search) => Ok(YtdlBuilder::new(search)
+                .get_duration()
+                .search()
+                .await?
+                .duration()),
         }
     }
 

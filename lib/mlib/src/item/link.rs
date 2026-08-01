@@ -200,6 +200,36 @@ impl Link {
             | Self::OtherPlatform(_) => None,
         }
     }
+
+    #[cfg(all(feature = "ytdl", feature = "playlist"))]
+    pub async fn runtime(&self) -> Result<Duration, crate::Error> {
+        use crate::ytdl::YtdlBuilder;
+        use futures_util::TryStreamExt as _;
+
+        match self {
+            Self::Video(link) => Ok(YtdlBuilder::new(link)
+                .get_duration()
+                .request()
+                .await?
+                .duration()),
+            Link::Banger(banger_link) => {
+                Ok(banger_link.metadata().await?.duration)
+            }
+            Self::Channel(_) => Ok(Duration::ZERO),
+            Self::Playlist(playlist) => {
+                YtdlBuilder::new(playlist)
+                    .get_duration()
+                    .request_playlist()
+                    .await?
+                    .map_ok(|i| i.duration())
+                    .try_fold(Duration::ZERO, |acc, i| {
+                        std::future::ready(Ok(acc + i))
+                    })
+                    .await
+            }
+            Link::OtherPlatform(_) => Ok(Duration::ZERO),
+        }
+    }
 }
 
 impl TryFrom<Url> for Link {
