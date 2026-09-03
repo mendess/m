@@ -238,10 +238,17 @@ async fn ui_task() -> anyhow::Result<()> {
     let (column, row) = guard.guarantee_space(&mut stdout().lock(), 10)?;
     crate::notify!("Loading....");
     let mut event_listener = pin!(event_listener().await?);
-    let mut current =
-        Queue::current(&chosen_index(), mlib::queue::CurrentOptions::GetNext)
-            .await
-            .unwrap();
+    let mut current = match Queue::current(
+        &chosen_index(),
+        mlib::queue::CurrentOptions::GetNext,
+    )
+    .await
+    {
+        Ok(current) => current,
+        Err(mlib::Error::MpvError(MpvError::NoMpvInstance)) => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+
     loop {
         let r = stdout()
             .lock()
@@ -249,10 +256,15 @@ async fn ui_task() -> anyhow::Result<()> {
             .and_then(|s| s.queue(Clear(ClearType::FromCursorDown)))
             .and_then(|s| s.flush());
         match r {
-            Ok(_) => crate::queue_ctl::display_current(&current, false).await,
-            Err(e) => anyhow::Result::Err(e.into()),
-        }
-        .unwrap();
+            Ok(_) => {
+                if let Err(e) =
+                    crate::queue_ctl::display_current(&current, false).await
+                {
+                    return anyhow::Result::Err(e);
+                }
+            }
+            Err(e) => return anyhow::Result::Err(e.into()),
+        };
         let listen =
             timeout(Duration::from_secs(1), event_listener.next()).await;
         match listen {
