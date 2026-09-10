@@ -158,6 +158,15 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
             let links = query
                 .into_iter()
                 .map(BangerLink::try_from)
+                .map(|l| {
+                    l.or_else(|l| {
+                        BangerLink::try_from(
+                            format!(
+                                "https://blind-eternities.mendess.xyz/playlist/song/audio/{l}"
+                            )
+                        )
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|link| {
                     anyhow::anyhow!("{} is not a valid link", link)

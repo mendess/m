@@ -3292,9 +3292,9 @@ dependencies = [
 
 [[package]]
 name = "trait-gen"
-version = "2.0.6"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0c4a34bf4106d84105890c4ed2cdf9ef97a79f9857e687531afea6a75ca8c"
+checksum = "7a7bba8c1bc9d15cb0c08383f56069ef44a6e8cc8931ea807ce2196006a8ea67"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",

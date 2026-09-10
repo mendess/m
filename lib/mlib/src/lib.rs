@@ -3,6 +3,8 @@
 
 #[cfg(feature = "downloads")]
 pub mod downloaded;
+#[cfg(feature = "http")]
+pub mod http;
 pub mod item;
 #[cfg(feature = "player-connection")]
 pub mod players;
