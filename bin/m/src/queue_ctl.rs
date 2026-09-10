@@ -345,7 +345,8 @@ async fn notify(
                 ($thumbnail:expr, $title:expr) => {{
                     let thumbnail = $thumbnail;
                     tracing::debug!("thumbnail: {}", thumbnail);
-                    let thumb = reqwest::get(thumbnail).await?;
+                    let thumb =
+                        ::mlib::http::client()?.get(thumbnail).send().await?;
                     let mut byte_stream = thumb.bytes_stream();
                     let mut img_file = BufWriter::new(File::from(img_file));
                     while let Some(chunk) =

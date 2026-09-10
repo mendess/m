@@ -622,7 +622,13 @@ impl BangerLink {
             url.set_path("/playlist/song/metadata/");
             url.join(id.as_str()).unwrap()
         };
-        reqwest::get(url).await?.error_for_status()?.json().await
+        crate::http::client()?
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
     }
 }
 

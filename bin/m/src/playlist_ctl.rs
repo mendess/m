@@ -220,7 +220,7 @@ where
     while let Some((c, category)) = heap.pop() {
         i += 1;
         println!("\t{category} ({c})");
-        if i == 10 {
+        if i == 20 {
             break;
         }
     }
@@ -249,11 +249,23 @@ where
     S: std::borrow::Borrow<str>,
 {
     if !playlist_categories.contains_key(cat) {
-        let close_matches = playlist_categories
+        let mut close_matches = playlist_categories
             .iter()
             .filter(|(c, _)| levenshtein(c.as_ref(), cat) < 4)
+            .chain(
+                playlist_categories
+                    .iter()
+                    .filter(|(c, _)| c.as_ref().starts_with(cat.as_str())),
+            )
+            .chain(
+                playlist_categories
+                    .iter()
+                    .filter(|(c, _)| c.as_ref().ends_with(cat.as_str())),
+            )
             .map(|(c, _)| c.as_ref())
             .collect::<Vec<_>>();
+        close_matches.sort();
+        close_matches.dedup();
         if !close_matches.is_empty() {
             println!("You said {cat}. Did you mean any of these?");
             if let Some(index) =
@@ -288,9 +300,10 @@ async fn category_prompt(
 ) -> anyhow::Result<SongMetadata> {
     let playlist = Playlist::load().await?;
     let playlist_categories = playlist.categories();
-    if let Some(artist) =
+    if let Some(mut artist) =
         prompt::prompt_with_default("artist", meta.artist.as_deref()).await?
     {
+        did_you_mean_check(&playlist_categories, &mut artist).await?;
         let genres = playlist
             .songs
             .iter()

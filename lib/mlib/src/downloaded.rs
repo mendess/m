@@ -238,7 +238,11 @@ pub async fn yt_download(
 }
 
 pub async fn download(dl_dir: PathBuf, link: &BangerLink) -> Result<(), Error> {
-    let response = reqwest::get(link.as_str()).await?.error_for_status()?;
+    let response = crate::http::client()?
+        .get(link.as_str())
+        .send()
+        .await?
+        .error_for_status()?;
     let id = link.id();
     let ext = if let Some(content_type) =
         response.headers().get(header::CONTENT_TYPE)
