@@ -334,6 +334,7 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
         }
         Command::Find { query } => queue_ctl::find(query).await?,
         Command::Events => events::display().await?,
+        Command::DaemonRunning => unreachable!(),
     }
 
     Ok(())
@@ -346,11 +347,6 @@ pub fn chosen_index() -> PlayerLink {
 
 async fn run() -> anyhow::Result<()> {
     download_ctl::start_daemon_if_running_as_daemon().await?;
-    players::start_daemon_if_running_as_daemon(
-        Default::default(),
-        Default::default(),
-    )
-    .await?;
 
     let Args {
         socket,
@@ -367,6 +363,24 @@ async fn run() -> anyhow::Result<()> {
             }
         }
     };
+
+    if let Some(Command::DaemonRunning) = cmd {
+        match mlib::players::current().await {
+            Ok(_) => println!("daemon is running"),
+            Err(mlib::players::Error::Io(e))
+                if e.kind() == io::ErrorKind::NotFound =>
+            {
+                anyhow::bail!("daemon is running")
+            }
+            Err(e) => return Err(e.into()),
+        }
+        return Ok(());
+    }
+    players::start_daemon_if_running_as_daemon(
+        Default::default(),
+        Default::default(),
+    )
+    .await?;
     if let Some(id) = socket {
         *CHOSEN_INDEX.lock().unwrap() = PlayerIndex::of(id);
     }

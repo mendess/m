@@ -172,6 +172,8 @@ pub enum Command {
         entity: Option<EntityStatus>,
     },
 
+    DaemonRunning,
+
     /// Info
     Info {
         #[arg(short, long)]
