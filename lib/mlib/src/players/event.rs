@@ -91,6 +91,15 @@ impl OwnedMpvNode {
         }
     }
 
+    pub fn as_str(&self) -> Result<&str, super::error::MpvError> {
+        match self {
+            Self::String(s) => Ok(s),
+            Self::OsdString(s) => Ok(s),
+            Self::Invalid(e) => Err(e.clone()),
+            _ => panic!("{self:?} is not a string"),
+        }
+    }
+
     pub fn into_bool(self) -> Result<bool, super::error::MpvError> {
         match self {
             Self::Flag(flag) => Ok(flag),

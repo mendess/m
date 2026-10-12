@@ -1558,7 +1558,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "m"
-version = "0.7.6"
+version = "0.7.7"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1650,7 +1650,7 @@ dependencies = [
 
 [[package]]
 name = "mlib"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "arc-swap",
  "base64",
@@ -1711,7 +1711,7 @@ dependencies = [
 
 [[package]]
 name = "mtv"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "mlib",
  "tokio",

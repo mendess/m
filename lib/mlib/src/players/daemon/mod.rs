@@ -295,6 +295,9 @@ impl PlayersDaemon {
         let player = Arc::new(Player::new(mpv, events));
 
         tokio::spawn(tasks::last_queue_monitor::reset(Arc::downgrade(&player)));
+        tokio::spawn(tasks::covers_monitor::remove_covers(Arc::downgrade(
+            &player,
+        )));
 
         let items = items
             .into_iter()

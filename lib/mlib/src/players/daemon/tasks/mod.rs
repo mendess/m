@@ -1,6 +1,7 @@
 use super::SharedPlayersDaemon;
 use futures_util::join;
 
+pub mod covers_monitor;
 pub mod last_queue_monitor;
 #[cfg(feature = "mpris")]
 pub mod mpris;
