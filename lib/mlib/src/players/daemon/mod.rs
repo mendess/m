@@ -357,11 +357,11 @@ impl PlayersDaemon {
         &mut self,
         index: PlayerIndex,
     ) -> MpvResult<Option<usize>> {
-        Ok(self.current_player(index)?.get_last_queue())
+        Ok(self.current_player(index, false)?.get_last_queue())
     }
 
     pub(super) fn last_queue_clear(&self, index: PlayerIndex) -> MpvResult<()> {
-        self.current_player(index)?.clear_last_queue();
+        self.current_player(index, true)?.clear_last_queue();
 
         Ok(())
     }
@@ -371,13 +371,14 @@ impl PlayersDaemon {
         index: PlayerIndex,
         to: usize,
     ) -> MpvResult<()> {
-        self.current_player(index)?.set_last_queue(to);
+        self.current_player(index, true)?.set_last_queue(to);
         Ok(())
     }
 
     pub(super) fn current_player(
         &self,
         index: PlayerIndex,
+        update: bool,
     ) -> MpvResult<&Player> {
         let index = index.0.or_else(|| {
             let index = *self.current_default.borrow();
@@ -386,14 +387,16 @@ impl PlayersDaemon {
         });
         index
             .inspect(|i| {
-                self.current_default.send_if_modified(|c| {
-                    if *c == Some(*i) {
-                        false
-                    } else {
-                        *c = Some(*i);
-                        true
-                    }
-                });
+                if update {
+                    self.current_default.send_if_modified(|c| {
+                        if *c == Some(*i) {
+                            false
+                        } else {
+                            *c = Some(*i);
+                            true
+                        }
+                    });
+                }
             })
             .and_then(|i| self.players.get(i))
             .ok_or(MpvError::NoMpvInstance)
@@ -403,17 +406,18 @@ impl PlayersDaemon {
         &self,
         index: PlayerIndex,
     ) -> MpvResult<()> {
-        self.current_player(index)?.cycle_property("pause", true)?;
+        self.current_player(index, true)?
+            .cycle_property("pause", true)?;
         Ok(())
     }
 
     pub(super) async fn pause(&self, index: PlayerIndex) -> MpvResult<()> {
-        self.current_player(index)?.pause()?;
+        self.current_player(index, true)?.pause()?;
         Ok(())
     }
 
     pub(super) async fn resume(&self, index: PlayerIndex) -> MpvResult<()> {
-        self.current_player(index)?.unpause()?;
+        self.current_player(index, true)?.unpause()?;
         Ok(())
     }
 
@@ -423,7 +427,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         pos: usize,
     ) -> MpvResult<()> {
-        self.current_player(index)?
+        self.current_player(index, true)?
             .command("playlist-play-index", &[&pos.to_string()])?;
         Ok(())
     }
@@ -432,7 +436,7 @@ impl PlayersDaemon {
         &self,
         index: PlayerIndex,
     ) -> MpvResult<()> {
-        let player = self.current_player(index)?;
+        let player = self.current_player(index, true)?;
         player.playlist_clear()?;
         player.preemptive_download().stop_all();
         Ok(())
@@ -443,7 +447,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         item: Item,
     ) -> MpvResult<()> {
-        let player = self.current_player(index)?;
+        let player = self.current_player(index, true)?;
         let item = player.preemptive_download().song_queued(item);
         player.playlist_load_files(&[(
             (&item).try_into().map_err(|_| MpvError::InvalidUtf8)?,
@@ -458,7 +462,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         path: PathBuf,
     ) -> MpvResult<()> {
-        self.current_player(index)?.playlist_load_list(
+        self.current_player(index, true)?.playlist_load_list(
             path.to_str().ok_or(MpvError::InvalidUtf8)?,
             false,
         )?;
@@ -471,7 +475,8 @@ impl PlayersDaemon {
         from: usize,
         to: usize,
     ) -> MpvResult<()> {
-        self.current_player(index)?.playlist_move_fixed(from, to)
+        self.current_player(index, true)?
+            .playlist_move_fixed(from, to)
     }
 
     pub(super) async fn queue_remove(
@@ -479,7 +484,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         to_remove: usize,
     ) -> MpvResult<()> {
-        let player = self.current_player(index)?;
+        let player = self.current_player(index, true)?;
         if self.queue_is_looping(player)? != LoopStatus::No {
             let pos = simple_prop_logged::<i64>(player, "playlist-pos")?;
             if to_remove as i64 == pos {
@@ -515,7 +520,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         start_looping: bool,
     ) -> MpvResult<()> {
-        self.current_player(index)?.set_property(
+        self.current_player(index, true)?.set_property(
             "loop-playlist",
             if start_looping { "inf" } else { "no" },
         )?;
@@ -526,7 +531,7 @@ impl PlayersDaemon {
         &self,
         index: PlayerIndex,
     ) -> MpvResult<()> {
-        self.current_player(index)?.playlist_shuffle()?;
+        self.current_player(index, true)?.playlist_shuffle()?;
         Ok(())
     }
 
@@ -562,7 +567,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         delta: i32,
     ) -> MpvResult<()> {
-        self.current_player(index)?
+        self.current_player(index, true)?
             .add_property("volume", delta as isize)?;
         Ok(())
     }
@@ -571,7 +576,7 @@ impl PlayersDaemon {
         &self,
         index: PlayerIndex,
     ) -> MpvResult<()> {
-        self.current_player(index)?
+        self.current_player(index, true)?
             .cycle_property("vid", true /* up */)?;
         Ok(())
     }
@@ -581,7 +586,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         on: bool,
     ) -> MpvResult<()> {
-        self.current_player(index)?.set_property("vid", on)?;
+        self.current_player(index, true)?.set_property("vid", on)?;
         Ok(())
     }
 
@@ -591,7 +596,7 @@ impl PlayersDaemon {
         direction: Direction,
         skip_over_n: u64,
     ) -> MpvResult<()> {
-        let player = self.current_player(index)?;
+        let player = self.current_player(index, true)?;
         let pos: u64 = match simple_prop_logged::<i64>(player, "playlist-pos")?
             .try_into()
         {
@@ -634,7 +639,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         seconds: f64,
     ) -> MpvResult<()> {
-        self.current_player(index)?.seek_forward(seconds)?;
+        self.current_player(index, true)?.seek_forward(seconds)?;
         Ok(())
     }
 
@@ -644,7 +649,7 @@ impl PlayersDaemon {
         direction: Direction,
         amount: i32,
     ) -> MpvResult<()> {
-        self.current_player(index)?
+        self.current_player(index, true)?
             .add_property(
                 "chapter",
                 match direction {
@@ -670,7 +675,7 @@ impl PlayersDaemon {
     ) -> MpvResult<Option<Metadata>> {
         use MpvErrorCode as MEC;
         let t = match self
-            .current_player(index)?
+            .current_player(index, false)?
             .get_property::<MpvNode>("chapter-metadata")
         {
             Ok(t) => t,
@@ -724,7 +729,7 @@ impl PlayersDaemon {
         index: PlayerIndex,
         prop: &str,
     ) -> MpvResult<T> {
-        self.current_player(index)?.simple_prop(prop)
+        self.current_player(index, false)?.simple_prop(prop)
     }
 
     pub(super) async fn filename(
@@ -768,7 +773,7 @@ impl PlayersDaemon {
         &self,
         index: PlayerIndex,
     ) -> MpvResult<Vec<QueueItem>> {
-        self.current_player(index)?
+        self.current_player(index, false)?
             .playlist()?
             .into_iter()
             .collect()
@@ -936,7 +941,7 @@ async fn handle_messages(
         MessageKind::Queue => call!(players.queue(index) => Items),
         MessageKind::QueueIsLooping => {
             let players = players.lock().await;
-            let player = players.current_player(index)?;
+            let player = players.current_player(index, false)?;
             players.queue_is_looping(player).map(Response::LoopStatus)
         }
         MessageKind::QueuePos => {

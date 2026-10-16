@@ -397,12 +397,12 @@ pub async fn all() -> Result<Vec<PlayerLink>, Error> {
 }
 
 /// Gets the currenly selected player
-pub async fn current() -> Result<Option<usize>, Error> {
+pub async fn current() -> Result<Option<PlayerIndex>, Error> {
     match connection::PLAYERS
         .exchange(Message::new(PlayerIndex(None), MessageKind::Current))
         .await??
     {
-        Response::MaybeInteger(mi) => Ok(mi),
+        Response::MaybeInteger(mi) => Ok(mi.map(PlayerIndex::of)),
         x => panic!("invalid response: {x:?}"),
     }
 }
