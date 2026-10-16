@@ -98,7 +98,11 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                 println!(
                     "{}",
                     players::legacy_socket_for(
-                        players::current().await?.unwrap_or_default() + 1
+                        players::current()
+                            .await?
+                            .and_then(|i| i.get())
+                            .unwrap_or_default()
+                            + 1
                     )
                     .await
                 );
@@ -107,7 +111,10 @@ async fn process_cmd(cmd: Command) -> anyhow::Result<()> {
                     Some(i) => {
                         println!("{}", players::legacy_socket_for(i).await)
                     }
-                    None => match players::current().await? {
+                    None => match players::current()
+                        .await?
+                        .and_then(|i| i.get())
+                    {
                         Some(i) => {
                             println!("{}", players::legacy_socket_for(i).await)
                         }
