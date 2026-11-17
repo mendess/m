@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 pub struct SongIdent {
     pub index: usize,
     pub item: Item,
+    pub playing_src: String,
 }
 
 pub struct Queue {
@@ -364,6 +365,7 @@ fn slice_queue(
         .drain(start_index..end_index)
         .map(|i| SongIdent {
             index: next_index(),
+            playing_src: i.filename.clone(),
             item: Item::from(i.filename),
         })
         .collect();

@@ -226,28 +226,79 @@ pub async fn now(
     .context("failed getting queue")?;
     let current = queue.current_idx();
     let playlist = Playlist::load().await?;
+    enum PlayingItem<'p> {
+        File {
+            index: usize,
+            media_src: String,
+            playing_src: &'p str,
+        },
+        Resolved {
+            index: usize,
+            title: Cow<'p, str>,
+            artist: Option<Cow<'p, str>>,
+        },
+    }
+    impl PlayingItem<'_> {
+        fn idx(&self) -> usize {
+            match self {
+                PlayingItem::File { index: idx, .. }
+                | PlayingItem::Resolved { index: idx, .. } => *idx,
+            }
+        }
+    }
     stream::iter(queue.iter())
         .map(|i| {
             debug!("translating queue item: {i:?}");
             async {
                 if show_files {
-                    (i.index, i.item.to_string().into(), None)
+                    PlayingItem::File {
+                        index: i.index,
+                        media_src: i.item.to_string(),
+                        playing_src: &i.playing_src,
+                    }
                 } else {
-                    (
-                        i.index,
-                        i.item.fetch_item_title(&playlist).await,
-                        i.item.fetch_item_artist(&playlist).await,
-                    )
+                    PlayingItem::Resolved {
+                        index: i.index,
+                        title: i.item.fetch_item_title(&playlist).await,
+                        artist: i.item.fetch_item_artist(&playlist).await,
+                    }
                 }
             }
         })
         .buffered(32)
-        .for_each(|(index, title, artist)| async move {
+        .for_each(|i| async move {
             static SEPERATORS: [&str; 2] = ["   ", "==>"];
+            let index = i.idx();
             let sep = SEPERATORS[(index == current) as usize];
-            match artist {
-                Some(artist) => println!("{index:2} {sep} {artist} - {title}",),
-                None => println!("{index:2} {sep} {title}"),
+            match i {
+                PlayingItem::File {
+                    index,
+                    media_src,
+                    playing_src,
+                } if media_src == playing_src => {
+                    println!("{index:2} {sep} {media_src}")
+                }
+                PlayingItem::File {
+                    index,
+                    media_src,
+                    playing_src,
+                } => {
+                    println!("{index:2} {sep} {media_src} [{playing_src}]")
+                }
+                PlayingItem::Resolved {
+                    index,
+                    title,
+                    artist: Some(artist),
+                } => {
+                    println!("{index:2} {sep} {artist} - {title}",)
+                }
+                PlayingItem::Resolved {
+                    index,
+                    title,
+                    artist: None,
+                } => {
+                    println!("{index:2} {sep} {title}")
+                }
             }
         })
         .await;
