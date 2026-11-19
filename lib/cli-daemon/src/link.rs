@@ -1,6 +1,5 @@
 use std::{
     any::Any,
-    convert::Infallible,
     fmt::Debug,
     io,
     marker::PhantomData,
@@ -22,7 +21,7 @@ use tokio::{
 use tracing::debug;
 
 #[derive(Debug)]
-pub struct DaemonLink<M, R, E = Infallible> {
+pub struct DaemonLink<M, R, E = !> {
     reader: BufReader<OwnedReadHalf>,
     writer: BufWriter<OwnedWriteHalf>,
     socket_path: PathBuf,

@@ -2,7 +2,6 @@
 //! using a provided handler
 //!
 use std::{
-    convert::Infallible,
     future::{Future, pending},
     io,
     marker::PhantomData,
@@ -25,7 +24,7 @@ use tracing::{debug, error, info};
 use crate::{Daemon, link::EventSubscription};
 
 /// A builder for a daemon process.
-pub struct DaemonProcess<'s, M, R, E = Infallible> {
+pub struct DaemonProcess<'s, M, R, E = !> {
     socket_path: &'s Path,
     shutdown: Option<oneshot::Receiver<()>>,
     _marker: PhantomData<(M, R, E)>,
@@ -55,7 +54,7 @@ impl<M, R, E> DaemonProcess<'_, M, R, E> {
 
     /// Start the daemon process with a handler. This functions returns error if initialization
     /// fails. If initialization does not fail this function never returns.
-    pub async fn run<H, Fut>(self, handler: H) -> io::Result<Infallible>
+    pub async fn run<H, Fut>(self, handler: H) -> io::Result<!>
     where
         M: DeserializeOwned + Serialize + Send + 'static,
         H: FnMut(M) -> Fut + Clone + Send + 'static,
@@ -89,7 +88,7 @@ where
         mut self,
         handler: H,
         events: EH,
-    ) -> io::Result<Infallible>
+    ) -> io::Result<!>
     where
         EH: FnOnce() -> EHFut + Clone + Send + 'static,
         EHFut: Future + Send + 'static,

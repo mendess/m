@@ -3,7 +3,6 @@ mod process;
 
 use std::{
     any::Any,
-    convert::Infallible,
     fmt::Debug,
     io,
     path::{Path, PathBuf},
@@ -29,7 +28,7 @@ type ArcDaemonLink<M, R, E> = Arc<Mutex<DaemonLink<M, R, E>>>;
 ///
 /// Talking to a daemon implicitly starts a background process as a daemon
 #[derive(Debug)]
-pub struct Daemon<M, R, E = Infallible> {
+pub struct Daemon<M, R, E = !> {
     start_daemon: AtomicBool,
     name: &'static str,
     socket_namespace: Option<String>,
