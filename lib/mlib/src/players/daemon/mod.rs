@@ -616,7 +616,6 @@ impl PlayersDaemon {
                 .checked_sub(skip_over_n)
                 .unwrap_or_else(|| count.saturating_sub(1)),
         };
-        player.command("playlist-play-index", &[&new_pos.to_string()])?;
         #[cfg(feature = "statistics")]
         {
             match self.filename(index).await.map(Item::from) {
@@ -631,6 +630,7 @@ impl PlayersDaemon {
                 }
             }
         }
+        player.command("playlist-play-index", &[&new_pos.to_string()])?;
         Ok(())
     }
 
